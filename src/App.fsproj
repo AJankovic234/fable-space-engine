@@ -17,6 +17,8 @@
     <Compile Include="PhysicsAndPool.fs" />
     <Compile Include="AI.fs" />
     <Compile Include="Camera.fs" />
+    <Compile Include="SkyBackdrop.fs" />
+    <Compile Include="Sound.fs" />
     <Compile Include="HUD.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>

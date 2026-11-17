@@ -8,10 +8,11 @@ namespace SpaceEngine
 //  keine Event-Queue und damit keine Allokation pro Tastendruck oder Frame.
 //
 //  Tastatur:  W/S Pitch, A/D Roll, Q/E Yaw, Shift Boost, Leertaste Feuer,
-//             Pfeil hoch/runter (oder R/F) Schub, X Bremse, C Kamera,
-//             I Pitch invertieren, Enter Bestaetigen, P Pause
+//             Pfeil hoch/runter (oder R/F) Schub, X Bremse, T/Tab Ziel wechseln,
+//             C Kamera, M Ton, I Pitch invertieren, Enter Bestaetigen, P Pause
 //  Maus:      Klick ins Bild aktiviert PointerLock. Die Maus bewegt dann einen
-//             virtuellen Joystick (Yaw/Pitch), linke Taste feuert, Esc gibt frei.
+//             virtuellen Joystick (Yaw/Pitch), linke Taste feuert, rechte wechselt
+//             das Ziel, Esc gibt frei.
 // =====================================================================================
 
 open Fable.Core
@@ -36,6 +37,8 @@ type GameAction =
     | InvertPitch = 12
     | Confirm = 13
     | Pause = 14
+    | CycleTarget = 15
+    | ToggleMute = 16
 
 type InputState =
     { /// Pro Aktion: 1 = Taste wird gerade gehalten.
@@ -59,7 +62,7 @@ type InputState =
 module Input =
 
     [<Literal>]
-    let private ActionCount = 15
+    let private ActionCount = 17
 
     /// Ausschlaege unterhalb dieser Schwelle gelten als Ruhestellung.
     [<Literal>]
@@ -87,6 +90,9 @@ module Input =
         | "KeyI" -> int GameAction.InvertPitch
         | "Enter" -> int GameAction.Confirm
         | "KeyP" -> int GameAction.Pause
+        | "KeyT"
+        | "Tab" -> int GameAction.CycleTarget
+        | "KeyM" -> int GameAction.ToggleMute
         | _ -> -1
 
     let private releaseAll (state: InputState) =
@@ -138,16 +144,22 @@ module Input =
         // Verliert das Fenster den Fokus, kaeme das keyup nie an - alles loslassen.
         window.addEventListener ("blur", (fun _ -> releaseAll state))
 
+        canvas.addEventListener ("contextmenu", fun (e: Event) -> e.preventDefault ())
+
         canvas.addEventListener (
             "mousedown",
             fun (e: Event) ->
                 let mouse = unbox<MouseEvent> e
-                state.Clicked <- true
+
+                if mouse.button = 0.0 then
+                    state.Clicked <- true
 
                 if not state.PointerLocked then
                     canvas.requestPointerLock ()
                 elif mouse.button = 0.0 then
                     state.MouseFire <- true
+                elif mouse.button = 2.0 then
+                    state.Pressed.[int GameAction.CycleTarget] <- 1uy
         )
 
         window.addEventListener (

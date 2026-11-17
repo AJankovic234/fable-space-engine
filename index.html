@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fable Space Engine</title>
+    <meta name="description" content="Ein Schiff. Ein Asteroidenfeld. Kein sicherer Kurs. Ein 3D-Weltraumspiel mit Fable und WebGL2." />
     <!-- Leeres Favicon: verhindert die 404-Anfrage nach /favicon.ico -->
     <link rel="icon" href="data:," />
     <style>
@@ -61,8 +62,8 @@
   </head>
   <body>
     <div id="stage">
-      <canvas id="gl-canvas"></canvas>
-      <canvas id="hud-canvas"></canvas>
+      <canvas id="gl-canvas" aria-label="Fable Space – 3D-Weltraumspiel. Enter startet den Flug; W/S steuern die Nase, A/D rollen, Q/E gieren, Pfeiltasten regeln den Schub, Leertaste feuert, Shift aktiviert Boost, X bremst, T wechselt das Ziel, C wechselt die Kamera, M schaltet den Ton und P pausiert."></canvas>
+      <canvas id="hud-canvas" aria-hidden="true"></canvas>
     </div>
     <div id="error" hidden></div>
     <!-- Fable kompiliert src/*.fs nach build/*.js; Vite buendelt von dort. -->

@@ -121,7 +121,9 @@ type InstanceBatch =
       /// Blinn-Phong-Exponent (groesser = kleineres, schaerferes Glanzlicht).
       mutable Shininess: float
       /// Staerke des Glanzlichts (0 = matt).
-      mutable Specular: float }
+      mutable Specular: float
+      /// 0 = lackiertes Metall, 1 = raues Gestein.
+      mutable Material: float }
 
 /// Lichtzustand der Szene; wird in beginFrame als Uniforms hochgeladen.
 type Lights =
@@ -149,6 +151,7 @@ type Renderer =
       UPointColor: WebGLUniformLocation
       UShininess: WebGLUniformLocation
       USpecular: WebGLUniformLocation
+      UMaterial: WebGLUniformLocation
       Lights: Lights
       /// Scratch: Projektion * View des aktuellen Frames (auch vom HUD nutzbar).
       ViewProj: Mat4
@@ -194,10 +197,12 @@ uniform mat4 uViewProj;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec4 vColor;
+out vec3 vLocalPos;
 
 void main() {
     vec4 world = iModel * vec4(aPosition, 1.0);
     vWorldPos = world.xyz;
+    vLocalPos = aPosition;
 
     // Normalenmatrix fuer M = R * S (auch nicht-uniforme Skalierung):
     // (M^-1)^T = R * S^-1 = M * S^-2. Die quadrierten Skalierungen sind die
@@ -220,6 +225,7 @@ precision highp float;
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec4 vColor;
+in vec3 vLocalPos;
 
 uniform vec3 uCameraPos;
 uniform vec3 uSunDir;      // normalisiert, zeigt ZUR Sonne
@@ -230,15 +236,44 @@ uniform vec4 uPointPosRange[MAX_POINT_LIGHTS]; // xyz = Position, w = Reichweite
 uniform vec4 uPointColor[MAX_POINT_LIGHTS];    // rgb = Farbe * Intensitaet
 uniform float uShininess;
 uniform float uSpecular;
+uniform float uMaterial;
 
 out vec4 outColor;
 
+float hash31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+float grain(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash31(i), hash31(i + vec3(1,0,0)), f.x),
+                   mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+                   mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+
 void main() {
     vec3 albedo = vColor.rgb;
+    // Additive effects stay linear in brightness and avoid all surface work.
+    if (vColor.a > 0.999) {
+        outColor = vec4(pow(max(albedo, 0.0), vec3(1.0 / 2.2)), 1.0);
+        return;
+    }
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uCameraPos - vWorldPos);
 
-    vec3 diffuse = uAmbient;
+    if (uMaterial > 0.5) {
+        float strata = grain(vLocalPos * 7.0);
+        float detail = grain(vLocalPos * 39.0);
+        // Fade subpixel detail on distant asteroids instead of letting it shimmer.
+        float detailFade = 1.0 - smoothstep(0.012, 0.06, length(fwidth(vLocalPos)));
+        albedo *= mix(0.66, 1.16, strata) * mix(1.0, 0.78 + detail * 0.42, detailFade);
+        albedo = mix(albedo, albedo * vec3(1.17, 0.91, 0.72), smoothstep(0.58, 0.78, strata) * 0.5);
+    }
+
+    vec3 diffuse = uAmbient * mix(vec3(0.55, 0.66, 0.86), vec3(1.15, 1.28, 1.45), N.y * 0.5 + 0.5);
     vec3 specular = vec3(0.0);
 
     // Directional Light (Sonne), Blinn-Phong
@@ -269,12 +304,18 @@ void main() {
         }
     }
 
-    vec3 lit = albedo * diffuse + specular * uSpecular;
+    // Cool reflected nebula light separates the unlit silhouettes from space.
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    float fresnel = 0.12 + 0.88 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 fillLight = vec3(0.08, 0.20, 0.27) * max(dot(N, normalize(vec3(-0.8, 0.3, -0.4))), 0.0);
+    vec3 lit = albedo * (diffuse + fillLight) + specular * uSpecular * (0.5 + fresnel);
+    lit += vec3(0.055, 0.15, 0.21) * rim * (uMaterial > 0.5 ? 0.22 : 0.6);
 
     // Emissive blendet von "beleuchtet" zu "selbstleuchtend".
     vec3 color = mix(lit, albedo, vColor.a);
 
-    // Lineare Beleuchtung -> sRGB-naehernde Gammakorrektur
+    // Soft highlight roll-off preserves panel colour under bright engine lights.
+    color = color / (vec3(1.0) + color * 0.35);
     outColor = vec4(pow(max(color, 0.0), vec3(1.0 / 2.2)), 1.0);
 }
 """
@@ -451,7 +492,7 @@ module Renderer =
 
         shader
 
-    let private linkProgram (gl: WebGL2RenderingContext) (vertexSource: string) (fragmentSource: string) : WebGLProgram =
+    let linkProgram (gl: WebGL2RenderingContext) (vertexSource: string) (fragmentSource: string) : WebGLProgram =
         let vs = compileShader gl gl.VERTEX_SHADER "Vertex" vertexSource
         let fs = compileShader gl gl.FRAGMENT_SHADER "Fragment" fragmentSource
         let program = gl.createProgram ()
@@ -514,6 +555,7 @@ module Renderer =
           UPointColor = uniform "uPointColor[0]"
           UShininess = uniform "uShininess"
           USpecular = uniform "uSpecular"
+          UMaterial = uniform "uMaterial"
           Lights = Lights.create ()
           ViewProj = Mat4.create ()
           SkyView = Mat4.create ()
@@ -614,7 +656,8 @@ module Renderer =
           NeedsUpload = true
           CameraRelative = false
           Shininess = 48.0
-          Specular = 0.5 }
+          Specular = 0.5
+          Material = 0.0 }
 
     /// Gleicht den Drawing Buffer an die CSS-Groesse des Canvas an (inkl.
     /// devicePixelRatio, gedeckelt auf 2 gegen unnoetige Fuellrate auf 4K-Displays).
@@ -713,6 +756,7 @@ module Renderer =
 
             gl.uniform1f (renderer.UShininess, batch.Shininess)
             gl.uniform1f (renderer.USpecular, batch.Specular)
+            gl.uniform1f (renderer.UMaterial, batch.Material)
 
             gl.bindVertexArray batch.Vao
 

@@ -3,7 +3,7 @@ namespace SpaceEngine
 // =====================================================================================
 //  ProceduralMeshes.fs  -  prozedurale Geometrie (alles Setup-Zeit, nichts pro Frame)
 //
-//  Alle Meshes sind flach schattiert (Low-Poly-Look): jedes Dreieck besitzt eigene
+//  Alle Meshes sind flach schattiert: jedes Dreieck besitzt eigene
 //  Vertices mit der Flaechennormale. Die Generatoren arbeiten mit einem kleinen
 //  MeshBuilder, der die Windungsrichtung selbst korrigiert ("...Outward"): man
 //  beschreibt nur die Form, nicht die Reihenfolge der Eckpunkte.
@@ -232,26 +232,85 @@ module ProceduralMeshes =
     let private mirrorX (points: Vec3[]) : Vec3[] =
         points |> Array.map (fun p -> Vec3(-p.X, p.Y, p.Z))
 
+    /// Aufgesetzte, gefaste Panzerplatte. Die dunkle Fase bleibt echte Geometrie,
+    /// damit Plattenfugen auch ohne Textur im Streiflicht lesbar sind.
+    let private armorPanel (b: MeshBuilder) (outline: Vec3[]) (normal: Vec3) thickness color edge =
+        let center = outline |> Array.fold (+) Vec3.zero |> fun p -> p / float outline.Length
+        let top = outline |> Array.map (fun p -> Vec3.lerp p center 0.045 + normal * thickness)
+        let inside = center + normal * (thickness * 0.4)
+        b.PolygonOutward(outline, inside, edge)
+        b.PolygonOutward(top, inside, color)
+
+        for i in 0 .. outline.Length - 1 do
+            let j = (i + 1) % outline.Length
+            b.PolygonOutward([| outline.[i]; outline.[j]; top.[j]; top.[i] |], inside, edge)
+
+    /// Vierkantstrebe zwischen beliebigen Punkten, etwa Kanzelrahmen oder Rippen.
+    let private beam (b: MeshBuilder) (start: Vec3) (finish: Vec3) width color =
+        let axis = Vec3.normalize (finish - start)
+        let reference = if abs axis.Y > 0.9 then Vec3.unitX else Vec3.unitY
+        let right = Vec3.normalize (Vec3.cross axis reference) * width
+        let up = Vec3.normalize (Vec3.cross axis right) * width
+        let corners p = [| p - right - up; p + right - up; p + right + up; p - right + up |]
+        b.Loft([| corners start; corners finish |], true, true, color)
+
+    /// Offene Duese mit Metallrand, dunkler Innenwand und tiefer liegendem Kern.
+    /// Die sichtbare Austrittsflaeche bleibt genau am bestehenden Hardpoint.
+    let private nozzle (b: MeshBuilder) x y z radius depth metal interior glow =
+        let segments = 12
+        let outerBack = ring (segments, x, y, z - depth, radius * 1.05, radius * 1.05)
+        let outerLip = ring (segments, x, y, z, radius, radius)
+        let innerLip = ring (segments, x, y, z, radius * 0.77, radius * 0.77)
+        let core = ring (segments, x, y, z - depth * 0.65, radius * 0.62, radius * 0.62)
+        b.Loft([| outerBack; outerLip |], false, false, metal)
+
+        for i in 0 .. segments - 1 do
+            let j = (i + 1) % segments
+            b.Triangle(outerLip.[i], outerLip.[j], innerLip.[j], metal)
+            b.Triangle(outerLip.[i], innerLip.[j], innerLip.[i], metal)
+            // Innenwand: Normalen zeigen in den offenen Brennraum.
+            b.Triangle(innerLip.[i], innerLip.[j], core.[j], interior)
+            b.Triangle(innerLip.[i], core.[j], core.[i], interior)
+
+        b.PolygonOutward(core, Vec3(x, y, z - depth), glow)
+
     // ---------------------------------------------------------------------------------
     //  Spielerschiff: Delta-Wing-Fighter (ca. 4.6 lang, 4.7 Spannweite)
     // ---------------------------------------------------------------------------------
 
     let playerShip () : MeshData =
         let b = MeshBuilder()
-        let hull = MeshColor.rgb 0.62 0.66 0.72
-        let hullDark = MeshColor.rgb 0.17 0.19 0.23
-        let accent = MeshColor.rgb 0.85 0.20 0.08
-        let canopy = MeshColor.glow 0.05 0.20 0.36 0.3
-        let engineGlow = MeshColor.glow 0.45 0.80 1.0 1.0
+        let hull = MeshColor.rgb 0.68 0.76 0.79
+        let ceramic = MeshColor.rgb 0.86 0.88 0.82
+        let hullDark = MeshColor.rgb 0.045 0.068 0.086
+        let metal = MeshColor.rgb 0.23 0.31 0.34
+        let accent = MeshColor.rgb 0.95 0.42 0.055
+        let cyan = MeshColor.glow 0.035 0.72 0.95 0.75
+        let canopy = MeshColor.glow 0.018 0.11 0.17 0.12
+        let engineGlow = MeshColor.glow 0.24 0.76 1.0 1.0
 
-        // Rumpf: sechseckiger Querschnitt, flacher Bauch; die Nasenspitze als Akzent
+        // Rumpf: sechseckiger Querschnitt, flacher Bauch und dunkles Traggeruest.
         let nose = ring (6, 0.0, -0.02, -2.6, 0.01, 0.01)
         let f1 = ring (6, 0.0, 0.0, -1.7, 0.20, 0.15)
         let f2 = ring (6, 0.0, 0.02, -0.7, 0.40, 0.28)
         let f3 = ring (6, 0.0, 0.02, 0.8, 0.48, 0.30)
         let f4 = ring (6, 0.0, 0.04, 1.8, 0.36, 0.22)
-        b.Loft([| nose; f1 |], false, false, accent)
-        b.Loft([| f1; f2; f3; f4 |], false, true, hull)
+        b.Loft([| nose; f1 |], false, false, hull)
+        b.Loft([| f1; f2; f3; f4 |], false, true, hullDark)
+
+        // Geteilte Bugpanzerung und zentraler, eingelassener Sensorstreifen.
+        for side in [| -1.0; 1.0 |] do
+            armorPanel b
+                [| Vec3(0.018 * side, 0.035, -2.4); Vec3(0.15 * side, 0.10, -1.7)
+                   Vec3(0.30 * side, 0.19, -0.91); Vec3(0.025 * side, 0.22, -0.86) |]
+                Vec3.unitY 0.026 ceramic metal
+            armorPanel b
+                [| Vec3(0.24 * side, 0.16, -0.66); Vec3(0.41 * side, 0.15, -0.36)
+                   Vec3(0.43 * side, 0.18, 0.78); Vec3(0.25 * side, 0.26, 0.69) |]
+                Vec3.unitY 0.028 hull metal
+
+        b.Box(Vec3(0.0, 0.127, -1.64), Vec3(0.022, 0.015, 0.17), hullDark)
+        b.Box(Vec3(0.0, 0.145, -1.66), Vec3(0.010, 0.008, 0.095), cyan)
 
         // Kanzel
         b.Loft(
@@ -264,6 +323,14 @@ module ProceduralMeshes =
             canopy
         )
 
+        // Sichtbare Rahmen und zwei getrennte Glasscheiben statt einer Farbblase.
+        for side in [| -1.0; 1.0 |] do
+            beam b (Vec3(0.0, 0.16, -1.40)) (Vec3(0.15 * side, 0.31, -0.91)) 0.016 metal
+            beam b (Vec3(0.15 * side, 0.31, -0.91)) (Vec3(0.18 * side, 0.39, -0.35)) 0.015 metal
+            beam b (Vec3(0.18 * side, 0.39, -0.35)) (Vec3(0.0, 0.29, 0.40)) 0.018 metal
+        beam b (Vec3(-0.18, 0.39, -0.35)) (Vec3(0.0, 0.46, -0.35)) 0.018 hullDark
+        beam b (Vec3(0.0, 0.46, -0.35)) (Vec3(0.18, 0.39, -0.35)) 0.018 hullDark
+
         // Delta-Fluegel: an der Wurzel dick, zur Spitze duenn, leichte negative V-Stellung
         let wing =
             [| Vec3(0.38, 0.0, -0.8)
@@ -272,8 +339,18 @@ module ProceduralMeshes =
                Vec3(0.38, 0.0, 1.55) |]
 
         let wingThickness = [| 0.085; 0.025; 0.025; 0.085 |]
-        b.Slab(wing, wingThickness, Vec3.unitY, hull)
-        b.Slab(mirrorX wing, wingThickness, Vec3.unitY, hull)
+        b.Slab(wing, wingThickness, Vec3.unitY, hullDark)
+        b.Slab(mirrorX wing, wingThickness, Vec3.unitY, hullDark)
+
+        let wingPlates =
+            [| [| Vec3(0.82, 0.075, -0.18); Vec3(1.37, 0.028, 0.41)
+                  Vec3(1.36, 0.028, 1.47); Vec3(0.84, 0.075, 1.43) |]
+               [| Vec3(1.42, 0.024, 0.47); Vec3(2.13, -0.026, 1.20)
+                  Vec3(2.13, -0.026, 1.64); Vec3(1.42, 0.024, 1.48) |] |]
+
+        for panel in wingPlates do
+            armorPanel b panel Vec3.unitY 0.028 ceramic metal
+            armorPanel b (mirrorX panel) Vec3.unitY 0.028 ceramic metal
 
         // Fluegelspitzen als Farbakzent
         let wingTip =
@@ -285,6 +362,16 @@ module ProceduralMeshes =
         let tipThickness = [| 0.06; 0.06; 0.06; 0.06 |]
         b.Slab(wingTip, tipThickness, Vec3.unitY, accent)
         b.Slab(mirrorX wingTip, tipThickness, Vec3.unitY, accent)
+
+        // Maintenance-Stripes und Positionslichter liegen auf getrennten Platten.
+        for side in [| -1.0; 1.0 |] do
+            b.Box(Vec3(1.06 * side, 0.121, 0.66), Vec3(0.19, 0.009, 0.035), accent)
+            b.Box(Vec3(1.06 * side, 0.121, 0.78), Vec3(0.19, 0.009, 0.018), hullDark)
+            b.Box(Vec3(2.24 * side, 0.012, 1.47), Vec3(0.035, 0.015, 0.12), cyan)
+            // Ein dunkles Servicefeld mit vier erhabenen Kuehlrippen.
+            b.Box(Vec3(1.61 * side, 0.043, 1.26), Vec3(0.12, 0.022, 0.15), hullDark)
+            for i in 0 .. 3 do
+                b.Box(Vec3(1.61 * side, 0.069, 1.16 + float i * 0.065), Vec3(0.10, 0.010, 0.012), metal)
 
         // Doppelleitwerk, nach aussen geneigt
         let fin =
@@ -299,24 +386,63 @@ module ProceduralMeshes =
         b.Slab(mirrorX fin, finThickness, Vec3(-finNormal.X, finNormal.Y, 0.0), hull)
 
         for side in [| -1.0; 1.0 |] do
+            beam b (Vec3(0.76 * side, 0.75, 1.33)) (Vec3(0.80 * side, 0.75, 1.69)) 0.019 accent
+            beam b (Vec3(0.80 * side, 0.87, 1.47)) (Vec3(0.83 * side, 0.87, 1.74)) 0.012 cyan
+
+        for side in [| -1.0; 1.0 |] do
             // Triebwerksgondel mit leuchtender Duese
             let x = 0.62 * side
-            let nozzle = ring (8, x, 0.02, 2.0, 0.19, 0.19)
-
             b.Loft(
                 [| ring (8, x, 0.02, 0.1, 0.01, 0.01)
                    ring (8, x, 0.02, 0.55, 0.20, 0.20)
-                   ring (8, x, 0.02, 1.7, 0.23, 0.23)
-                   nozzle |],
+                   ring (8, x, 0.02, 1.65, 0.23, 0.23) |],
                 false,
                 false,
                 hullDark
             )
 
-            b.PolygonOutward(nozzle, Vec3(x, 0.02, 1.0), engineGlow)
+            // Separat sitzende Gehaeuseplatten und Kuehlringe.
+            armorPanel b
+                [| Vec3(x - 0.15, 0.205, 0.58); Vec3(x + 0.15, 0.205, 0.58)
+                   Vec3(x + 0.17, 0.235, 1.30); Vec3(x - 0.17, 0.235, 1.30) |]
+                Vec3.unitY 0.035 hull metal
+            b.Box(Vec3(x, 0.277, 0.99), Vec3(0.025, 0.008, 0.22), accent)
 
-            // Laserkanone unter dem Fluegel
-            b.Box(Vec3(1.25 * side, -0.1, -0.2), Vec3(0.045, 0.045, 0.75), hullDark)
+            for i in 0 .. 3 do
+                let z = 1.39 + float i * 0.12
+                b.Loft([| ring (12, x, 0.02, z, 0.244, 0.244)
+                          ring (12, x, 0.02, z + 0.045, 0.244, 0.244) |], true, true, metal)
+
+            nozzle b x 0.02 2.0 0.207 0.22 metal hullDark engineGlow
+
+            // Acht radiale Laengsrippen geben der Duese eine klare Turbinensilhouette.
+            for i in 0 .. 7 do
+                let angle = float i * Math.PI / 4.0
+                let dx = cos angle * 0.214
+                let dy = sin angle * 0.214
+                beam b (Vec3(x + dx, 0.02 + dy, 1.73)) (Vec3(x + dx, 0.02 + dy, 1.96)) 0.012 hull
+
+            // Waffenwiege, zylindrischer Lauf und Muendungsring am Laser-Hardpoint.
+            let gunX = 1.25 * side
+            b.Box(Vec3(gunX, -0.075, 0.20), Vec3(0.095, 0.070, 0.31), metal)
+            b.Loft([| ring (8, gunX, -0.10, -0.91, 0.045, 0.045)
+                      ring (8, gunX, -0.10, 0.30, 0.055, 0.055) |], true, true, hullDark)
+            for z in [| -0.77; -0.56; -0.35 |] do
+                b.Loft([| ring (8, gunX, -0.10, z, 0.065, 0.065)
+                          ring (8, gunX, -0.10, z + 0.045, 0.065, 0.065) |], true, true, metal)
+            b.Loft([| ring (8, gunX, -0.10, -0.95, 0.066, 0.066)
+                      ring (8, gunX, -0.10, -0.86, 0.066, 0.066) |], true, true, hull)
+            b.PolygonOutward(ring (8, gunX, -0.1, -0.952, 0.027, 0.027), Vec3(gunX, -0.1, 0.0), cyan)
+
+        // Heckbruecke, zentraler Rechnerblock und kleine, versenkte Statusanzeigen.
+        armorPanel b
+            [| Vec3(-0.23, 0.29, 0.55); Vec3(0.23, 0.29, 0.55)
+               Vec3(0.28, 0.24, 1.48); Vec3(-0.28, 0.24, 1.48) |]
+            Vec3.unitY 0.032 hull metal
+        b.Box(Vec3(0.0, 0.324, 0.98), Vec3(0.13, 0.015, 0.22), hullDark)
+        for i in 0 .. 4 do
+            b.Box(Vec3(0.0, 0.344, 0.82 + float i * 0.075), Vec3(0.10, 0.008, 0.014), metal)
+        b.Box(Vec3(0.0, 0.306, 1.36), Vec3(0.06, 0.008, 0.018), cyan)
 
         b.Build()
 
@@ -326,29 +452,47 @@ module ProceduralMeshes =
 
     let interceptor () : MeshData =
         let b = MeshBuilder()
-        let hull = MeshColor.rgb 0.30 0.30 0.35
-        let hullDark = MeshColor.rgb 0.13 0.13 0.16
-        let accent = MeshColor.rgb 0.85 0.10 0.08
-        let visor = MeshColor.glow 1.0 0.16 0.10 0.85
+        let hull = MeshColor.rgb 0.12 0.16 0.20
+        let hullDark = MeshColor.rgb 0.025 0.036 0.047
+        let metal = MeshColor.rgb 0.29 0.33 0.35
+        let accent = MeshColor.rgb 0.60 0.045 0.018
+        let visor = MeshColor.glow 1.0 0.065 0.018 0.9
         let engineGlow = MeshColor.glow 1.0 0.42 0.12 1.0
 
         // Zentrale Kapsel mit gluehendem Hecktriebwerk
-        let podEnd = ring (6, 0.0, 0.0, 1.1, 0.28, 0.20)
+        let podEnd = ring (8, 0.0, 0.0, 0.91, 0.28, 0.20)
 
         b.Loft(
-            [| ring (6, 0.0, 0.0, -1.5, 0.01, 0.01)
-               ring (6, 0.0, 0.0, -0.8, 0.30, 0.24)
-               ring (6, 0.0, 0.0, 0.3, 0.40, 0.30)
+            [| ring (8, 0.0, 0.0, -1.5, 0.01, 0.01)
+               ring (8, 0.0, 0.0, -0.8, 0.30, 0.24)
+               ring (8, 0.0, 0.0, 0.3, 0.40, 0.30)
                podEnd |],
             false,
             false,
-            hull
+            hullDark
         )
 
-        b.PolygonOutward(podEnd, Vec3(0.0, 0.0, 0.3), engineGlow)
+        nozzle b 0.0 0.0 1.1 0.24 0.24 metal hullDark engineGlow
 
-        // Leuchtendes Visier
-        b.Box(Vec3(0.0, 0.22, -0.7), Vec3(0.13, 0.05, 0.26), visor)
+        // Geschichtete Chitinpanzerung mit schmalen, voneinander getrennten Sensoren.
+        for side in [| -1.0; 1.0 |] do
+            armorPanel b
+                [| Vec3(0.015 * side, 0.115, -1.19); Vec3(0.25 * side, 0.15, -0.75)
+                   Vec3(0.32 * side, 0.23, -0.16); Vec3(0.04 * side, 0.30, -0.25) |]
+                Vec3.unitY 0.024 hull metal
+            armorPanel b
+                [| Vec3(0.04 * side, 0.30, -0.20); Vec3(0.34 * side, 0.23, -0.12)
+                   Vec3(0.28 * side, 0.20, 0.73); Vec3(0.045 * side, 0.25, 0.65) |]
+                Vec3.unitY 0.028 hull metal
+            beam b (Vec3(0.06 * side, 0.246, -0.93)) (Vec3(0.19 * side, 0.246, -0.67)) 0.020 visor
+            beam b (Vec3(0.055 * side, 0.25, -0.79)) (Vec3(0.11 * side, 0.27, -0.53)) 0.012 visor
+            b.Box(Vec3(0.23 * side, -0.15, -0.65), Vec3(0.048, 0.025, 0.09), accent)
+
+        b.Box(Vec3(0.0, 0.31, 0.12), Vec3(0.033, 0.026, 0.38), hullDark)
+        for i in 0 .. 4 do
+            let z = -0.08 + float i * 0.13
+            beam b (Vec3(-0.23, 0.28, z)) (Vec3(-0.08, 0.32, z + 0.04)) 0.016 metal
+            beam b (Vec3(0.23, 0.28, z)) (Vec3(0.08, 0.32, z + 0.04)) 0.016 metal
 
         // Streben zu den Klingen
         let strut =
@@ -361,11 +505,17 @@ module ProceduralMeshes =
         b.Slab(strut, strutThickness, Vec3.unitY, hullDark)
         b.Slab(mirrorX strut, strutThickness, Vec3.unitY, hullDark)
 
-        // Klingen: rautenfoermiger Querschnitt, rote Spitzen
+        let strutPlate =
+            [| Vec3(0.40, 0.073, -0.21); Vec3(1.07, 0.053, -0.04)
+               Vec3(1.07, 0.053, 0.37); Vec3(0.42, 0.073, 0.54) |]
+        armorPanel b strutPlate Vec3.unitY 0.027 hull metal
+        armorPanel b (mirrorX strutPlate) Vec3.unitY 0.027 hull metal
+
+        // Klingen: schmale rote Schneiden auf dunklem, rautenfoermigem Rueckgrat.
         for side in [| -1.0; 1.0 |] do
             let x = 1.2 * side
             let b1 = ring (4, x, 0.0, -0.7, 0.09, 0.34)
-            b.Loft([| ring (4, x, 0.0, -2.0, 0.005, 0.005); b1 |], false, false, accent)
+            b.Loft([| ring (4, x, 0.0, -2.0, 0.005, 0.005); b1 |], false, false, hull)
 
             b.Loft(
                 [| b1
@@ -375,6 +525,40 @@ module ProceduralMeshes =
                 true,
                 hull
             )
+
+            // Geschlossene Klingensegmente bewahren die alte Silhouette, ihre
+            // dunklen Zwischenraeume bleiben bis in mittlere Entfernung sichtbar.
+            for i in 0 .. 3 do
+                let z = -0.56 + float i * 0.29
+                let halfHeight = 0.34 + float i * 0.012
+                b.Loft([| ring (4, x, 0.0, z, 0.108, halfHeight)
+                          ring (4, x, 0.0, z + 0.19, 0.113, halfHeight + 0.008) |], true, true, hullDark)
+                beam b (Vec3(x, halfHeight + 0.004, z + 0.015)) (Vec3(x, halfHeight + 0.012, z + 0.17)) 0.013 accent
+
+            beam b (Vec3(x, 0.01, -1.98)) (Vec3(x, 0.30, -0.79)) 0.015 accent
+            beam b (Vec3(x, -0.01, -1.98)) (Vec3(x, -0.30, -0.79)) 0.015 accent
+            b.Box(Vec3(x, 0.26, -0.91), Vec3(0.022, 0.016, 0.09), visor)
+            b.Box(Vec3(x, -0.26, -0.91), Vec3(0.022, 0.016, 0.09), visor)
+
+            // Mechanische Streben, drei rote Verbindungsklemmen und ein freier Lauf.
+            beam b (Vec3(0.43 * side, -0.10, 0.44)) (Vec3(1.08 * side, -0.10, 0.14)) 0.028 metal
+            for i in 0 .. 2 do
+                b.Box(Vec3((0.59 + float i * 0.17) * side, 0.11, 0.06 + float i * 0.04), Vec3(0.025, 0.021, 0.12), accent)
+            b.Loft([| ring (6, x, 0.0, -1.98, 0.023, 0.023)
+                      ring (6, x, 0.0, -1.16, 0.035, 0.035) |], true, true, metal)
+            b.PolygonOutward(ring (6, x, 0.0, -2.002, 0.014, 0.014), Vec3(x, 0.0, -1.0), visor)
+
+            // Heckkuhler und leuchtende Risse an beiden Flanken.
+            for i in 0 .. 3 do
+                let z = 0.47 + float i * 0.105
+                b.Box(Vec3(0.28 * side, 0.03, z), Vec3(0.045, 0.13, 0.018), metal)
+            beam b (Vec3(0.35 * side, 0.12, 0.07)) (Vec3(0.29 * side, 0.12, 0.43)) 0.013 visor
+
+        for i in 0 .. 7 do
+            let angle = float i * Math.PI / 4.0
+            let dx = cos angle * 0.246
+            let dy = sin angle * 0.246
+            beam b (Vec3(dx, dy, 0.88)) (Vec3(dx, dy, 1.08)) 0.015 hull
 
         b.Build()
 
@@ -457,35 +641,63 @@ module ProceduralMeshes =
 
         positions.ToArray(), triangles
 
-    /// Kantiger Low-Poly-Asteroid. subdivisions: 1 = 80, 2 = 320 Dreiecke.
+    /// Organischer Asteroid. subdivisions: 1 = 80, 2 = 320, 3 = 1280 Dreiecke.
     let asteroid (seed: int) (subdivisions: int) : MeshData =
         let rng = Rng(seed)
         let positions, triangles = icosphere subdivisions
 
-        // Grobe Form: ueberlagerte Sinus-"Beulen" entlang zufaelliger Richtungen
-        let lobeCount = 5
+        // Raeumlich koharente Gesteinsform: grobe Lappen statt unabhaengigem
+        // Vertexrauschen. Derselbe Seed behaelt damit seine Form ueber alle LODs.
+        let lobeCount = 6
         let lobeDirection = Array.init lobeCount (fun _ -> rng.UnitVector())
-        let lobeFrequency = Array.init lobeCount (fun _ -> rng.Range(1.5, 4.0))
-        let lobeAmplitude = Array.init lobeCount (fun _ -> rng.Range(0.05, 0.16))
+        let lobeFrequency = Array.init lobeCount (fun _ -> rng.Range(1.5, 5.0))
+        let lobeAmplitude = Array.init lobeCount (fun _ -> rng.Range(0.04, 0.14))
         let lobePhase = Array.init lobeCount (fun _ -> rng.Range(0.0, 2.0 * Math.PI))
         let squashY = rng.Range(0.65, 1.0)
         let squashZ = rng.Range(0.75, 1.2)
 
-        // Kanten: Schnittebenen kappen Teile der Oberflaeche zu ebenen Facetten
-        let cutCount = 7
+        // Wenige Bruchflaechen erhalten kantige Silhouetten, ohne die gesamte
+        // Oberflaeche in einen regelmaessigen Polyeder zu verwandeln.
+        let cutCount = 3
         let cutNormal = Array.init cutCount (fun _ -> rng.UnitVector())
-        let cutDistance = Array.init cutCount (fun _ -> rng.Range(0.55, 0.85))
+        let cutDistance = Array.init cutCount (fun _ -> rng.Range(0.70, 0.92))
+        let craterCount = 5
+        let craterDirection = Array.init craterCount (fun _ -> rng.UnitVector())
+        let craterWidth = Array.init craterCount (fun _ -> rng.Range(0.18, 0.44))
+        let craterDepth = Array.init craterCount (fun _ -> rng.Range(0.07, 0.18))
+        let strataDirection = rng.UnitVector()
+        let mineralDirection = rng.UnitVector()
+        let detailPhase = rng.Range(0.0, 2.0 * Math.PI)
+
+        let craterBowl (direction: Vec3) =
+            let mutable depression = 0.0
+            let mutable rim = 0.0
+
+            for k in 0 .. craterCount - 1 do
+                let d = sqrt (max 0.0 (2.0 * (1.0 - Vec3.dot direction craterDirection.[k]))) / craterWidth.[k]
+                if d < 1.0 then
+                    let bowl = 1.0 - d * d
+                    depression <- depression + craterDepth.[k] * bowl * bowl
+                if d > 0.72 && d < 1.28 then
+                    let lip = 1.0 - abs (d - 1.0) / 0.28
+                    rim <- rim + craterDepth.[k] * 0.27 * lip * lip
+
+            depression, rim
 
         let displaced =
             positions
             |> Array.map (fun direction ->
-                let mutable radius = 1.0 + rng.Range(-0.035, 0.035)
+                let detail = sin (direction.X * 17.0 + detailPhase) * sin (direction.Y * 13.0 - detailPhase) * sin (direction.Z * 19.0)
+                let mutable radius = 1.0 + detail * 0.025
 
                 for k in 0 .. lobeCount - 1 do
                     radius <-
                         radius
                         + lobeAmplitude.[k]
                           * sin (lobeFrequency.[k] * Vec3.dot direction lobeDirection.[k] + lobePhase.[k])
+
+                let depression, rim = craterBowl direction
+                radius <- max 0.35 (radius - depression + rim)
 
                 let mutable p =
                     Vec3(direction.X * radius, direction.Y * radius * squashY, direction.Z * radius * squashZ)
@@ -500,19 +712,34 @@ module ProceduralMeshes =
 
         // Auf Huellkugelradius 1 normieren: Instanz-Skalierung = Kollisionsradius
         let maxRadius = displaced |> Array.fold (fun m p -> Math.Max(m, Vec3.length p)) 0.0
-        let scale = 1.0 / maxRadius
+        // Kleine Reserve fuer die anschliessende Konvertierung nach Float32.
+        let scale = 0.999999 / maxRadius
         let b = MeshBuilder()
 
-        for f in 0 .. triangles.Length / 3 - 1 do
-            // Leichte Helligkeitsstreuung pro Facette macht den Fels lebendiger
-            let shade = rng.Range(0.70, 1.0)
-            let color = MeshColor.rgb shade (shade * 0.96) (shade * 0.90)
+        // Mineraladern und Sedimentschichten werden aus der Position abgeleitet,
+        // nicht zufaellig pro Dreieck gewuerfelt. So bleiben grosse Felsformen lesbar.
+        let rockColor (direction: Vec3) =
+            let strata = sin (Vec3.dot direction strataDirection * 15.0 + sin (direction.Z * 7.0) * 1.3)
+            let mineral = sin (Vec3.dot direction mineralDirection * 9.0 + detailPhase + sin (direction.X * 11.0) * 0.6)
+            let depression, _ = craterBowl direction
+            let shade = 0.53 + strata * 0.055 - depression * 0.65
+            let vein = max 0.0 (1.0 - abs mineral * 8.0)
+            MeshColor.rgb (shade + vein * 0.16) (shade * 0.92 + vein * 0.09) (shade * 0.82 + vein * 0.025)
 
-            b.Triangle(
-                displaced.[triangles.[f * 3]] * scale,
-                displaced.[triangles.[f * 3 + 1]] * scale,
-                displaced.[triangles.[f * 3 + 2]] * scale,
-                color
+        let colors = positions |> Array.map rockColor
+
+        for f in 0 .. triangles.Length / 3 - 1 do
+            let ia = triangles.[f * 3]
+            let ib = triangles.[f * 3 + 1]
+            let ic = triangles.[f * 3 + 2]
+
+            b.TriangleColors(
+                displaced.[ia] * scale,
+                displaced.[ib] * scale,
+                displaced.[ic] * scale,
+                colors.[ia],
+                colors.[ib],
+                colors.[ic]
             )
 
         b.Build()
@@ -539,6 +766,34 @@ module ProceduralMeshes =
             b.TriangleOutward(front, middle.[i], middle.[j], Vec3.zero, color)
             b.TriangleOutward(back, middle.[i], middle.[j], Vec3.zero, color)
 
+        b.Build()
+
+    // ---------------------------------------------------------------------------------
+    //  Triebwerksplume: gekreuzte, zum Rand und Heck auslaufende Lichtbaender.
+    //  Die Laenge bleibt wie beim Laser normalisiert auf -0.5 .. +0.5.
+    // ---------------------------------------------------------------------------------
+
+    let exhaustPlume () : MeshData =
+        let b = MeshBuilder()
+        let zs = [| -0.5; -0.30; 0.05; 0.5 |]
+        let widths = [| 0.30; 0.50; 0.29; 0.0 |]
+        let power = [| 0.85; 0.55; 0.16; 0.0 |]
+        let edge = MeshColor.glow 0.0 0.0 0.0 1.0
+        for plane in 0 .. 3 do
+            let angle = float plane * Math.PI / 4.0
+            for side in [| -1.0; 1.0 |] do
+                for k in 0 .. 2 do
+                    let a = Vec3(0.0, 0.0, zs.[k])
+                    let d = Vec3(0.0, 0.0, zs.[k + 1])
+                    let e = Vec3(cos angle * widths.[k] * side, sin angle * widths.[k] * side, zs.[k])
+                    let f = Vec3(cos angle * widths.[k + 1] * side, sin angle * widths.[k + 1] * side, zs.[k + 1])
+                    let ca = MeshColor.glow power.[k] power.[k] power.[k] 1.0
+                    let cd = MeshColor.glow power.[k + 1] power.[k + 1] power.[k + 1] 1.0
+                    // Double-sided ribbons remain visible from every flight angle.
+                    b.TriangleColors(a, e, d, ca, edge, cd)
+                    b.TriangleColors(d, e, f, cd, edge, edge)
+                    b.TriangleColors(d, e, a, cd, edge, ca)
+                    b.TriangleColors(f, e, d, edge, edge, cd)
         b.Build()
 
     // ---------------------------------------------------------------------------------
@@ -580,6 +835,32 @@ module ProceduralMeshes =
                 let outer = color (radius (k + 1))
                 b.TriangleColors(point k i, point (k + 1) i, point (k + 1) (i + 1), inner, outer, outer)
                 b.TriangleColors(point k i, point (k + 1) (i + 1), point k (i + 1), inner, outer, inner)
+
+        b.Build()
+
+    // ---------------------------------------------------------------------------------
+    //  Energieschild-Blase: geodaetische Kugel mit leuchtenden Wabenkanten
+    // ---------------------------------------------------------------------------------
+
+    /// Geodaetische Sphäre (Radius 1), deren Dreieckskanten hell leuchten und deren
+    /// Flaechenmitten dunkel bleiben. Additiv gerendert entsteht ein 3D-Energiegitter
+    /// um getroffene Schiffe.
+    let shieldBubble () : MeshData =
+        let b = MeshBuilder()
+        let positions, triangles = icosphere 2
+        let edgeColor = MeshColor.glow 0.95 0.95 1.0 1.0
+        let coreColor = MeshColor.glow 0.015 0.015 0.02 1.0
+
+        for f in 0 .. triangles.Length / 3 - 1 do
+            let p0 = positions.[triangles.[f * 3]]
+            let p1 = positions.[triangles.[f * 3 + 1]]
+            let p2 = positions.[triangles.[f * 3 + 2]]
+            let center = Vec3.normalize ((p0 + p1 + p2) / 3.0)
+            let n = Vec3.cross (p1 - p0) (p2 - p0)
+            let a, bPt, c = if Vec3.dot n center >= 0.0 then p0, p1, p2 else p0, p2, p1
+            b.TriangleColors(a, bPt, center, edgeColor, edgeColor, coreColor)
+            b.TriangleColors(bPt, c, center, edgeColor, edgeColor, coreColor)
+            b.TriangleColors(c, a, center, edgeColor, edgeColor, coreColor)
 
         b.Build()
 

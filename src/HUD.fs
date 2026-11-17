@@ -32,6 +32,7 @@ type Hud =
       mutable Ratio: float
       /// Roter Randverlauf fuer das Treffer-Feedback (wird bei Groessenaenderung neu erzeugt).
       mutable Vignette: CanvasGradient
+      mutable MenuShade: CanvasGradient
       // --- Scratch der Projektion ---
       mutable ClipX: float
       mutable ClipY: float
@@ -59,6 +60,12 @@ type Hud =
       mutable DamageFlash: float
       /// Index des erfassten Gegners oder -1.
       mutable Target: int
+      /// true, wenn das Ziel manuell per T/Tab/RMB aufgeschaltet wurde.
+      mutable ManualLock: bool
+      /// Aktueller Kill-Kombo-Multiplikator (1..4) und Restzeit.
+      mutable Combo: int
+      mutable ComboTimer: float
+      mutable Muted: bool
       mutable Time: float }
 
 [<RequireQualifiedAccess>]
@@ -128,6 +135,7 @@ module Hud =
           Height = 1.0
           Ratio = 1.0
           Vignette = Unchecked.defaultof<CanvasGradient>
+          MenuShade = Unchecked.defaultof<CanvasGradient>
           ClipX = 0.0
           ClipY = 0.0
           ClipW = 0.0
@@ -148,6 +156,10 @@ module Hud =
           HitMarker = 0.0
           DamageFlash = 0.0
           Target = -1
+          ManualLock = false
+          Combo = 1
+          ComboTimer = 0.0
+          Muted = false
           Time = 0.0 }
 
     /// Haelt das HUD-Canvas deckungsgleich mit dem WebGL-Canvas. Nur bei
@@ -165,6 +177,12 @@ module Hud =
         gradient.addColorStop (0.0, "rgba(255, 40, 20, 0)")
         gradient.addColorStop (1.0, "rgba(255, 40, 20, 0.85)")
         hud.Vignette <- gradient
+        let shade = hud.Ctx.createLinearGradient (0.0, 0.0, hud.Width, 0.0)
+        shade.addColorStop (0.0, "rgba(3, 9, 18, 0.96)")
+        shade.addColorStop (0.36, "rgba(3, 9, 18, 0.82)")
+        shade.addColorStop (0.72, "rgba(3, 9, 18, 0.12)")
+        shade.addColorStop (1.0, "rgba(3, 9, 18, 0.04)")
+        hud.MenuShade <- shade
 
     /// Zeigt eine Meldung in der oberen Bildmitte.
     let notify (hud: Hud) (text: string) (sub: string) (duration: float) =
@@ -201,6 +219,33 @@ module Hud =
         hud.BannerTime <- Math.Max(0.0, hud.BannerTime - dt)
         hud.HitMarker <- Math.Max(0.0, hud.HitMarker - dt)
         hud.DamageFlash <- Math.Max(0.0, hud.DamageFlash - dt * 1.6)
+
+        if hud.ComboTimer > 0.0 then
+            hud.ComboTimer <- Math.Max(0.0, hud.ComboTimer - dt)
+
+            if hud.ComboTimer <= 0.0 then
+                hud.Combo <- 1
+
+    /// Schaltet manuell auf den naechsten lebenden Gegner weiter.
+    let cycleTarget (hud: Hud) (enemies: Ship[]) : bool =
+        let n = enemies.Length
+        let start = if hud.Target >= 0 then hud.Target + 1 else 0
+        let mutable found = -1
+
+        for step in 0 .. n - 1 do
+            let idx = (start + step) % n
+
+            if found < 0 && enemies.[idx].Alive then
+                found <- idx
+
+        if found >= 0 then
+            hud.Target <- found
+            hud.ManualLock <- true
+            true
+        else
+            hud.Target <- -1
+            hud.ManualLock <- false
+            false
 
     /// Loescht das Overlay und stellt die Zeichen-Transformation ein.
     /// Erster Aufruf jedes Frames, vor allen draw*-Funktionen.
@@ -281,6 +326,169 @@ module Hud =
         fill ctx color
         ctx.fillRect (x, y, width * Math.Max(0.0, Math.Min(1.0, fraction)), height)
 
+    /// Zeichnet die Cockpit-Kanzelstreben in der Ich-Perspektive.
+    let private drawCockpitCanopy (ctx: CanvasRenderingContext2D) (w: float) (h: float) =
+        stroke ctx "rgba(26, 48, 66, 0.85)"
+        ctx.lineWidth <- 10.0
+        ctx.beginPath ()
+        // Obere und untere Kanzelstreben
+        ctx.moveTo (w * 0.14, 0.0)
+        ctx.lineTo (w * 0.25, h * 0.16)
+        ctx.lineTo (w * 0.18, h)
+        ctx.moveTo (w * 0.86, 0.0)
+        ctx.lineTo (w * 0.75, h * 0.16)
+        ctx.lineTo (w * 0.82, h)
+        ctx.moveTo (w * 0.25, h * 0.16)
+        ctx.lineTo (w * 0.75, h * 0.16)
+        ctx.stroke ()
+
+        stroke ctx CyanDim
+        ctx.lineWidth <- 1.5
+        ctx.beginPath ()
+        ctx.moveTo (w * 0.145, 0.0)
+        ctx.lineTo (w * 0.254, h * 0.16)
+        ctx.lineTo (w * 0.184, h)
+        ctx.moveTo (w * 0.855, 0.0)
+        ctx.lineTo (w * 0.746, h * 0.16)
+        ctx.lineTo (w * 0.816, h)
+        ctx.stroke ()
+
+    /// 3D-Sensorschirm (Gravidar) unten in der Bildmitte: zeigt Gegner und nahe
+    /// Gross-Asteroiden relativ zur Ausrichtung des eigenen Schiffs mit Hoehenlinien.
+    let private drawRadar
+        (hud: Hud)
+        (world: World)
+        (alpha: float)
+        (playerPosition: Vec3)
+        (playerRotation: Quat)
+        (target: int)
+        =
+        let ctx = hud.Ctx
+        let cx = hud.Width * 0.5
+        let cy = hud.Height - 66.0
+        let rx = 74.0
+        let ry = 30.0
+        let radarRange = 460.0
+
+        // Hintergrund-Gehaeuse
+        fill ctx "rgba(3, 12, 23, 0.74)"
+        ctx.fillRect (cx - 92.0, cy - 52.0, 184.0, 102.0)
+        stroke ctx CyanDim
+        ctx.lineWidth <- 1.0
+        ctx.strokeRect (cx - 92.0, cy - 52.0, 184.0, 102.0)
+        fill ctx Cyan
+        ctx.fillRect (cx - 18.0, cy - 52.0, 36.0, 2.0)
+
+        // Radarscheibe (geneigte Ellipse: y = x * ry/rx)
+        ctx.save ()
+        ctx.translate (cx, cy + 4.0)
+        ctx.scale (1.0, ry / rx)
+        fill ctx "rgba(8, 28, 46, 0.55)"
+        ctx.beginPath ()
+        ctx.arc (0.0, 0.0, rx, 0.0, 2.0 * Math.PI)
+        ctx.fill ()
+        stroke ctx "rgba(120, 230, 255, 0.35)"
+        ctx.lineWidth <- 1.5
+        ctx.stroke ()
+        stroke ctx CyanDim
+        ctx.beginPath ()
+        ctx.arc (0.0, 0.0, rx * 0.5, 0.0, 2.0 * Math.PI)
+        ctx.moveTo (-rx, 0.0)
+        ctx.lineTo (rx, 0.0)
+        ctx.moveTo (0.0, -rx)
+        ctx.lineTo (0.0, rx)
+        // Blickkegel nach vorn (oben auf der Scheibe = -Z)
+        ctx.moveTo (0.0, 0.0)
+        ctx.lineTo (-rx * 0.62, -rx * 0.78)
+        ctx.moveTo (0.0, 0.0)
+        ctx.lineTo (rx * 0.62, -rx * 0.78)
+        ctx.stroke ()
+        ctx.restore ()
+
+        // Konjugierte Schiffs-Quaternion fuer allokationsfreie Welt->Lokal-Rotation
+        let qx = -playerRotation.X
+        let qy = -playerRotation.Y
+        let qz = -playerRotation.Z
+        let qw = playerRotation.W
+        let baseY = cy + 4.0
+
+        // 1. Nahe, groessere Asteroiden als dezente Punkte auf der Scheibe
+        let field = world.Asteroids
+        let ad = field.Data
+        fill ctx "rgba(130, 175, 200, 0.42)"
+
+        for i in 0 .. field.Count - 1 do
+            let o = i * AsteroidField.Stride
+            let radius = float ad.[o + 6]
+
+            if radius >= 9.0 then
+                let vx = float ad.[o] - playerPosition.X
+                let vy = float ad.[o + 1] - playerPosition.Y
+                let vz = float ad.[o + 2] - playerPosition.Z
+
+                if vx * vx + vy * vy + vz * vz < radarRange * radarRange then
+                    let tx = 2.0 * (qy * vz - qz * vy)
+                    let ty = 2.0 * (qz * vx - qx * vz)
+                    let tz = 2.0 * (qx * vy - qy * vx)
+                    let lx = (vx + qw * tx + (qy * tz - qz * ty)) / radarRange
+                    let lz = (vz + qw * tz + (qx * ty - qy * tx)) / radarRange
+                    let px = cx + lx * rx
+                    let py = baseY + lz * ry
+                    ctx.fillRect (px - 1.2, py - 1.2, 2.4, 2.4)
+
+        // 2. Gegner mit vertikalen Hoehenlinien (Stalks)
+        let enemies = world.Enemies
+
+        for i in 0 .. enemies.Length - 1 do
+            let enemy = enemies.[i]
+
+            if enemy.Alive then
+                let ex = enemy.PrevPosition.X + (enemy.Position.X - enemy.PrevPosition.X) * alpha
+                let ey = enemy.PrevPosition.Y + (enemy.Position.Y - enemy.PrevPosition.Y) * alpha
+                let ez = enemy.PrevPosition.Z + (enemy.Position.Z - enemy.PrevPosition.Z) * alpha
+                let vx = ex - playerPosition.X
+                let vy = ey - playerPosition.Y
+                let vz = ez - playerPosition.Z
+                let tx = 2.0 * (qy * vz - qz * vy)
+                let ty = 2.0 * (qz * vx - qx * vz)
+                let tz = 2.0 * (qx * vy - qy * vx)
+                let mutable lx = (vx + qw * tx + (qy * tz - qz * ty)) / radarRange
+                let mutable ly = (vy + qw * ty + (qz * tx - qx * tz)) / radarRange
+                let mutable lz = (vz + qw * tz + (qx * ty - qy * tx)) / radarRange
+                let planar = sqrt (lx * lx + lz * lz)
+
+                if planar > 0.96 then
+                    let inv = 0.96 / planar
+                    lx <- lx * inv
+                    lz <- lz * inv
+
+                ly <- Math.Max(-0.9, Math.Min(0.9, ly))
+                let discX = cx + lx * rx
+                let discY = baseY + lz * ry
+                let blipY = discY - ly * 22.0
+                let isTarget = i = target
+
+                // Fusspunkt auf der Scheibe + Hoehenlinie
+                stroke ctx (if isTarget then Amber else RedSoft)
+                ctx.lineWidth <- 1.2
+                ctx.beginPath ()
+                ctx.moveTo (discX, discY)
+                ctx.lineTo (discX, blipY)
+                ctx.stroke ()
+                fill ctx (if isTarget then Amber else Red)
+                ctx.beginPath ()
+                ctx.arc (discX, blipY, (if isTarget then 3.4 else 2.5), 0.0, 2.0 * Math.PI)
+                ctx.fill ()
+
+        // Eigenes Schiff in der Mitte
+        fill ctx Cyan
+        ctx.fillRect (cx - 2.0, baseY - 2.0, 4.0, 4.0)
+        ctx.textAlign <- "center"
+        ctx.textBaseline <- "top"
+        ctx.font <- FontSmall
+        fill ctx TextDim
+        ctx.fillText ("GRAVIDAR", cx, cy - 46.0)
+
     /// Das Flug-HUD.
     ///   viewProj/aspect : Kamera des aktuellen Frames
     ///   alpha           : Interpolationsfaktor zwischen den letzten Physikzustaenden
@@ -289,6 +497,7 @@ module Hud =
         (hud: Hud)
         (viewProj: Mat4)
         (aspect: float)
+        (cameraMode: CameraMode)
         (world: World)
         (brains: AiBrain[])
         (input: InputState)
@@ -307,6 +516,9 @@ module Hud =
         let centerX = w * 0.5
         let centerY = h * 0.5
 
+        if cameraMode = Cockpit && player.Alive then
+            drawCockpitCanopy ctx w h
+
         // ---- Treffer-Feedback: roter Bildrand ----
         if hud.DamageFlash > 0.01 then
             ctx.globalAlpha <- hud.DamageFlash
@@ -321,39 +533,69 @@ module Hud =
         let aimX = if aimVisible then hud.ScreenX else centerX
         let aimY = if aimVisible then hud.ScreenY else centerY
 
-        // ---- Zielerfassung: der Gegner, der dem Fadenkreuz am naechsten liegt;
-        //      ist keiner im Bild, der raeumlich naechste. Das aktuelle Ziel bekommt
-        //      einen Bonus, damit die Erfassung nicht zwischen zwei Gegnern flattert.
+        // ---- Prograde-Drift-Marke (tatsaechlicher Geschwindigkeitsvektor) ----
+        let speed = Vec3.length player.Velocity
+
+        if player.Alive && speed > 6.0 then
+            project
+                hud
+                viewProj
+                (playerPosition.X + player.Velocity.X * 12.0)
+                (playerPosition.Y + player.Velocity.Y * 12.0)
+                (playerPosition.Z + player.Velocity.Z * 12.0)
+
+            if onScreen hud then
+                let vx = hud.ScreenX
+                let vy = hud.ScreenY
+                stroke ctx "rgba(120, 230, 255, 0.52)"
+                ctx.lineWidth <- 1.3
+                ctx.beginPath ()
+                ctx.arc (vx, vy, 5.0, 0.0, 2.0 * Math.PI)
+                ctx.moveTo (vx - 10.0, vy)
+                ctx.lineTo (vx - 5.0, vy)
+                ctx.moveTo (vx + 5.0, vy)
+                ctx.lineTo (vx + 10.0, vy)
+                ctx.moveTo (vx, vy - 10.0)
+                ctx.lineTo (vx, vy - 5.0)
+                ctx.stroke ()
+
+        // ---- Zielerfassung: manuell gewaehltes Ziel bleibt bestehen, solange es lebt;
+        //      sonst der Gegner, der dem Fadenkreuz am naechsten liegt.
         let mutable target = -1
-        let mutable bestScore = Double.MaxValue
 
-        for i in 0 .. enemies.Length - 1 do
-            let enemy = enemies.[i]
+        if hud.ManualLock && hud.Target >= 0 && hud.Target < enemies.Length && enemies.[hud.Target].Alive then
+            target <- hud.Target
+        else
+            hud.ManualLock <- false
+            let mutable bestScore = Double.MaxValue
 
-            if enemy.Alive then
-                let ex = enemy.PrevPosition.X + (enemy.Position.X - enemy.PrevPosition.X) * alpha
-                let ey = enemy.PrevPosition.Y + (enemy.Position.Y - enemy.PrevPosition.Y) * alpha
-                let ez = enemy.PrevPosition.Z + (enemy.Position.Z - enemy.PrevPosition.Z) * alpha
-                project hud viewProj ex ey ez
-                let dx = ex - playerPosition.X
-                let dy = ey - playerPosition.Y
-                let dz = ez - playerPosition.Z
-                let distance = sqrt (dx * dx + dy * dy + dz * dz)
+            for i in 0 .. enemies.Length - 1 do
+                let enemy = enemies.[i]
 
-                let mutable candidate =
-                    if onScreen hud then
-                        let sx = hud.ScreenX - aimX
-                        let sy = hud.ScreenY - aimY
-                        sqrt (sx * sx + sy * sy)
-                    else
-                        10000.0 + distance
+                if enemy.Alive then
+                    let ex = enemy.PrevPosition.X + (enemy.Position.X - enemy.PrevPosition.X) * alpha
+                    let ey = enemy.PrevPosition.Y + (enemy.Position.Y - enemy.PrevPosition.Y) * alpha
+                    let ez = enemy.PrevPosition.Z + (enemy.Position.Z - enemy.PrevPosition.Z) * alpha
+                    project hud viewProj ex ey ez
+                    let dx = ex - playerPosition.X
+                    let dy = ey - playerPosition.Y
+                    let dz = ez - playerPosition.Z
+                    let distance = sqrt (dx * dx + dy * dy + dz * dz)
 
-                if i = hud.Target then
-                    candidate <- candidate * 0.6
+                    let mutable candidate =
+                        if onScreen hud then
+                            let sx = hud.ScreenX - aimX
+                            let sy = hud.ScreenY - aimY
+                            sqrt (sx * sx + sy * sy)
+                        else
+                            10000.0 + distance
 
-                if candidate < bestScore then
-                    bestScore <- candidate
-                    target <- i
+                    if i = hud.Target then
+                        candidate <- candidate * 0.6
+
+                    if candidate < bestScore then
+                        bestScore <- candidate
+                        target <- i
 
         hud.Target <- target
 
@@ -397,13 +639,27 @@ module Hud =
                         targetX <- x
                         targetY <- y
                         targetVisible <- true
-                        // Zustandsbalken (Huelle + Schild) und Entfernung
-                        let health = (enemy.Hull + enemy.Shield) / (enemy.MaxHull + enemy.MaxShield)
+                        // Getrennte Balken fuer Schild (blau) und Huelle (rot)
+                        let shieldFrac = enemy.Shield / Math.Max(1.0, enemy.MaxShield)
+                        let hullFrac = enemy.Hull / Math.Max(1.0, enemy.MaxHull)
+                        fill ctx CyanDim
+                        ctx.fillRect (x - size, y - size - 13.0, size * 2.0, 3.0)
+                        fill ctx ShieldBlue
+                        ctx.fillRect (x - size, y - size - 13.0, size * 2.0 * shieldFrac, 3.0)
                         fill ctx RedDim
                         ctx.fillRect (x - size, y - size - 8.0, size * 2.0, 3.0)
                         fill ctx Red
-                        ctx.fillRect (x - size, y - size - 8.0, size * 2.0 * health, 3.0)
-                        ctx.fillText (number hud distance, x, y + size + 11.0)
+                        ctx.fillRect (x - size, y - size - 8.0, size * 2.0 * hullFrac, 3.0)
+
+                        let stateLabel =
+                            match brains.[i].State with
+                            | AiState.Attack -> "ANGRIFF"
+                            | AiState.Chase -> "ANFLUG"
+                            | AiState.Evade -> "MANOEVER"
+                            | AiState.Patrol -> "PATROUILLE"
+
+                        fill ctx (if attacking then Red else TextColor)
+                        ctx.fillText (number hud distance + "m · " + stateLabel, x, y + size + 11.0)
                 else
                     // Bildschirmrichtung zum Gegner. Die Clip-Koordinaten VOR der Division
                     // durch w zeigen auch fuer Ziele hinter der Kamera in die richtige
@@ -527,10 +783,16 @@ module Hud =
         // ---- Unten links: Schild, Huelle, Tempo, Schub, Boost ----
         let left = 24.0
         let barX = left + 62.0
-        let barW = 190.0
+        let barW = Math.Min(190.0, w - 158.0)
         let baseY = h - 132.0
         let hullFraction = player.Hull / player.MaxHull
         let critical = hullFraction < 0.3
+        fill ctx "rgba(3, 12, 23, 0.72)"
+        ctx.fillRect (left - 12.0, baseY - 18.0, barW + 118.0, 140.0)
+        fill ctx Cyan
+        ctx.fillRect (left - 12.0, baseY - 18.0, 34.0, 2.0)
+        stroke ctx CyanDim
+        ctx.strokeRect (left - 12.0, baseY - 18.0, barW + 118.0, 140.0)
         ctx.textAlign <- "left"
         ctx.textBaseline <- "top"
         ctx.font <- FontLabel
@@ -552,31 +814,58 @@ module Hud =
         fill ctx Cyan
         ctx.fillText (number hud (Vec3.length player.Velocity), barX, baseY + 46.0)
 
-        // Blinkende Warnung bei kritischer Huelle
+        // Blinkende Warnung bei kritischer Huelle oder aktivem Overdrive
         if critical && player.Alive && sin (hud.Time * 9.0) > 0.0 then
             ctx.font <- FontLabel
             fill ctx Red
-            ctx.fillText ("HUELLE KRITISCH", left, baseY - 24.0)
+            ctx.fillText ("HUELLE KRITISCH", left, baseY - 38.0)
+        elif player.Overdrive > 0.0 && player.Alive then
+            ctx.font <- FontLabel
+            fill ctx Amber
+            ctx.fillText ("WAFFEN-OVERDRIVE AKTIV", left, baseY - 38.0)
 
-        // ---- Unten rechts: Welle, Gegner, Punkte ----
+        // ---- Unten Mitte: 3D-Sensorschirm (Gravidar) ----
+        if w >= 760.0 && player.Alive then
+            drawRadar hud world alpha playerPosition playerRotation target
+
+        // ---- Unten rechts: Welle, Gegner, Punkte + Kill-Kombo ----
         if score <> hud.ScoreValue then
             hud.ScoreValue <- score
             hud.ScoreText <- string score
 
         let right = w - 24.0
+        let scoreBottom = if w < 680.0 then 178.0 else h
+
+        if hud.Combo > 1 && hud.ComboTimer > 0.0 then
+            fill ctx "rgba(3, 12, 23, 0.78)"
+            ctx.fillRect (right - 190.0, scoreBottom - 166.0, 202.0, 34.0)
+            stroke ctx Amber
+            ctx.strokeRect (right - 190.0, scoreBottom - 166.0, 202.0, 34.0)
+            ctx.textAlign <- "left"
+            ctx.font <- FontLabel
+            fill ctx Amber
+            ctx.fillText ("KOMBO x" + hud.Numbers.[hud.Combo], right - 178.0, scoreBottom - 158.0)
+            bar ctx (right - 96.0) (scoreBottom - 154.0) 96.0 6.0 (hud.ComboTimer / 8.0) Amber
+
+        fill ctx "rgba(3, 12, 23, 0.72)"
+        ctx.fillRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
+        stroke ctx CyanDim
+        ctx.strokeRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
+        fill ctx Amber
+        ctx.fillRect (right - 22.0, scoreBottom - 126.0, 34.0, 2.0)
         ctx.textAlign <- "right"
         ctx.font <- FontLabel
         fill ctx TextColor
-        ctx.fillText ("WELLE", right - 78.0, h - 98.0)
-        ctx.fillText ("GEGNER", right - 78.0, h - 68.0)
-        ctx.fillText ("PUNKTE", right - 78.0, h - 38.0)
+        ctx.fillText ("WELLE", right - 78.0, scoreBottom - 98.0)
+        ctx.fillText ("GEGNER", right - 78.0, scoreBottom - 68.0)
+        ctx.fillText ("PUNKTE", right - 78.0, scoreBottom - 38.0)
         ctx.font <- FontValue
         fill ctx Cyan
-        ctx.fillText (number hud (float wave), right, h - 105.0)
+        ctx.fillText (number hud (float wave), right, scoreBottom - 105.0)
         fill ctx (if enemiesAlive > 0 then Red else TextDim)
-        ctx.fillText (number hud (float enemiesAlive), right, h - 75.0)
+        ctx.fillText (number hud (float enemiesAlive), right, scoreBottom - 75.0)
         fill ctx Amber
-        ctx.fillText (hud.ScoreText, right, h - 45.0)
+        ctx.fillText (hud.ScoreText, right, scoreBottom - 45.0)
 
         // ---- Meldung (blendet am Ende aus) ----
         if hud.BannerTime > 0.0 then
@@ -592,11 +881,16 @@ module Hud =
             ctx.fillText (hud.BannerSub, centerX, h * 0.2 + 40.0)
             ctx.globalAlpha <- 1.0
 
-        // ---- Statistik oben links (dezent) ----
+        // ---- Statistik oben links & Systemstatus oben rechts ----
         ctx.textAlign <- "left"
         ctx.font <- FontSmall
         fill ctx TextDim
         ctx.fillText (hud.StatsText, 16.0, 12.0)
+
+        ctx.textAlign <- "right"
+        let camLabel = if cameraMode = Cockpit then "COCKPIT" else "VERFOLGER"
+        let soundLabel = if hud.Muted then "TON AUS" else "TON AN"
+        ctx.fillText ("[C] " + camLabel + "   [T] ZIEL   [M] " + soundLabel, right, 12.0)
 
     /// Abgedunkelter Hintergrund fuer die Vollbild-Texte (Menue, Pause, Game Over).
     let private dim (hud: Hud) (opacity: float) =
@@ -627,37 +921,63 @@ module Hud =
     /// Titelbildschirm mit Steuerungsuebersicht.
     let drawMenu (hud: Hud) =
         let ctx = hud.Ctx
-        let cx = hud.Width * 0.5
-        let top = hud.Height * 0.2
-        dim hud 0.45
-        ctx.textAlign <- "center"
+        ctx.fillStyle <- U3.Case2 hud.MenuShade
+        ctx.fillRect (0.0, 0.0, hud.Width, hud.Height)
+        let scale = Math.Min(1.0, Math.Min((hud.Width - 48.0) / 430.0, (hud.Height - 60.0) / 660.0))
+        let left = if hud.Width > 1000.0 then 64.0 else 28.0
+        let top = Math.Max(28.0, (hud.Height - 660.0 * scale) * 0.44)
+        ctx.save ()
+        ctx.translate (left, top)
+        ctx.scale (scale, scale)
+        ctx.textAlign <- "left"
         ctx.textBaseline <- "top"
-        ctx.font <- FontTitle
-        fill ctx Cyan
-        ctx.fillText ("FABLE SPACE ENGINE", cx, top)
-        ctx.font <- FontSmall
-        fill ctx TextColor
-        ctx.fillText ("3D-Weltraum-Prototyp  ::  F# + natives WebGL2", cx, top + 62.0)
-
-        // Steuerung als zweispaltige Tabelle
-        let rowY = top + 118.0
         ctx.font <- FontLabel
-        menuRow ctx cx rowY "W / S" "Nase runter / hoch"
-        menuRow ctx cx (rowY + 22.0) "A / D" "Rolle links / rechts"
-        menuRow ctx cx (rowY + 44.0) "Q / E" "Gieren links / rechts"
-        menuRow ctx cx (rowY + 66.0) "Shift" "Boost"
-        menuRow ctx cx (rowY + 88.0) "Pfeil hoch / runter" "Schubhebel"
-        menuRow ctx cx (rowY + 110.0) "X" "Bremse"
-        menuRow ctx cx (rowY + 132.0) "Leertaste / linke Maustaste" "Feuer"
-        menuRow ctx cx (rowY + 154.0) "Maus (nach Klick ins Bild)" "Pitch und Yaw"
-        menuRow ctx cx (rowY + 176.0) "C" "Kamera wechseln"
-        menuRow ctx cx (rowY + 198.0) "P" "Pause"
-
-        ctx.textAlign <- "center"
-        prompt hud "ENTER oder Klick zum Starten" (rowY + 252.0)
-        ctx.font <- FontSmall
+        fill ctx Cyan
+        ctx.fillRect (0.0, 2.0, 22.0, 2.0)
+        ctx.fillText ("F L U G B E R E I T  /  0 1", 34.0, -3.0)
+        ctx.font <- "800 86px Bahnschrift, Segoe UI, sans-serif"
+        fill ctx "#f0f6f5"
+        ctx.fillText ("FABLE", -5.0, 34.0)
+        fill ctx Cyan
+        ctx.fillText ("SPACE", -5.0, 114.0)
+        ctx.font <- "14px Segoe UI, sans-serif"
+        fill ctx TextColor
+        ctx.fillText ("Ein Schiff. Ein Asteroidenfeld. Kein sicherer Kurs.", 0.0, 222.0)
+        ctx.fillText ("Überlebe die Angriffswellen und schlage deinen Rekord.", 0.0, 245.0)
+        stroke ctx CyanDim
+        ctx.beginPath ()
+        ctx.moveTo (0.0, 287.0)
+        ctx.lineTo (416.0, 287.0)
+        ctx.stroke ()
+        ctx.font <- FontLabel
         fill ctx TextDim
-        ctx.fillText (hud.BestText, cx, rowY + 282.0)
+        ctx.fillText ("FLUGSTEUERUNG", 0.0, 307.0)
+        let rowY = 338.0
+        menuRow ctx 162.0 rowY "W / S" "Nase runter / hoch"
+        menuRow ctx 162.0 (rowY + 23.0) "A / D · Q / E" "Rollen · Gieren"
+        menuRow ctx 162.0 (rowY + 46.0) "↑ / ↓" "Schub einstellen"
+        menuRow ctx 162.0 (rowY + 69.0) "SHIFT · X" "Boost · Bremse"
+        menuRow ctx 162.0 (rowY + 92.0) "LEERTASTE / LMB" "Feuern"
+        menuRow ctx 162.0 (rowY + 115.0) "T / TAB / RMB" "Ziel aufschalten"
+        menuRow ctx 162.0 (rowY + 138.0) "MAUS NACH KLICK" "Schiff ausrichten"
+        menuRow ctx 162.0 (rowY + 161.0) "C · M · P" "Kamera · Ton · Pause"
+        ctx.textAlign <- "left"
+        fill ctx "rgba(118, 229, 249, 0.12)"
+        ctx.fillRect (0.0, 542.0, 416.0, 56.0)
+        stroke ctx "rgba(118, 229, 249, 0.6)"
+        ctx.strokeRect (0.0, 542.0, 416.0, 56.0)
+        fill ctx Cyan
+        ctx.fillRect (0.0, 542.0, 3.0, 56.0)
+        ctx.font <- "600 15px Segoe UI, sans-serif"
+        ctx.fillText ("FLUG STARTEN", 20.0, 560.0)
+        ctx.font <- FontSmall
+        ctx.textAlign <- "right"
+        fill ctx TextColor
+        ctx.fillText ("ENTER / KLICK  →", 396.0, 562.0)
+        ctx.textAlign <- "left"
+        fill ctx TextDim
+        ctx.fillText (hud.BestText, 0.0, 620.0)
+        ctx.restore ()
 
     /// Pausen-Overlay (ueber dem weiter sichtbaren Flug-HUD).
     let drawPaused (hud: Hud) =

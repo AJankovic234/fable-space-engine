@@ -31,12 +31,12 @@ type Team =
     | Player = 0
     | Enemy = 1
 
-/// Ereignisse der Simulation fuer die Spiellogik (Punkte, HUD, Wellen).
+/// Ereignisse der Simulation fuer die Spiellogik (Punkte, HUD, Wellen, Sound).
 /// Main leert die Liste nach jedem Frame.
 type GameEvent =
-    | LaserFired of team: Team
-    | AsteroidDestroyed of radius: float * byTeam: Team
-    | ShipHit of victim: Team * damage: float
+    | LaserFired of team: Team * position: Vec3
+    | AsteroidDestroyed of radius: float * byTeam: Team * position: Vec3
+    | ShipHit of victim: Team * damage: float * shieldAbsorbed: bool
     | ShipDestroyed of victim: Team * position: Vec3
 
 /// Steuerbefehle eines Schiffs. Der Spieler fuellt sie aus der Eingabe,
@@ -97,6 +97,12 @@ type Ship =
       mutable ShieldDelay: float
       /// 1 direkt nach einem Treffer, klingt ab (Treffer-Aufblitzen beim Rendern).
       mutable HitFlash: float
+      /// > 0 direkt nach einem Schildtreffer (steuert die 3D-Energieschild-Blase).
+      mutable ShieldFlash: float
+      /// > 0 waehrend aktivem Waffen-Overdrive (schnellere Feuerrate + mehr Schaden).
+      mutable Overdrive: float
+      /// Timer fuer Partikelspuren (Rauch bei kritischer Huelle, Funken beim Boost).
+      mutable TrailTimer: float
       mutable Alive: bool }
 
 /// Kampf- und Effektparameter.
@@ -180,6 +186,9 @@ module Ship =
           Shield = shield
           ShieldDelay = 0.0
           HitFlash = 0.0
+          ShieldFlash = 0.0
+          Overdrive = 0.0
+          TrailTimer = 0.0
           Alive = false }
 
     let createPlayer () : Ship =
@@ -242,6 +251,9 @@ module Ship =
         ship.Shield <- ship.MaxShield
         ship.ShieldDelay <- 0.0
         ship.HitFlash <- 0.0
+        ship.ShieldFlash <- 0.0
+        ship.Overdrive <- 0.0
+        ship.TrailTimer <- 0.0
         ship.Alive <- true
 
 // -------------------------------------------------------------------------------------
@@ -1354,11 +1366,16 @@ module Damage =
             target.Hull <- target.Hull - (amount - absorbed)
             target.ShieldDelay <- Combat.ShieldRegenDelay
             target.HitFlash <- 1.0
-            world.Events.Add(ShipHit(target.Team, amount))
+
+            if absorbed > 0.0 then
+                target.ShieldFlash <- 1.0
+
+            world.Events.Add(ShipHit(target.Team, amount, absorbed > 0.0))
 
             if target.Hull <= 0.0 then
                 target.Hull <- 0.0
                 target.Alive <- false
+                target.ShieldFlash <- 0.0
                 // Ein totes Schiff bewegt sich nicht mehr: Interpolation einfrieren
                 target.PrevPosition <- target.Position
                 target.PrevRotation <- target.Rotation
@@ -1434,7 +1451,7 @@ module Damage =
                         (int (rng.NextFloat() * float AsteroidField.Variants) % AsteroidField.Variants)
                     |> ignore
 
-            world.Events.Add(AsteroidDestroyed(radius, byTeam))
+            world.Events.Add(AsteroidDestroyed(radius, byTeam, Vec3(x, y, z)))
 
 // -------------------------------------------------------------------------------------
 //  Simulation
@@ -1454,25 +1471,30 @@ module Physics =
         let vz = forward.Z * Combat.LaserSpeed + ship.Velocity.Z
         let left = ship.Position + Quat.rotateVec3 q ship.GunLeft
         let right = ship.Position + Quat.rotateVec3 q ship.GunRight
+        let dmg = if ship.Overdrive > 0.0 then ship.LaserDamage * 1.3 else ship.LaserDamage
 
-        LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W ship.LaserDamage ship.Team
+        LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
         |> ignore
 
-        LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W ship.LaserDamage ship.Team
+        LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
         |> ignore
 
-        world.Events.Add(LaserFired ship.Team)
+        world.Events.Add(LaserFired(ship.Team, ship.Position))
 
     /// Flugmodell, Bewaffnung und Schildregeneration eines Schiffs.
     let private stepShip (world: World) (ship: Ship) (dt: float) =
         if ship.Alive then
             Flight.step ship dt
 
+            if ship.Overdrive > 0.0 then
+                ship.Overdrive <- Math.Max(0.0, ship.Overdrive - dt)
+
             ship.FireCooldown <- ship.FireCooldown - dt
 
             if ship.Controls.Fire && ship.FireCooldown <= 0.0 then
                 fire world ship
-                ship.FireCooldown <- ship.FireInterval
+                let interval = if ship.Overdrive > 0.0 then ship.FireInterval * 0.62 else ship.FireInterval
+                ship.FireCooldown <- interval
             elif ship.FireCooldown < 0.0 then
                 ship.FireCooldown <- 0.0
 
@@ -1481,8 +1503,30 @@ module Physics =
             elif ship.Shield < ship.MaxShield then
                 ship.Shield <- Math.Min(ship.MaxShield, ship.Shield + Combat.ShieldRegenRate * dt)
 
+            // Partikelspuren bei kritischer Huelle (Funken/Feuer) oder aktivem Boost
+            ship.TrailTimer <- ship.TrailTimer - dt
+
+            if ship.TrailTimer <= 0.0 then
+                ship.TrailTimer <- 0.045
+                let hullRatio = ship.Hull / ship.MaxHull
+
+                if hullRatio < 0.42 then
+                    let p = ship.Position + Quat.rotateVec3 ship.Rotation (Vec3(0.0, 0.1, 1.4))
+                    let v = ship.Velocity
+                    Effects.burst world ParticleKind.Glow 2 p.X p.Y p.Z (v.X * 0.35) (v.Y * 0.35) (v.Z * 0.35) 0.5 3.0 11.0 0.25 0.55 0.18 0.42 1.2 0.45 0.12
+
+                if ship.Team = Team.Player && ship.Boost > 0.45 then
+                    let pL = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineLeft
+                    let pR = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineRight
+                    let v = ship.Velocity
+                    Effects.burst world ParticleKind.Glow 1 pL.X pL.Y pL.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.15 2.0 8.0 0.12 0.26 0.12 0.24 0.25 0.85 1.4
+                    Effects.burst world ParticleKind.Glow 1 pR.X pR.Y pR.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.15 2.0 8.0 0.12 0.26 0.12 0.24 0.25 0.85 1.4
+
         if ship.HitFlash > 0.0 then
             ship.HitFlash <- Math.Max(0.0, ship.HitFlash - dt * 6.0)
+
+        if ship.ShieldFlash > 0.0 then
+            ship.ShieldFlash <- Math.Max(0.0, ship.ShieldFlash - dt * 3.2)
 
     /// Prueft einen Bolt (Strecke p0-p1) gegen ein Schiff: erst die Huellkugel,
     /// dann die OBB. Liefert t in [0, 1] oder -1.

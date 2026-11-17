@@ -85,9 +85,6 @@ let private DustCell = 160.0
 [<Literal>]
 let private DustStride = 4
 
-[<Literal>]
-let private StarCount = 2600
-
 /// Aenderung des Schubhebels pro Sekunde bei gehaltener Taste.
 [<Literal>]
 let private ThrottleRate = 0.7
@@ -111,6 +108,7 @@ let private BestKey = "fable-space-engine.best"
 type private Scene =
     { Renderer: Renderer
       Hud: Hud
+      Sound: SoundEngine
       Input: InputState
       Camera: Camera
       World: World
@@ -120,10 +118,11 @@ type private Scene =
       EnemyBatch: InstanceBatch
       AsteroidBatches: InstanceBatch[]
       DebrisBatch: InstanceBatch
-      SkyBatch: InstanceBatch
-      SunBatch: InstanceBatch
+      Sky: SkyBackdrop
       DustBatch: InstanceBatch
       ExhaustBatch: InstanceBatch
+      EngineHaloBatch: InstanceBatch
+      ShieldBatch: InstanceBatch
       LaserBatch: InstanceBatch
       GlowBatch: InstanceBatch
       Dust: JS.Float32Array
@@ -183,26 +182,27 @@ let private createScene () : Scene =
     let hudCanvas = unbox<HTMLCanvasElement> (document.getElementById "hud-canvas")
     let renderer = Renderer.create glCanvas
     let camera = Camera.create ()
+    let sky = SkyBackdrop.create renderer
     camera.CockpitOffset <- ShipHardpoints.playerCockpit
 
     // Sonne: Richtung ZUR Sonne; dieselbe Richtung bekommt die sichtbare Sonnenscheibe
     let sunDirection = Vec3.normalize (Vec3(0.78, 0.42, 0.28))
     Lights.setSun renderer.Lights sunDirection.X sunDirection.Y sunDirection.Z 1.0 0.95 0.86
-    Lights.setAmbient renderer.Lights 0.06 0.07 0.10
+    Lights.setAmbient renderer.Lights 0.085 0.10 0.14
 
     // Meshes
     let shipMesh = Renderer.createMesh renderer (ProceduralMeshes.playerShip ())
     let enemyMesh = Renderer.createMesh renderer (ProceduralMeshes.interceptor ())
     let boltMesh = Renderer.createMesh renderer (ProceduralMeshes.laserBolt ())
-    let starMesh = Renderer.createMesh renderer (ProceduralMeshes.glowSprite 8 3)
+    let exhaustMesh = Renderer.createMesh renderer (ProceduralMeshes.exhaustPlume ())
+    let shieldMesh = Renderer.createMesh renderer (ProceduralMeshes.shieldBubble ())
     let particleMesh = Renderer.createMesh renderer (ProceduralMeshes.glowSprite 12 3)
-    let sunMesh = Renderer.createMesh renderer (ProceduralMeshes.glowSprite 24 6)
 
     let asteroidMeshes =
-        [| Renderer.createMesh renderer (ProceduralMeshes.asteroid 11 2)
-           Renderer.createMesh renderer (ProceduralMeshes.asteroid 23 2)
-           Renderer.createMesh renderer (ProceduralMeshes.asteroid 37 1)
-           Renderer.createMesh renderer (ProceduralMeshes.asteroid 51 1) |]
+        [| Renderer.createMesh renderer (ProceduralMeshes.asteroid 11 3)
+           Renderer.createMesh renderer (ProceduralMeshes.asteroid 23 3)
+           Renderer.createMesh renderer (ProceduralMeshes.asteroid 37 2)
+           Renderer.createMesh renderer (ProceduralMeshes.asteroid 51 2) |]
 
     let world = World.create MaxEnemies
     World.reset world InitialAsteroids
@@ -221,35 +221,33 @@ let private createScene () : Scene =
             let batch = Renderer.createBatch renderer mesh world.Asteroids.Capacity Opaque
             batch.Shininess <- 12.0
             batch.Specular <- 0.06
+            batch.Material <- 1.0
             batch)
 
-    // Truemmer nutzen das grobe Asteroiden-Mesh (80 Dreiecke)
+    // Truemmer teilen sich das einfachere Asteroiden-Mesh (320 Dreiecke).
     let debrisBatch = Renderer.createBatch renderer asteroidMeshes.[2] world.Particles.Capacity Opaque
     debrisBatch.Shininess <- 20.0
     debrisBatch.Specular <- 0.15
-
-    // Himmel und Sonne werden einmal gefuellt und danach nie wieder hochgeladen.
-    let skyBatch = Renderer.createBatch renderer starMesh StarCount Additive
-    skyBatch.CameraRelative <- true
-    ProceduralMeshes.fillStarfield skyBatch 1977 (camera.Far * 0.85)
-    let sunBatch = Renderer.createBatch renderer sunMesh 3 Additive
-    sunBatch.CameraRelative <- true
-    ProceduralMeshes.fillSun sunBatch (camera.Far * 0.85) sunDirection
+    debrisBatch.Material <- 1.0
 
     let dustBatch = Renderer.createBatch renderer boltMesh DustCount Additive
-    let exhaustBatch = Renderer.createBatch renderer boltMesh (4 + MaxEnemies * 2) Additive
+    let exhaustBatch = Renderer.createBatch renderer exhaustMesh (4 + MaxEnemies * 2) Additive
+    let engineHaloBatch = Renderer.createBatch renderer particleMesh (8 + MaxEnemies * 3) Additive
+    let shieldBatch = Renderer.createBatch renderer shieldMesh (1 + MaxEnemies) Additive
     let laserBatch = Renderer.createBatch renderer boltMesh world.Lasers.Capacity Additive
     let glowBatch = Renderer.createBatch renderer particleMesh world.Particles.Capacity Additive
 
     Camera.snap camera world.Player.Position world.Player.Rotation
 
     let hud = Hud.create hudCanvas
+    let sound = Sound.create ()
     let best = loadBest ()
     Hud.setBest hud best
     let scale = ShipHardpoints.interceptorScale
 
     { Renderer = renderer
       Hud = hud
+      Sound = sound
       Input = Input.attach glCanvas
       Camera = camera
       World = world
@@ -258,10 +256,11 @@ let private createScene () : Scene =
       EnemyBatch = enemyBatch
       AsteroidBatches = asteroidBatches
       DebrisBatch = debrisBatch
-      SkyBatch = skyBatch
-      SunBatch = sunBatch
+      Sky = sky
       DustBatch = dustBatch
       ExhaustBatch = exhaustBatch
+      EngineHaloBatch = engineHaloBatch
+      ShieldBatch = shieldBatch
       LaserBatch = laserBatch
       GlowBatch = glowBatch
       Dust = createDust ()
@@ -350,6 +349,7 @@ let private startWave (scene: Scene) =
         spawnEnemy scene i
 
     scene.Phase <- States.fighting
+    Sound.waveStart scene.Sound
     Hud.notify scene.Hud ("WELLE " + string scene.Wave) (string count + " Abfangjaeger im Anflug") 3.5
 
 /// Alle Gegner der Welle sind zerstoert: Bonus, Feldreparatur, kurze Pause.
@@ -360,6 +360,7 @@ let private completeWave (scene: Scene) =
     player.Hull <- System.Math.Min(player.MaxHull, player.Hull + 35.0)
     scene.Phase <- States.intermission
     scene.PhaseTimer <- IntermissionTime
+    Sound.waveCleared scene.Sound
 
     Hud.notify
         scene.Hud
@@ -370,6 +371,7 @@ let private completeWave (scene: Scene) =
 /// Beginnt ein neues Spiel (aus dem Menue oder nach Game Over).
 let private startGame (scene: Scene) =
     let world = scene.World
+    Sound.unlock scene.Sound
     World.reset world InitialAsteroids
     Camera.snap scene.Camera world.Player.Position world.Player.Rotation
     scene.Score <- 0
@@ -382,6 +384,9 @@ let private startGame (scene: Scene) =
     scene.Accumulator <- 0.0
     scene.Hud.DamageFlash <- 0.0
     scene.Hud.Target <- -1
+    scene.Hud.ManualLock <- false
+    scene.Hud.Combo <- 1
+    scene.Hud.ComboTimer <- 0.0
     Hud.notify scene.Hud "BEREIT MACHEN" "Die erste Welle ist im Anflug" 2.3
     setState scene States.playing
 
@@ -394,6 +399,7 @@ let private endGame (scene: Scene) =
         saveBest scene.Best
         Hud.setBest scene.Hud scene.Best
 
+    Sound.gameOver scene.Sound
     Hud.setResult scene.Hud scene.Score scene.Wave scene.Kills scene.Best isBest
     setState scene States.gameOver
 
@@ -420,7 +426,7 @@ let private applyMenuControls (ship: Ship) =
     c.Brake <- true
     c.Fire <- false
 
-/// Wertet die Ereignisse der Simulation aus: Punkte, Treffer-Feedback, Spielende.
+/// Wertet die Ereignisse der Simulation aus: Punkte, Treffer-Feedback, Sound, Spielende.
 let private processEvents (scene: Scene) =
     let events = scene.World.Events
     let player = scene.World.Player
@@ -432,30 +438,57 @@ let private processEvents (scene: Scene) =
 
     for i in 0 .. events.Count - 1 do
         match events.[i] with
-        | AsteroidDestroyed(radius, team) ->
-            if playing && team = Team.Player then
-                scene.Score <- scene.Score + 10 + int radius
+        | AsteroidDestroyed(radius, team, position) ->
+            if playing then
+                let distance = Vec3.distance position player.Position
+                Sound.explosion scene.Sound (System.Math.Min(1.2, radius * 0.06)) distance
+
+                if team = Team.Player then
+                    scene.Score <- scene.Score + (10 + int radius) * scene.Hud.Combo
         | ShipDestroyed(victim, position) ->
+            let distance = Vec3.distance position player.Position
+
+            if playing then
+                Sound.explosion scene.Sound 1.5 distance
+
             if victim = Team.Enemy then
                 if playing then
                     scene.Kills <- scene.Kills + 1
-                    scene.Score <- scene.Score + 100 * System.Math.Max(1, scene.Wave)
+
+                    if scene.Hud.ComboTimer > 0.0 then
+                        scene.Hud.Combo <- System.Math.Min(4, scene.Hud.Combo + 1)
+                    else
+                        scene.Hud.Combo <- 1
+
+                    scene.Hud.ComboTimer <- 8.0
+                    scene.Score <- scene.Score + 100 * System.Math.Max(1, scene.Wave) * scene.Hud.Combo
+
+                    // Schild-Boost bei jedem Abschuss; ab 3x Kombo aktiviert sich der Waffen-Overdrive
+                    player.Shield <- System.Math.Min(player.MaxShield, player.Shield + 16.0)
+                    player.ShieldFlash <- System.Math.Max(player.ShieldFlash, 0.45)
+
+                    if scene.Hud.Combo >= 3 then
+                        player.Overdrive <- 7.5
 
                 // Nahe Explosionen ruetteln an der Kamera
-                let distance = Vec3.distance position player.Position
-
                 if distance < 120.0 then
                     scene.Shake <- scene.Shake + 0.9 * (1.0 - distance / 120.0)
             elif playing then
                 scene.DeathTimer <- DeathDelay
                 scene.Shake <- scene.Shake + 1.5
-        | ShipHit(victim, damage) ->
+        | ShipHit(victim, damage, shieldAbsorbed) ->
+            if playing then
+                Sound.hit scene.Sound shieldAbsorbed (victim = Team.Player)
+
             if victim = Team.Player then
                 Hud.damage scene.Hud damage
                 scene.Shake <- scene.Shake + damage * 0.03
             else
                 Hud.hitMarker scene.Hud
-        | LaserFired _ -> ()
+        | LaserFired(team, position) ->
+            if playing then
+                let distance = if team = Team.Player then 0.0 else Vec3.distance position player.Position
+                Sound.laser scene.Sound (team = Team.Player) distance (player.Overdrive > 0.0)
 
     events.Clear()
 
@@ -537,6 +570,7 @@ let private pushLasers (scene: Scene) (backstep: float) =
     let pool = scene.World.Lasers
     let d = pool.Data
     let cameraRotation = scene.Camera.Rotation
+    let overdrive = scene.World.Player.Overdrive > 0.0
     InstanceBatch.clear scene.LaserBatch
 
     for i in 0 .. pool.Count - 1 do
@@ -545,9 +579,10 @@ let private pushLasers (scene: Scene) (backstep: float) =
         let x = float d.[o] - float d.[o + 3] * backstep
         let y = float d.[o + 1] - float d.[o + 4] * backstep
         let z = float d.[o + 2] - float d.[o + 5] * backstep
-        let r = if isPlayer then 0.25 else 1.7
-        let g = if isPlayer then 1.6 else 0.22
-        let b = if isPlayer then 0.75 else 0.12
+        let r = if isPlayer then (if overdrive then 0.95 else 0.25) else 1.7
+        let g = if isPlayer then (if overdrive then 1.85 else 1.6) else 0.22
+        let b = if isPlayer then (if overdrive then 1.95 else 0.75) else 0.12
+        let thickness = if isPlayer && overdrive then 0.65 else 0.5
 
         InstanceBatch.pushTRS
             scene.LaserBatch
@@ -558,8 +593,8 @@ let private pushLasers (scene: Scene) (backstep: float) =
             (float d.[o + 7])
             (float d.[o + 8])
             (float d.[o + 9])
-            0.5
-            0.5
+            thickness
+            thickness
             13.0
             r
             g
@@ -744,7 +779,14 @@ let private pushFlame
         b
         1.0
 
-/// Schreibt Spielerschiff, Gegner, Abgasflammen und Triebwerkslichter.
+/// Kameraparalleler Lichthof am Duesenaustritt; der Tiefentest verdeckt ihn
+/// automatisch, wenn man das Schiff von vorn sieht.
+let private pushEngineHalo (scene: Scene) (position: Vec3) (rotation: Quat) (nozzle: Vec3) (size: float) (r: float) (g: float) (b: float) =
+    let p = position + Quat.rotateVec3 rotation (Vec3(nozzle.X, nozzle.Y, nozzle.Z + 0.10))
+    let q = scene.Camera.Rotation
+    InstanceBatch.pushTRS scene.EngineHaloBatch p.X p.Y p.Z q.X q.Y q.Z q.W size size size r g b 1.0
+
+/// Schreibt Spielerschiff, Gegner, Energieschilde, Abgasflammen und Triebwerkslichter.
 let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Quat) (alpha: float) =
     let world = scene.World
     let lights = scene.Renderer.Lights
@@ -754,23 +796,51 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
     InstanceBatch.clear scene.ShipBatch
     InstanceBatch.clear scene.EnemyBatch
     InstanceBatch.clear scene.ExhaustBatch
+    InstanceBatch.clear scene.EngineHaloBatch
+    InstanceBatch.clear scene.ShieldBatch
 
     if player.Alive then
         let flash = player.HitFlash
 
-        InstanceBatch.push
-            scene.ShipBatch
-            playerPosition
-            playerRotation
-            scene.ShipScale
-            (1.0 + flash * 0.5)
-            (1.0 + flash * 0.5)
-            (1.0 + flash * 0.5)
-            (flash * 0.25)
+        // In der Cockpit-Perspektive wird das eigene Aussenmodell ausgeblendet,
+        // damit die Kamera nicht in die Rumpfnase schneidet.
+        if scene.Camera.Mode = Chase then
+            InstanceBatch.push
+                scene.ShipBatch
+                playerPosition
+                playerRotation
+                scene.ShipScale
+                (1.0 + flash * 0.5)
+                (1.0 + flash * 0.5)
+                (1.0 + flash * 0.5)
+                (flash * 0.25)
+
+            if player.ShieldFlash > 0.01 then
+                let sf = player.ShieldFlash
+                let center = playerPosition + Quat.rotateVec3 playerRotation ShipHardpoints.playerObbCenter
+                InstanceBatch.push
+                    scene.ShieldBatch
+                    center
+                    playerRotation
+                    (Vec3(2.85, 1.05, 2.95))
+                    (0.18 * sf)
+                    (0.72 * sf)
+                    (1.45 * sf)
+                    1.0
+
+        // Muendungsfeuer direkt nach einem Schuss
+        let interval = if player.Overdrive > 0.0 then player.FireInterval * 0.62 else player.FireInterval
+
+        if player.FireCooldown > interval - 0.045 then
+            pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerGunLeft 0.95 0.35 1.4 0.95
+            pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerGunRight 0.95 0.35 1.4 0.95
 
         let thrust = if player.Controls.Brake then 0.0 else player.Controls.Throttle
         let length = (0.35 + 1.5 * thrust + 3.4 * player.Boost) * flicker
         let glow = 0.35 + 0.65 * thrust + 0.9 * player.Boost
+        let haloSize = 0.72 + player.Boost * 0.38
+        pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerEngineLeft haloSize (0.06 * glow) (0.26 * glow) (0.6 * glow)
+        pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerEngineRight haloSize (0.06 * glow) (0.26 * glow) (0.6 * glow)
 
         // Pro Triebwerk ein breiter blauer Mantel und ein schmaler heisser Kern
         pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineLeft length 0.34 (0.10 * glow) (0.36 * glow) (0.95 * glow)
@@ -800,9 +870,27 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
                 (1.0 + flash * 1.5)
                 (flash * 0.6)
 
+            if enemy.ShieldFlash > 0.01 then
+                let sf = enemy.ShieldFlash
+                let center = position + Quat.rotateVec3 rotation ShipHardpoints.interceptorObbCenter
+                InstanceBatch.push
+                    scene.ShieldBatch
+                    center
+                    rotation
+                    (Vec3(2.55, 1.05, 2.85))
+                    (0.35 * sf)
+                    (0.78 * sf)
+                    (1.5 * sf)
+                    1.0
+
+            if enemy.FireCooldown > enemy.FireInterval - 0.05 then
+                pushEngineHalo scene position rotation ShipHardpoints.interceptorGunLeft 0.9 1.4 0.3 0.15
+                pushEngineHalo scene position rotation ShipHardpoints.interceptorGunRight 0.9 1.4 0.3 0.15
+
             let thrust = if enemy.Controls.Brake then 0.0 else enemy.Controls.Throttle
             let length = (0.3 + 1.3 * thrust + 2.6 * enemy.Boost) * flicker
             let glow = 0.4 + 0.6 * thrust + 0.8 * enemy.Boost
+            pushEngineHalo scene position rotation ShipHardpoints.interceptorEngine 1.2 (0.7 * glow) (0.16 * glow) (0.025 * glow)
             pushFlame scene position rotation ShipHardpoints.interceptorEngine (length * 1.5) 0.66 (0.95 * glow) (0.30 * glow) (0.06 * glow)
             pushFlame scene position rotation ShipHardpoints.interceptorEngine (length * 0.9) 0.32 glow (0.8 * glow) (0.5 * glow)
             let engine = position + Quat.rotateVec3 rotation (Vec3(0.0, 0.0, 2.9))
@@ -858,6 +946,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
 
     // Zeichnen: erst deckend, dann additiv
     Renderer.beginFrame renderer camera.View camera.Projection camera.Position
+    SkyBackdrop.draw renderer scene.Sky camera
 
     for v in 0 .. AsteroidField.Variants - 1 do
         Renderer.draw renderer scene.AsteroidBatches.[v]
@@ -865,10 +954,10 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     Renderer.draw renderer scene.DebrisBatch
     Renderer.draw renderer scene.ShipBatch
     Renderer.draw renderer scene.EnemyBatch
-    Renderer.draw renderer scene.SkyBatch
-    Renderer.draw renderer scene.SunBatch
     Renderer.draw renderer scene.DustBatch
+    Renderer.draw renderer scene.ShieldBatch
     Renderer.draw renderer scene.ExhaustBatch
+    Renderer.draw renderer scene.EngineHaloBatch
     Renderer.draw renderer scene.LaserBatch
     Renderer.draw renderer scene.GlowBatch
 
@@ -882,6 +971,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             hud
             renderer.ViewProj
             (Renderer.aspect renderer)
+            camera.Mode
             scene.World
             scene.Brains
             scene.Input
@@ -896,6 +986,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             hud
             renderer.ViewProj
             (Renderer.aspect renderer)
+            camera.Mode
             scene.World
             scene.Brains
             scene.Input
@@ -964,11 +1055,12 @@ let private frame (timestamp: float) =
         let ship = world.Player
 
         // dt deckeln, damit ein Tab-Wechsel keinen Zeitsprung erzeugt
-        let dt =
+        let elapsed =
             if scene.LastTimestamp < 0.0 then
                 0.0
             else
-                System.Math.Min(0.1, (timestamp - scene.LastTimestamp) / 1000.0)
+                System.Math.Max(0.0, (timestamp - scene.LastTimestamp) / 1000.0)
+        let dt = System.Math.Min(0.1, elapsed)
 
         scene.LastTimestamp <- timestamp
         scene.StateTime <- scene.StateTime + dt
@@ -996,6 +1088,23 @@ let private frame (timestamp: float) =
 
         if Input.wasPressed input GameAction.InvertPitch then
             input.InvertPitch <- not input.InvertPitch
+
+        if Input.wasPressed input GameAction.ToggleMute then
+            Sound.toggleMute scene.Sound
+            scene.Hud.Muted <- scene.Sound.Muted
+
+        if Input.wasPressed input GameAction.CycleTarget then
+            if Hud.cycleTarget scene.Hud world.Enemies then
+                Sound.targetLock scene.Sound
+
+        // Kontinuierlicher Triebwerksklang im aktiven Flug
+        let engineActive =
+            match scene.State with
+            | Playing -> ship.Alive
+            | _ -> false
+
+        let thrust = if ship.Controls.Brake then 0.0 else ship.Controls.Throttle
+        Sound.updateEngine scene.Sound engineActive thrust ship.Boost
 
         // ---- 2. Simulation mit festem Zeitschritt (steht in der Pause) ----
         let simulate =
@@ -1055,7 +1164,7 @@ let private frame (timestamp: float) =
             else
                 scene.Shake <- 0.0
 
-        updateStats scene dt
+        updateStats scene elapsed
         render scene position rotation alpha
         Input.endFrame input
         window.requestAnimationFrame loop.Callback |> ignore
