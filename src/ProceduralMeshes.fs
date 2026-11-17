@@ -207,14 +207,17 @@ module ShipHardpoints =
     /// Kollisionsbox (OBB) im Schiffssystem und Radius ihrer Huellkugel.
     let playerObbCenter = Vec3(0.0, 0.2, -0.3)
     let playerObbHalf = Vec3(2.1, 0.5, 2.2)
-    let playerRadius = 3.2
+    let playerRadius = 3.4
 
-    let interceptorEngine = Vec3(0.0, 0.0, 1.1)
-    let interceptorGunLeft = Vec3(-1.2, 0.0, -2.0)
-    let interceptorGunRight = Vec3(1.2, 0.0, -2.0)
-    let interceptorObbCenter = Vec3(0.0, 0.0, -0.45)
-    let interceptorObbHalf = Vec3(1.32, 0.42, 1.55)
-    let interceptorRadius = 2.2
+    /// Der Interceptor wird 1.6-fach skaliert dargestellt (etwa so gross wie das
+    /// Spielerschiff); alle Masse unten sind bereits skaliert.
+    let interceptorScale = 1.6
+    let interceptorEngine = Vec3(0.0, 0.0, 1.1 * interceptorScale)
+    let interceptorGunLeft = Vec3(-1.2 * interceptorScale, 0.0, -2.0 * interceptorScale)
+    let interceptorGunRight = Vec3(1.2 * interceptorScale, 0.0, -2.0 * interceptorScale)
+    let interceptorObbCenter = Vec3(0.0, 0.0, -0.45 * interceptorScale)
+    let interceptorObbHalf = Vec3(1.32 * interceptorScale, 0.42 * interceptorScale, 1.55 * interceptorScale)
+    let interceptorRadius = 2.5 * interceptorScale
 
 [<RequireQualifiedAccess>]
 module ProceduralMeshes =

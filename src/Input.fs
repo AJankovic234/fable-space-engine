@@ -48,6 +48,8 @@ type InputState =
       /// Linke Maustaste gehalten (nur bei aktivem PointerLock).
       mutable MouseFire: bool
       mutable PointerLocked: bool
+      /// true, wenn in diesem Frame ins Bild geklickt wurde (Flanke, wie Pressed).
+      mutable Clicked: bool
       /// Stick-Ausschlag pro Pixel Mausbewegung.
       mutable MouseSensitivity: float
       /// false: W = Nase runter, S = Nase hoch (wie ein Steuerknueppel).
@@ -104,6 +106,7 @@ module Input =
               StickY = 0.0
               MouseFire = false
               PointerLocked = false
+              Clicked = false
               MouseSensitivity = 0.0035
               InvertPitch = false }
 
@@ -139,6 +142,7 @@ module Input =
             "mousedown",
             fun (e: Event) ->
                 let mouse = unbox<MouseEvent> e
+                state.Clicked <- true
 
                 if not state.PointerLocked then
                     canvas.requestPointerLock ()
@@ -191,10 +195,12 @@ module Input =
     /// Wurde die Aktion in diesem Frame neu ausgeloest (Flanke)?
     let inline wasPressed (state: InputState) (action: GameAction) : bool = state.Pressed.[int action] <> 0uy
 
-    /// Am Ende jedes Frames aufrufen: setzt die Flanken zurueck.
+    /// Am Ende jedes Frames aufrufen: setzt die Flanken (Tasten und Klick) zurueck.
     let endFrame (state: InputState) =
         for i in 0 .. ActionCount - 1 do
             state.Pressed.[i] <- 0uy
+
+        state.Clicked <- false
 
     let inline private held (state: InputState) (action: GameAction) : float = float state.Down.[int action]
 

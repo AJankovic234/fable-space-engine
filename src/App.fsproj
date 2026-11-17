@@ -14,7 +14,10 @@
     <Compile Include="WebGLRenderer.fs" />
     <Compile Include="ProceduralMeshes.fs" />
     <Compile Include="Input.fs" />
+    <Compile Include="PhysicsAndPool.fs" />
+    <Compile Include="AI.fs" />
     <Compile Include="Camera.fs" />
+    <Compile Include="HUD.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 
