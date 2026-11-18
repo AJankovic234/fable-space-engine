@@ -60,7 +60,12 @@ module ShipyardUi =
                 let card = document.createElement "article"
                 card.className <- "kit-card"
                 card.setAttribute ("data-kit", string i)
-                let art = if i = ShipCatalog.ShieldRelay then "<img class='relay-art' src='/assets/upgrades/relay.webp' alt=''>" else ""
+                let art =
+                    match i with
+                    | 0 -> "<img class='relay-art' src='/assets/upgrades/kit-stock.svg' alt=''>"
+                    | 1 -> "<img class='relay-art' src='/assets/upgrades/kit-courier.svg' alt=''>"
+                    | 2 -> "<img class='relay-art' src='/assets/upgrades/kit-focus.svg' alt=''>"
+                    | _ -> "<img class='relay-art' src='/assets/upgrades/relay.webp' alt=''>"
                 card.innerHTML <- art + "<h4>" + kit.Name + "</h4><p>" + kit.Effect + "</p><button class='hangar-action' type='button'></button>"
                 kitGrid.appendChild card |> ignore
                 card.querySelector "button" :?> HTMLButtonElement)

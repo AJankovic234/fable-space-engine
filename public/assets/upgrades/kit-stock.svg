@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="baseTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c8d99"/><stop offset="1" stop-color="#566774"/></linearGradient>
+    <linearGradient id="hullTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9d6dc"/><stop offset="1" stop-color="#8c9ea8"/></linearGradient>
+    <linearGradient id="copper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfb08a"/><stop offset="1" stop-color="#a8724a"/></linearGradient>
+  </defs>
+  <!-- Octagonal baseplate -->
+  <polygon points="44,104 92,134 152,134 198,104 198,94 152,66 92,66 44,94" fill="#3a4a56"/>
+  <polygon points="44,94 92,124 152,124 198,94 152,64 92,64" fill="url(#baseTop)"/>
+  <!-- Balanced gyro housing -->
+  <polygon points="74,84 120,110 166,84 120,58" fill="url(#hullTop)"/>
+  <polygon points="74,84 120,110 120,90 74,64" fill="#647683"/>
+  <polygon points="166,84 120,110 120,90 166,64" fill="#384955"/>
+  <polygon points="74,64 120,90 166,64 120,38" fill="url(#hullTop)"/>
+  <!-- Copper trim straps -->
+  <polygon points="90,54 136,80 144,75 98,49" fill="url(#copper)"/>
+  <polygon points="104,46 150,72 158,67 112,41" fill="url(#copper)"/>
+  <polygon points="136,80 144,75 144,96 136,101" fill="#8b5a38"/>
+  <polygon points="150,72 158,67 158,88 150,93" fill="#8b5a38"/>
+  <!-- Diagnostic cyan indicator cubes -->
+  <polygon points="148,102 160,109 172,102 160,95" fill="#bdfef6"/>
+  <polygon points="148,102 160,109 160,118 148,111" fill="#62d9ce"/>
+  <polygon points="172,102 160,109 160,118 172,111" fill="#36a8a2"/>
+  <polygon points="62,92 70,97 78,92 70,87" fill="#bdfef6"/>
+  <polygon points="62,92 70,97 70,104 62,99" fill="#52c7be"/>
+</svg>

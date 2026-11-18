@@ -8,6 +8,8 @@ Mit **K** kannst du den Kurs jederzeit verlassen. Am Markt von Kestrel lässt er
 
 Ein Klick ins Cockpit aktiviert die Maussteuerung. In der Flugpause (**P**) senkst du mit **Komma** die Mausempfindlichkeit und erhöhst sie mit **Punkt**. Die Einstellung gilt für beide Achsen und wird mit deinem Flug gespeichert.
 
+**O** schaltet die Flugoptik ein und aus. Sie vergrößert die Sicht in Cockpit- und Verfolgerkamera um das 1,8-Fache. Maus und Tastatur drehen die Nase dabei feiner. So kannst du beim Bergen eine Stelle auf einem rotierenden Felsen länger im Visier halten. Das Fadenkreuz zeigt „OPTIK 1,8×“.
+
 **U** wechselt den Mausmodus: *Wischen* (Standard, der Stick federt nach jeder Bewegung zur Mitte zurück) oder *Halten* (der Stick bleibt stehen, mit kleiner Totzone und feinerer Kurve um die Mitte; **X** zentriert). Der Modus wird pro Browser gemerkt. Das **Mausrad** regelt den Schub, **→** setzt Vollschub, **←** Nullschub. **H** zeigt gehalten den Heckblick, **F3** die Bildrate. Gibt **Esc** die Maus frei oder verliert das Fenster den Fokus, pausiert der Flug; **P**, **Enter** oder ein Klick setzen ihn fort.
 
 **L** koppelt den Schub an das Tempo des erfassten Ziels, bis du selbst Schub gibst oder bremst. Mit gehaltener **mittlerer Maustaste** siehst du dich frei um, **Bild ↑ / ↓** ändert den Abstand der Verfolgerkamera, **F4** schaltet die Sonnenschatten um. Die Mausempfindlichkeit lässt sich auch im Hauptmenü per Regler einstellen.
@@ -23,6 +25,9 @@ Im Handelsflug öffnet **Schiffe** am Dock den Hangar. Auf Kestrel und den übri
 | Bergungskutter | Startschiff | 16 t | 60 m/s | 12 |
 | Lastkahn | 380 CR | 32 t | 48 m/s | 10 |
 | Sperber | 320 CR | 8 t | 82 m/s | 16 |
+| Eisvogel | 540 CR | 24 t | 74 m/s | 9 |
+
+Der Eisvogel ist ein Frachtkurier mit zwei Kufen. Sein Grundladeraum fasst einen kompletten 24-t-Großauftrag. In der Außenansicht sitzen die versiegelten Kisten paarweise auf den Kufen. Mit Kurierdüsen erreicht er 86 m/s Reisegeschwindigkeit. [Werftkarte](public/assets/ships/eisvogel.webp) · [Im Flug mit voller Ladung](artifacts/werft/eisvogel-im-flug.webp) · [Blender-Szene](artifacts/werft/eisvogel.blend)
 
 Der Lastkahn dreht langsamer, der Sperber schneller als der Kutter. Gekaufte Rümpfe bleiben in deiner Flotte. Beim kostenlosen Wechsel ziehen Ladung, bezahlte Frachtraumerweiterungen, Waffen und Turret mit um. Bei Platzmangel zeigt die Werft, wie viele Tonnen du zuerst entladen musst. Ein Wechsel übernimmt auch die vorhandenen Schäden.
 
@@ -51,6 +56,8 @@ Im Auftragsfenster von Helios wählst du den Einsatz. Im Bomber hältst du den K
 **B** bringt dich zum Dock zurück. Beim nächsten Versuch bekommt der Bomber neue Torpedos. Schäden am Kreuzer und besiegte Abfangjäger bleiben im Spielstand, ebenso ein bereits gestarteter Torpedo beim Laden eines laufenden Einsatzes. Nach dem Durchbruch erhält Frachter Sechs Einflugfreigabe. Drei Lieferungen füllen das Medizinlager auf, die erste bei der Freigabe und die beiden folgenden beim erneuten Anflug auf Helios.
 
 ## Darstellung im Handelsflug
+
+Auch das Gestein wechselt mit dem Sektor. Kestrel hat staubige Schichtfelsen, Helios dunkle Schlacke mit rostroten Nähten und Drift-9 grünliches Gestein mit zwei gerundeten Lappen. Bei Kepler brechen blauweiße Eisblöcke entlang flacher Ebenen. Theta hat violettgraue Rippen und Morgenlicht metallische, eingedellte Meteoriten. Diese Merkmale gehören zur Geologie des gesamten Felds. Ob ein einzelner Brocken abbaubares Erz enthält, erfährst du beim Treffer.
 
 Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Am Äther-Relais sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis.
 
@@ -143,9 +150,13 @@ nahe Kestrel. Erstes Ziel: Erz kaufen oder bergen, nach Helios bringen und verka
   **↑ / R** erhöht den Schub, **↓ / F** nimmt ihn zurück. Kurzes Antippen erlaubt langsame
   Hafenanflüge. Von Leerlauf bis Vollschub am Hebel vergehen rund 1,8 Sekunden.
   **A/D** giert, **Q/E** rollt, **W/S** kippt. **X** bremst und setzt den Schub auf null.
-- Im Stationsbereich **Routen** frei zwischen verbundenen Nachbarstationen reisen,
-  auch zurück. Alle Märkte, Fracht, Ausrüstung und Beschädigungen bleiben erhalten.
-  Der Sprung bringt das Schiff vor den Zielposten; den letzten Anflug fliegt man selbst.
+- Für den **Eigenflug durchs Sprungtor** am Zielnamen im HUD orientieren und durch die
+  lichte Mitte des Rings fliegen. Der Sprung löst beim Durchqueren automatisch aus,
+  auch mit Boost. Von Kestrel führen zwei Tore nach Helios und Drift-9. Am Gegentor
+  fliegt das Schiff in den Zielsektor hinaus. Für den Rückweg wenden und erneut durchfliegen.
+- Am Dock kannst du unter **Routen** eine Überfahrt buchen. Diese bringt dich vor
+  den Zielposten. Märkte, Fracht, Ausrüstung und Beschädigungen bleiben bei beiden
+  Reisearten erhalten. Eine versiegelte Lieferung quittierst du am Ziel in der Frachtbörse.
 - **Geleitschutz** kostet 25 CR je Gefahrenstufe und verhindert Piraten auf dieser
   Überfahrt. **Eigenflug** kostet nichts, in gefährlichen Sektoren erscheint nach
   acht Sekunden eine kleine Patrouille (2–4 Gegner statt Missionsverbänden).
@@ -228,8 +239,8 @@ Erzvorkommen bleiben bis zum ersten eigenen Treffer vollständig verborgen.
 
 Handelsintegration: Geminis Universe-/TradeSystem-Grundlage an Mission, Bergung,
 Stationsmodell und bedienbaren Markt angeschlossen. Rücktausch-Arbitrage und
-Verkauf über die Lagerkapazität hinaus behoben. Zunächst eine Station je
-Missionsabschnitt; freie Sprungtorreisen bleiben ein späterer Ausbauschritt.
+Verkauf über die Lagerkapazität hinaus behoben. Die Kampfmission führt durch
+aufeinanderfolgende Abschnitte. Im Handelsflug verbinden Sprungtore die Nachbarsektoren.
 
 ## Assets
 

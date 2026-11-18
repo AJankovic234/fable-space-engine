@@ -7,6 +7,7 @@ import {
   TradeRoutes_quoteCargo as quote, TradeRoutes_quoteSaleFor as quoteSale,
   TradeRoutes_quoteCargoFor as pilotQuote, TradeRoutes_tryPlanFor as pilotPlan,
   TradeRoutes_escortFeeFor as pilotFee, TradeRoutes_patrolDelay as delay,
+  TradeRoutes_galacticAverageSell as avgSell, TradeRoutes_bestNeighborBid as bestBid,
 } from '../build/TradeRoutes.js';
 import {
   TradeSystem_createCargo as cargo, TradeSystem_createMarket as market,
@@ -109,4 +110,20 @@ test('forensics and council pay the quoted bonus on positive margins, including 
       assert.ok(purchase.CreditsDelta + resale.CreditsDelta < 0, 'same-market round trip cannot mint credits');
     }
   }
+});
+
+test('galactic average and best neighbor bid stay read-only and surface profitable routes', () => {
+  const markets = sectors.map((s) => market(s));
+  const before = markets.map((m) => m.Entries.map((e) => e.Stock));
+  const hold = cargo(16);
+  const terms = { FixerLevel: 0, ForensicsLevel: 0, CouncilLevel: 0 };
+
+  const cryoAvg = avgSell(markets, 0);
+  assert.ok(cryoAvg > 0, `Expected positive galactic average for CryoOre, got ${cryoAvg}`);
+
+  const bestFromKestrel = bestBid(terms, markets, hold, 0, 0);
+  assert.ok(bestFromKestrel && bestFromKestrel[0] === 1 && bestFromKestrel[1] >= cryoAvg,
+    `Expected Helios (1) as top CryoOre buyer from Kestrel, got ${bestFromKestrel}`);
+  assert.equal(bestBid(terms, markets, hold, -1, 0), undefined);
+  assert.deepEqual(markets.map((m) => m.Entries.map((e) => e.Stock)), before);
 });

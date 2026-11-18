@@ -85,7 +85,7 @@ Beide Namen und Warenprofile sind Vorschläge. Frachter und Eskorte sollen unter
 
 1. **Sechs Sektoren navigierbar machen.** Kartenpositionen nach Sektor-ID hinterlegen, Kanten aus `Universe.sectors[].Gates` erzeugen und `TradeRoutes.nextHop` für die einzelnen Etappen verwenden. Optionalen Zwischenstopp und Fernziel per ID speichern. Abnahme mit einem laufenden Frachtauftrag, beiden Wegen von Kestrel nach Kepler, Laden unterwegs sowie Tastatur- und schmaler Bildschirmansicht.
 2. **Kaltstrom als siebten Sektor anschließen.** Hafen, Markt, Rücktore und eigenes Stationsbild gemeinsam liefern. Vorher die bisherigen Sechsergrenzen für Marktlisten, Besuchs-/Reliktmasken und Talentzählung prüfen. Märkte nach ID übernehmen und fehlende neue Märkte initialisieren. Die sechs Warenarten haben eine eigene, unabhängige Anzahl. Abnahme mit einem alten Spielstand, bestehendem Kontostand, Marktbeständen, Auftrag und Talentstand sowie einer vollständigen Hin- und Rückreise.
-3. **Wracksaum nach dem ersten Spieltest ergänzen.** Im Test den zusätzlichen Einkauf und Verkauf in Kaltstrom einer direkten Fahrt gegenüberstellen. Bei Wracksaum muss der Spieler das zweite Tor erreichen oder für die Bergung sichtbar vom Kurs abweichen können. Physische Sprünge beim Durchfliegen der Tore sind ein eigener späterer Schritt und können dieselbe Reiseabrechnung verwenden.
+3. **Wracksaum nach dem ersten Spieltest ergänzen.** Im Test den zusätzlichen Einkauf und Verkauf in Kaltstrom einer direkten Fahrt gegenüberstellen. Bei Wracksaum muss der Spieler das zweite Tor erreichen oder für die Bergung sichtbar vom Kurs abweichen können. Der [Torauftrag für Sol](#einzelauftrag-für-gpt-62-sol--sprungtore-im-anflug) führt den physischen Durchflug schon im bestehenden Sechs-Sektoren-Netz ein.
 
 ## 1. WebGL2-Darstellung (aufbauend auf `WebGLRenderer.fs`)
 
@@ -109,6 +109,25 @@ Beide Namen und Warenprofile sind Vorschläge. Frachter und Eskorte sollen unter
 6. **3D-`.glb`-Modelle einbinden (`public/assets/models/*.glb`):**
    - `outpost-station.glb`, `jump-gate.glb` und `cargo-freighter.glb` über `GlbLoader.loadAsync` laden und in den Sektoren sichtbar machen.
 
+### Einzelauftrag für GPT-6.2 Sol · Sprungtore im Anflug
+
+**Spielerziel.** Ich sehe von Kestrel aus das Tor nach Helios, richte mein Schiff an der Öffnung aus und booste hindurch. Beim Passieren des Rings springe ich automatisch nach Helios und fliege dort aus dem Gegentor. Dafür brauche ich weder eine Taste noch das Dockmenü.
+
+**Ausgangspunkt.** Das vorhandene [Tormodell](public/assets/models/jump-gate.glb) hat ein emissives Material. Der Flug zeichnet dort bislang zwei Lichtflächen und ein Punktlicht. In Tornähe erklingt ein Signal. Die Radiusabfrage in [Universe.fs](src/Universe.fs) erkennt Nähe. Für den physischen Sprung zählt, ob die Flugbahn während eines Simulationsschritts die sichtbare Toröffnung kreuzt. Tor und Durchflugfläche brauchen dieselbe Position, Ausrichtung und Öffnungsweite.
+
+**Inszenierung.** Aus rund 500 Metern prägen große, gegeneinander versetzte Ringsegmente die Silhouette. Beim schrägen Anflug aus rund 80 Metern machen Streben und Wartungsleuchten die Bautiefe sichtbar. Als gestalterisches Leitmotiv läuft eine Lichtwelle über die inneren Segmente bis zum Scheitel. Beim Durchqueren ziehen die Sterne kurz in Flugrichtung. Der Pilot sieht den freien Durchlass und nach dem Austritt den Himmel des Zielsektors. Sol entscheidet über die Ausführung anhand des tatsächlichen Cockpitbilds.
+
+**Spielregeln.** Physischer Durchflug ist Eigenflug. Es gelten die vorhandenen Regeln für Ladung, Aufträge, Patrouillen und Blockade. Der Reiseabschluss zählt den Flug einmal. Das Schiff erscheint jenseits der Austrittsebene mit Abstand zum Rahmen und fliegt vom Tor weg. Geleit bleibt am Dock buchbar.
+
+**Abnahme im Spiel.**
+
+- Von Kestrel das Helios-Tor mit voller Boostgeschwindigkeit mittig durchfliegen. Der Zielsektor wechselt genau einmal. Den Rückflug manuell antreten. Das zweite Tor von Kestrel führt entsprechend nach Drift-9.
+- Außen am Ring vorbeistreifen, vor der Öffnung abbremsen und den Rahmen berühren. In allen drei Fällen bleibt der Pilot im Ausgangssektor. Bei Rahmenkontakt gibt es sichtbares Kontaktfeedback.
+- Mit einem laufenden Frachtauftrag springen, direkt nach Ankunft speichern und neu laden. Auftrag und Ladung bleiben an Bord, das Honorar ist bis zur Übergabe offen. Reiseanzahl, Gebühren und Blockadefortschritt entsprechen einer einzigen Eigenflug-Etappe.
+- Als Grafiknachweis einen kurzen Spielmitschnitt vom Anflug bis zum Austritt und ein Vorher-nachher-Bild vom selben Blickpunkt liefern. Produktionsbuild und vorhandene Dockreisen prüfen. Sol trägt Modellkennung und gemessene Token unter diesem Auftrag im README-Benchmark ein.
+
+**Spielprobe im Produktionsbuild.** Vom Kestrel-Dock erreichte ein Kutter das Helios-Tor mit Boost und trat mit 134,9 m/s am Gegentor aus. Nach dem Neuladen standen eine Reise und 200 CR im Spielstand. Die acht Tonnen Bohrkronen waren weiter versiegelt, das Honorar von 76 CR war offen. Rückflug, zweites Tor nach Drift-9, Bremsen vor der Öffnung, Rahmenkontakt und ein seitlicher Vorbeiflug wurden im Cockpit geprüft. Ein laufender Transporterbau rückte bei der Torreise genauso weit vor wie beim gebuchten Eigenflug. [Spielmitschnitt](artifacts/sprungtor/kestrel-helios.webm) · [Cockpitvergleich aus 534 und 85 Metern](artifacts/sprungtor/kestrel-helios-vergleich.webp)
+
 ---
 
 ## 2. Handelssystem statt pauschaler Credits
@@ -123,7 +142,7 @@ Beide Namen und Warenprofile sind Vorschläge. Frachter und Eskorte sollen unter
 **Erster spielbarer Handelskreislauf:**
 Kryo-Erz bergen → 16 t Frachtraum → markierte 3D-Station anfliegen → mit B andocken → verkaufen/einkaufen/aufrüsten. Ausbau bis 40 t. Der normale Handelsflug startet friedlich mit 200 CR; Nachbarstationen sind über Routen & Kurse frei erreichbar, auch auf dem Rückweg. Geleitschutz kostet Geld, Eigenflug kann Piraten auslösen. Märkte, Fracht und Beschädigungen bleiben erhalten. Die bisherige Kampfmission läuft separat über F2. Details: `GAMEPLAY.md`.
 
-**Noch offen:** Physisch anfliegbare Sprungtore statt Routenwahl am Dock, Atmosphäre je Sektor und zusätzliche physische Wrackgüter. Die folgenden Punkte beschreiben weiteren Ausbau, nicht den aktuellen Spielumfang.
+**Noch offen** sind zusätzliche physische Wrackgüter. Im Handelsflug stehen die Sprungtore und die Routenbuchung am Dock zur Verfügung. Die sechs Sektoren haben eigene Lichtstimmungen und Asteroidenfelder.
 
 **Geplanter Zuschnitt:**
 1. **Waren & Frachtraum (`Economy.fs` / `Salvage.fs`):**

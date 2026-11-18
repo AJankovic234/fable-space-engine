@@ -255,6 +255,17 @@ module Universe =
     let sectorByIndex (index: int) =
         sectors.[max 0 (min (sectors.Length - 1) index)]
 
+    /// The model's local XY plane is the crossing plane, with -Z facing the sector interior.
+    let gateRotation (sector: SectorDef) (gate: JumpGate) =
+        let offset = sector.Outpost.Position * 0.35 - gate.Position
+        Quat.lookRotation (Vec3(offset.X, offset.Y * 0.35, offset.Z)) Vec3.up
+
+    let gateProximity (gate: JumpGate) position =
+        max 0.0 (1.0 - Vec3.distance position gate.Position / (gate.TriggerRadius * 2.6))
+
+    let gateRingRotation sector (gate: JumpGate) time =
+        gateRotation sector gate * Quat.fromAxisAngle Vec3.unitZ (time * 0.75)
+
     /// Bewertet, ob das Schiff nahe genug am Handelsposten ist, um anzudocken.
     /// Aktiver Kampf blockiert das Andocken nur, wenn Feinde noch nahe der Station stehen.
     let evaluateDocking (outpost: Outpost) (shipPos: Vec3) (combatActive: bool) =
@@ -274,7 +285,7 @@ module Universe =
         elif dist >= outpost.ApproachRadius then 0.0
         else 1.0 - (dist - outpost.DockRadius) / max 1.0 (outpost.ApproachRadius - outpost.DockRadius)
 
-    /// Liefert das naechstgelegene Sprungtor, falls das Schiff im Ausloesebereich steht.
+    /// Findet ein Tor in der Anflugzone.
     let findTriggeredGate (sector: SectorDef) (shipPos: Vec3) =
         sector.Gates
         |> Array.tryFind (fun gate -> Vec3.distance shipPos gate.Position <= gate.TriggerRadius)

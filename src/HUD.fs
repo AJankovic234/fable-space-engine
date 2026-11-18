@@ -794,12 +794,37 @@ module Hud =
         ctx.fillText (prompt,x,y+51.0,232.0)
         ctx.restore ()
 
+    /// Short streaks expand from the projected direction of travel after a jump.
+    let drawJumpTransit (hud: Hud) (viewProj: Mat4) (position: Vec3) (direction: Vec3) progress =
+        let vanishing = position + direction * 1000.0
+        project hud viewProj vanishing.X vanishing.Y vanishing.Z
+        if hud.ClipW > 1e-3 then
+            let x, y = hud.ScreenX, hud.ScreenY
+            let strength = (1.0 - progress) ** 1.6
+            let ctx = hud.Ctx
+            ctx.save ()
+            stroke ctx "#bceaff"
+            ctx.lineWidth <- 1.1
+            for i in 0 .. 63 do
+                let angle = float i * 2.39996323
+                let seed = float ((i * 47 + 13) % 67) / 67.0
+                let distance = 0.14 + seed * 0.57 + progress * (0.28 + 0.67 * seed)
+                let tail = distance - strength * (0.024 + seed * 0.13)
+                let dx, dy = cos angle * hud.Width, sin angle * hud.Height
+                ctx.globalAlpha <- strength * (0.3 + 0.6 * seed)
+                ctx.beginPath ()
+                ctx.moveTo(x + dx * tail, y + dy * tail)
+                ctx.lineTo(x + dx * distance, y + dy * distance)
+                ctx.stroke ()
+            ctx.restore ()
+
     /// Markiert die Sprungtore des aktuellen Sektors im 3D-Raum mit Zielnamen und Distanz.
     let drawJumpGates (hud: Hud) (viewProj: Mat4) (sector: SectorDef) (position: Vec3) =
         let ctx = hud.Ctx
         for gate in sector.Gates do
-            let p = gate.Position
-            let distance = Vec3.length (p - position)
+            let distance = Vec3.distance gate.Position position
+            let near = distance < 120.0
+            let p = if near then gate.Position + Quat.up (Universe.gateRotation sector gate) * 30.0 else gate.Position
             project hud viewProj p.X p.Y p.Z
             if onScreen hud then
                 let x = hud.ScreenX
@@ -809,24 +834,30 @@ module Hud =
                 ctx.save ()
                 stroke ctx Amber
                 ctx.lineWidth <- 1.5
-                ctx.beginPath ()
-                ctx.moveTo (x, y - r)
-                ctx.lineTo (x + r, y)
-                ctx.lineTo (x, y + r)
-                ctx.lineTo (x - r, y)
-                ctx.closePath ()
-                ctx.stroke ()
-                ctx.beginPath ()
-                ctx.arc (x, y, 5.0, 0.0, 2.0 * Math.PI)
-                ctx.stroke ()
+                if not near then
+                    ctx.beginPath ()
+                    ctx.moveTo (x, y - r)
+                    ctx.lineTo (x + r, y)
+                    ctx.lineTo (x, y + r)
+                    ctx.lineTo (x - r, y)
+                    ctx.closePath ()
+                    ctx.stroke ()
                 ctx.textAlign <- "center"
                 ctx.textBaseline <- "top"
                 ctx.font <- FontSmall
-                let labelY = y + r + 5.0 + reserveLabel hud (x - 98.0) (y + r + 5.0) 196.0 20.0
-                fill ctx "rgba(3,12,23,0.78)"
-                ctx.fillRect (x - 98.0, labelY, 196.0, 20.0)
-                fill ctx Amber
-                ctx.fillText (gate.Label + " · " + string (int distance) + " m", x, labelY + 3.0, 188.0)
+                let width = min 196.0 (hud.Width - 16.0)
+                let left = max 8.0 (min (hud.Width - 8.0 - width) (x - width * 0.5))
+                let top = if near then y - 26.0 else y + r + 5.0
+                let labelY = top + reserveLabel hud left top width 20.0
+                let overlapsRadar =
+                    hud.Width >= 760.0 && labelY + 20.0 > hud.Height - 118.0 &&
+                    left < hud.Width * 0.5 + 92.0 && left + width > hud.Width * 0.5 - 92.0
+                if width > 8.0 && labelY >= 6.0 && labelY + 20.0 <= hud.Height - 6.0 &&
+                   not overlapsRadar && (not near || labelY + 20.0 <= y) then
+                    fill ctx "rgba(3,12,23,0.78)"
+                    ctx.fillRect (left, labelY, width, 20.0)
+                    fill ctx Amber
+                    ctx.fillText (gate.Label + " · " + string (int distance) + " m", left + width * 0.5, labelY + 3.0, width - 8.0)
                 ctx.restore ()
 
     /// Das Flug-HUD.
@@ -838,6 +869,7 @@ module Hud =
         (viewProj: Mat4)
         (aspect: float)
         (cameraMode: CameraMode)
+        (opticsActive: bool)
         (world: World)
         (brains: AiBrain[])
         (pickups: ResizeArray<MineralPickup>)
@@ -1071,10 +1103,17 @@ module Hud =
                                 | AiState.Evade -> "MANÖVER"
                                 | AiState.Patrol -> "PATROUILLE"
 
+                        let invDist = if distance > 1e-3 then 1.0 / distance else 0.0
+                        let closing =
+                            ((player.Velocity.X - enemy.Velocity.X) * (ex - playerPosition.X)
+                             + (player.Velocity.Y - enemy.Velocity.Y) * (ey - playerPosition.Y)
+                             + (player.Velocity.Z - enemy.Velocity.Z) * (ez - playerPosition.Z)) * invDist
+                        let dv = int (Math.Round closing)
+                        let dvText = (if dv > 0 then "+" else "") + string dv + " m/s"
                         fill ctx (if FlightSchool.onRange school then Green else profile.Color)
                         ctx.fillText ((if FlightSchool.onRange school then "Zieldrohne" else profile.Name), x, y - size - 28.0)
                         fill ctx (if brains.[i].WeaponCharge > 0.0 then Amber elif attacking then Red else TextColor)
-                        ctx.fillText (number hud distance + "m · " + stateLabel, x, y + size + 11.0)
+                        ctx.fillText (number hud distance + "m · " + dvText + " · " + stateLabel, x, y + size + 11.0)
                 else
                     // Bildschirmrichtung zum Gegner. Die Clip-Koordinaten VOR der Division
                     // durch w zeigen auch fuer Ziele hinter der Kamera in die richtige
@@ -1154,6 +1193,14 @@ module Hud =
 
         // ---- Fadenkreuz und Treffermarke ----
         if aimVisible && player.Alive then
+            if opticsActive then
+                ctx.save ()
+                ctx.font <- FontSmall
+                ctx.textAlign <- "left"
+                ctx.textBaseline <- "middle"
+                fill ctx Cyan
+                ctx.fillText ("OPTIK 1,8×", aimX + 29.0, aimY - 13.0)
+                ctx.restore ()
             stroke ctx (if player.Overdrive > 0.0 then Amber else Cyan)
             ctx.lineWidth <- 1.5
             ctx.beginPath ()
@@ -1468,6 +1515,8 @@ module Hud =
            "B · G", "Andocken · Archivscan"
            "C · H", "Kamera wechseln · Heckblick (halten)"
            "Bild ↑ / ↓", "Verfolgerkamera näher / weiter"
+           "O", "Flugoptik 1,8× und Feinsteuerung"
+           "Komma · Punkt", "Maus-Empfindlichkeit − / +"
            "I · M", "Pitch invertieren · Ton"
            "P · F8", "Pause · Spielstände"
            "F3 · F4", "Bildrate · Schatten an/aus" |]

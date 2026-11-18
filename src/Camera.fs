@@ -24,6 +24,7 @@ type Camera =
       mutable Offset: Vec3
       /// Aktueller vertikaler Oeffnungswinkel (Radiant).
       mutable Fov: float
+      mutable OpticsActive: bool
       View: Mat4
       Projection: Mat4
       // --- Abstimmung ---
@@ -48,6 +49,17 @@ type Camera =
 [<RequireQualifiedAccess>]
 module Camera =
 
+    [<Literal>]
+    let OpticsMagnification = 1.8
+
+    let steeringGain (camera: Camera) =
+        if camera.OpticsActive then 1.0 / OpticsMagnification else 1.0
+
+    let private targetFov (camera: Camera) boost =
+        let wide = camera.BaseFov + camera.BoostFov * boost
+        if camera.OpticsActive then 2.0 * atan (tan (wide * 0.5) / OpticsMagnification)
+        else wide
+
     // Look down across the cargo deck while keeping the thrusters above the radar.
     let private chaseTilt = Quat.fromAxisAngle Vec3.unitX -0.12
     let private inverseChaseTilt = Quat.conjugate chaseTilt
@@ -60,6 +72,7 @@ module Camera =
           Rotation = Quat.identity
           Offset = Vec3.zero
           Fov = 60.0 * degrees
+          OpticsActive = false
           View = Mat4.create ()
           Projection = Mat4.create ()
           ChaseOffset = Vec3(0.0, 3.5, 10.0)
@@ -85,18 +98,18 @@ module Camera =
     let snap (camera: Camera) (targetPosition: Vec3) (targetRotation: Quat) =
         let local =
             match camera.Mode with
-            | Chase -> camera.ChaseOffset * camera.Zoom
+            | Chase -> camera.ChaseOffset * (camera.Zoom / steeringGain camera)
             | Cockpit -> camera.CockpitOffset
 
         camera.Rotation <- if camera.Mode = Chase then targetRotation * chaseTilt else targetRotation
         camera.Offset <- Quat.rotateVec3 targetRotation local
         camera.Position <- targetPosition + camera.Offset
-        camera.Fov <- camera.BaseFov
+        camera.Fov <- targetFov camera 0.0
 
     /// Fuehrt die Kamera dem Ziel nach. `boost` in 0..1 steuert Rueckfall und FOV.
     /// Die Glaettungsfaktoren 1 - exp(-k * dt) sind bildratenunabhaengig.
     let update (camera: Camera) (targetPosition: Vec3) (targetRotation: Quat) (boost: float) (dt: float) =
-        let fovTarget = camera.BaseFov + camera.BoostFov * boost
+        let fovTarget = targetFov camera boost
         camera.Fov <- camera.Fov + (fovTarget - camera.Fov) * (1.0 - exp (-5.0 * dt))
 
         match camera.Mode with
@@ -104,7 +117,8 @@ module Camera =
             camera.Rotation <-
                 Quat.slerp camera.Rotation (targetRotation * chaseTilt) (1.0 - exp (-camera.RotationStiffness * dt))
 
-            let pullback = (1.0 + camera.BoostPullback * boost) * camera.Zoom
+            // Keep the player's hull below the sight as the distant field enlarges.
+            let pullback = (1.0 + camera.BoostPullback * boost) * camera.Zoom / steeringGain camera
             let desired = Quat.rotateVec3 (camera.Rotation * inverseChaseTilt) (camera.ChaseOffset * pullback)
             camera.Offset <- Vec3.lerp camera.Offset desired (1.0 - exp (-camera.PositionStiffness * dt))
             camera.Position <- targetPosition + camera.Offset

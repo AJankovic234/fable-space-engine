@@ -40,7 +40,7 @@ module Shop =
             let i = string (int good.Id)
             let row = document.createElement "tr"
             row.innerHTML <-
-                "<th scope='row'><span class='good-name'>" + cargoIcon good.Id + "<span>" + good.Name + "<small>" + string good.UnitVolume + " t / Einheit</small></span></span></th>" +
+                "<th scope='row'><span class='good-name'>" + cargoIcon good.Id + "<span>" + good.Name + "<small>" + string good.UnitVolume + " t / Einheit</small><small class='market-intel' id='intel-" + i + "'></small></span></span></th>" +
                 "<td id='stock-" + i + "'></td><td id='owned-" + i + "'></td>" +
                 "<td><button type='button' id='trade-buy-" + i + "' aria-label='Eine Einheit " + good.Name + " kaufen'></button></td>" +
                 "<td><button type='button' id='trade-sell-" + i + "' aria-label='Eine Einheit " + good.Name + " verkaufen'></button></td>"
@@ -173,12 +173,36 @@ module Shop =
             "Handelsergebnis: " + string (int profit) + " / 1.000 CR · Handelsmarge und Frachthonorare abzüglich Geleitschutz. Fracht: " + string used + "/" + string cargo.Capacity + " t."
         let cards = element "route-cards"
         cards.innerHTML <- ""
+        let forecastMarkets =
+            if trading then markets |> Array.mapi (fun i m -> Blockade.forecastMarket blockade i m)
+            else markets
+        for i in 0 .. TradeSystem.commodities.Length - 1 do
+            let intel = element ("intel-" + string i)
+            if not (isNull intel) then
+                if trading then
+                    let good = TradeSystem.commodities.[i]
+                    let ask = TradeSystem.buyPrice markets.[origin] good.Id
+                    let avg = TradeRoutes.galacticAverageSell forecastMarkets good.Id
+                    match TradeRoutes.bestNeighborBid terms forecastMarkets cargo origin good.Id with
+                    | Some(target, bid) ->
+                        let margin = if ask > 0 then bid - ask else 0
+                        let port = Universe.sectors.[target].Outpost.Name
+                        let suffix = if margin > 0 then sprintf " (+%d CR)" margin else ""
+                        intel.textContent <- sprintf "Ø %d CR · Beste Route: %s %d CR%s" avg port bid suffix
+                        intel.className <- if margin > 0 then "market-intel deal" else "market-intel"
+                    | None ->
+                        intel.textContent <- if avg > 0 then sprintf "Ø %d CR im Netz" avg else ""
+                        intel.className <- "market-intel"
+                else
+                    intel.textContent <- ""
+                    intel.className <- "market-intel"
         if trading then
             let manifest = Blockade.manifestLeg blockade origin
             let escortPort = blockade.EscortPort
+            let transportPort = blockade.TransportPort
             for target in TradeRoutes.neighbors origin do
                 let sector = Universe.sectors.[target]
-                let market = Blockade.forecastMarket blockade target markets.[target]
+                let market = forecastMarkets.[target]
                 let quote, margin = TradeRoutes.quoteSaleFor terms market cargo
                 let saleable = TradeSystem.goodsVolume cargo
                 let remaining = saleable + quote.VolumeDelta
@@ -195,6 +219,12 @@ module Shop =
                     match cargo.Freight with
                     | Some job when TradeRoutes.nextHop origin job.Destination = Some target -> "Lieferroute · "
                     | _ -> ""
+                let fleetBadges =
+                    let tags =
+                        [ if transportPort = target then yield "<span>EIGENER TRANSPORTER · +3 TREIBSTOFF</span>"
+                          if escortPort = target then yield "<span>EIGENE ESKORTE STATIONIERT</span>" ]
+                    if List.isEmpty tags then ""
+                    else "<div class='fleet-tags'>" + String.concat "" tags + "</div>"
                 let prices =
                     TradeSystem.commodities |> Array.map (fun good ->
                         let price = TradeSystem.pilotSellPrice terms market cargo good.Id
@@ -208,7 +238,7 @@ module Shop =
                         "<span>" + cargoIcon good.Id + good.Name + " <b>" + (if price = 0 then "VOLL" else string price + " CR") + "</b>" + trend + "</span>") |> String.concat ""
                 card.innerHTML <-
                     "<div class='port-portrait' data-port='" + sector.Id + "' aria-hidden='true'></div>" +
-                    "<p class='eyebrow'>" + freightLabel + manifestLabel + (if count = 0 then "GESICHERTER KORRIDOR" else string count + " PIRATEN BEI EIGENFLUG") + "</p><h2>" + sector.Outpost.Name + "</h2>" +
+                    "<p class='eyebrow'>" + freightLabel + manifestLabel + (if count = 0 then "GESICHERTER KORRIDOR" else string count + " PIRATEN BEI EIGENFLUG") + "</p><h2>" + sector.Outpost.Name + "</h2>" + fleetBadges +
                     "<p class='route-value'>Verkaufserlös am Ziel<strong>" + string quote.CreditsDelta + " CR</strong><small>" +
                     (if used = 0 then "Frachtraum leer." elif saleable = 0 then "Nur versiegelte Auftragsfracht." elif remaining = 0 then "Eigene Ware vollständig verkäuflich." else string remaining + " t eigene Ware bleiben an Bord.") +
                     (if honorarium > 0 then sprintf " Zusätzlich %d CR bei Ablieferung." honorarium else "") + "</small></p>" +

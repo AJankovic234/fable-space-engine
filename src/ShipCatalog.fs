@@ -25,7 +25,9 @@ module ShipCatalog =
            { Name = "Lastkahn"; Role = "Schwerer Frachter"; Art = "lastkahn"; Price = 380
              Hold = 32; Cruise = 48.0; Laser = 10.0; Handling = 0.8 }
            { Name = "Sperber"; Role = "Leichte Eskorte"; Art = "sperber"; Price = 320
-             Hold = 8; Cruise = 82.0; Laser = 16.0; Handling = 1.25 } |]
+             Hold = 8; Cruise = 82.0; Laser = 16.0; Handling = 1.25 }
+           { Name = "Eisvogel"; Role = "Frachtkurier"; Art = "eisvogel"; Price = 540
+             Hold = 24; Cruise = 74.0; Laser = 9.0; Handling = 0.97 } |]
     let kits =
         [| { Name = "Serientrimmung"; Effect = "Grundabstimmung des Rumpfs"; Price = 0 }
            { Name = "Kurierdüsen"; Effect = "+12 m/s Reisegeschwindigkeit"; Price = 90 }

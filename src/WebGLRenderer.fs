@@ -181,7 +181,7 @@ type InstanceBatch =
       mutable Shininess: float
       /// Staerke des Glanzlichts (0 = matt).
       mutable Specular: float
-      /// 0 = lackiertes Metall, 1 = raues Gestein.
+      /// 0 = lackiertes Metall, 1 = raues Gestein, 2 = Eis, 3 = Meteoreisen.
       mutable Material: float }
 
 /// Lichtzustand der Szene; wird in beginFrame als Uniforms hochgeladen.
@@ -417,6 +417,7 @@ void main() {
     vec3 faceN = N;
     vec3 V = normalize(uCameraPos - vWorldPos);
     float specScale = 1.0;
+    bool ice = uMaterial > 1.5 && uMaterial < 2.5;
 
     if (uMaterial > 0.5) {
         // Das Mesh hat Radius 1, das Muster wuechse also mit dem Brocken mit. Grosse
@@ -433,20 +434,33 @@ void main() {
 
         float strata = grain(vLocalPos * 7.0);
         strata = mix(strata, strata * 0.62 + grain(mid * 7.0 + 31.0) * 0.38, large);
-        albedo *= mix(0.66, 1.16, strata) * mix(1.0, 0.78 + grain(mid * 39.0) * 0.42, midFade);
-        albedo *= mix(1.0, 0.84 + grain(rock * 39.0 + 11.0) * 0.32, fineFade);
-        albedo = mix(albedo, albedo * vec3(1.17, 0.91, 0.72), smoothstep(0.58, 0.78, strata) * 0.5);
-
-        // Subtile Gesteins-Relief-Perturbation der Normale fuer raue Kraterkanten im Sonnenlicht.
-        float e = 0.03;
-        float h0 = grain(mid * 14.0);
-        vec3 bump = vec3(
-            grain((mid + vec3(e, 0.0, 0.0)) * 14.0) - h0,
-            grain((mid + vec3(0.0, e, 0.0)) * 14.0) - h0,
-            grain((mid + vec3(0.0, 0.0, e)) * 14.0) - h0
-        ) / e;
-        N = normalize(N - bump * 0.14 * midFade);
-        specScale = mix(0.35, 1.65, smoothstep(0.54, 0.86, strata));
+        if (ice) {
+            // Two sets of fractures run underneath the smooth exposed faces.
+            vec2 planes = vec2(dot(vLocalPos, vec3(0.62, 1.0, -0.35)), dot(vLocalPos, vec3(-0.73, 0.26, 0.81)));
+            planes += vec2(0.13, -0.19) + vec2(0.26, 0.19) * (strata - 0.5);
+            vec2 seam = abs(planes);
+            vec2 width = max(fwidth(planes), vec2(0.008));
+            vec2 frost = 1.0 - smoothstep(vec2(0.008), vec2(0.017) + width, seam);
+            float branch = 0.64 * frost.y * smoothstep(-0.01, 0.14, planes.x);
+            float line = max(frost.x, branch) * midFade;
+            albedo *= vec3(0.76, 1.03, 1.14) + 0.22 * strata;
+            albedo = mix(albedo, vec3(0.52, 0.79, 0.85), line * 0.68);
+            specScale = mix(1.2, 0.48, line);
+        } else {
+            bool iron = uMaterial > 2.5;
+            albedo *= mix(0.70, 1.16, strata) * mix(1.0, 0.83 + grain(mid * 39.0) * 0.34, midFade);
+            albedo *= mix(1.0, 0.88 + grain(rock * 39.0 + 11.0) * 0.24, fineFade);
+            float exposed = smoothstep(0.53, 0.78, strata);
+            albedo *= mix(vec3(1.0), iron ? vec3(1.21, 1.22, 1.25) : vec3(1.09, 0.96, 0.88), exposed);
+            // The height gradient follows the rotating surface in world space.
+            float height = grain(mid * (iron ? 5.0 : 12.0)) * vScale / sqrt(growth);
+            vec3 dx = dFdx(vWorldPos), dy = dFdy(vWorldPos);
+            vec3 tx = cross(dy, N), ty = cross(N, dx);
+            float det = dot(dx, tx);
+            vec3 slope = (tx * dFdx(height) + ty * dFdy(height)) * sign(det) / max(0.00001, abs(det));
+            N = normalize(N - slope * (iron ? 0.035 : 0.069) * midFade);
+            specScale = iron ? mix(0.6, 1.5, exposed) : mix(0.35, 1.25, exposed);
+        }
     } else if (uSpecular > 0.05) {
         // Prozedurale Rumpfplatten (Haupt- & Mikro-Panellinien + Kantenabnutzung) fuer Schiffe, Turret und Stationen.
         float detailFade = 1.0 - smoothstep(0.015, 0.075, length(fwidth(vLocalPos)));
@@ -467,6 +481,12 @@ void main() {
         albedo *= 1.0 - seam * 0.24 - microSeam * 0.14;
         albedo += vec3(0.05, 0.07, 0.09) * edgeWear;
         specScale = mix(1.0, 0.88 + 0.28 * hash31(cell + 7.0), detailFade) * (1.0 - seam * 0.45) + edgeWear * 0.35;
+
+        // Analytische Kantenfase entlang der naechsten Plattenfuge fuer realistische Glanzkanten im Streiflicht.
+        vec3 sSign = sign(fract(pScaled) - 0.5);
+        vec3 seamAxis = (fracP.x >= fracP.y && fracP.x >= fracP.z) ? vec3(sSign.x, 0.0, 0.0) :
+                        (fracP.y >= fracP.z) ? vec3(0.0, sSign.y, 0.0) : vec3(0.0, 0.0, sSign.z);
+        N = normalize(N + seamAxis * (edgeWear - seam * 0.65) * 0.16);
     }
 
     vec3 diffuse = uAmbient * mix(vec3(0.55, 0.66, 0.86), vec3(1.15, 1.28, 1.45), N.y * 0.5 + 0.5);
@@ -474,9 +494,10 @@ void main() {
 
     // Directional Light (Sonne), Blinn-Phong
     float sunNdotL = max(dot(N, uSunDir), 0.0);
+    float sunVis = (sunNdotL > 0.0 || dot(N, uSunDir) > -0.25) ? sunVisibility(faceN) : 0.0;
     if (sunNdotL > 0.0) {
         vec3 H = normalize(uSunDir + V);
-        vec3 sun = uSunColor * sunVisibility(faceN);
+        vec3 sun = uSunColor * sunVis;
         diffuse += sun * sunNdotL;
         specular += sun * pow(max(dot(N, H), 0.0), uShininess);
     }
@@ -509,8 +530,12 @@ void main() {
     vec3 fillLight = fillColor * max(dot(N, normalize(vec3(-0.8, 0.3, -0.4))), 0.0);
     vec3 specTint = (uMaterial <= 0.5) ? mix(vec3(1.0), albedo, 0.32) : vec3(1.0);
     vec3 lit = albedo * (diffuse + fillLight) * hemiAo + specular * specTint * uSpecular * specScale * (0.5 + fresnel);
+    if (ice) lit += albedo * vec3(0.05, 0.14, 0.20) * (0.40 + 0.60 * rim);
     vec3 rimTint = mix(vec3(0.055, 0.15, 0.21), uAmbient * 0.80 + vec3(0.02, 0.04, 0.06), 0.45);
     lit += rimTint * rim * (uMaterial > 0.5 ? 0.22 : 0.62);
+    // Sonnenseitiger Streiflicht-Saum fuer klare Silhouetten gegen den Weltraum.
+    float sunRim = rim * smoothstep(-0.22, 0.72, dot(N, uSunDir)) * sunVis;
+    lit += uSunColor * sunRim * (uMaterial > 0.5 ? 0.14 : 0.30);
 
     // Emissive blendet von "beleuchtet" zu "selbstleuchtend" und pusht Leuchtteile leicht ueber 1.0 fuer sattere Highlights.
     vec3 emissiveGlow = albedo * (1.0 + vColor.a * 0.45);

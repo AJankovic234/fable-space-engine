@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="baseTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c8d99"/><stop offset="1" stop-color="#526370"/></linearGradient>
+    <linearGradient id="bell" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e2b285"/><stop offset="1" stop-color="#9e6334"/></linearGradient>
+    <radialGradient id="amberCore"><stop offset="0" stop-color="#fff4cc"/><stop offset=".45" stop-color="#ffb042"/><stop offset="1" stop-color="#d95814"/></radialGradient>
+  </defs>
+  <!-- Octagonal baseplate -->
+  <polygon points="40,104 88,136 154,136 202,104 202,94 154,64 88,64 40,94" fill="#364552"/>
+  <polygon points="40,94 88,126 154,126 202,94 154,62 88,62" fill="url(#baseTop)"/>
+  <!-- Manifold block -->
+  <polygon points="56,74 102,48 146,72 100,98" fill="#465764"/>
+  <polygon points="56,74 100,98 100,114 56,90" fill="#2c3a44"/>
+  <!-- Upper-left thruster nozzle -->
+  <polygon points="94,52 132,30 166,48 128,70" fill="url(#bell)"/>
+  <polygon points="128,70 166,48 166,76 128,98" fill="#845029"/>
+  <ellipse cx="158" cy="64" rx="15" ry="20" transform="rotate(-18 158 64)" fill="#222d36"/>
+  <ellipse cx="160" cy="65" rx="10" ry="14" transform="rotate(-18 160 65)" fill="url(#amberCore)"/>
+  <!-- Lower-right thruster nozzle -->
+  <polygon points="104,84 142,62 178,82 140,104" fill="url(#bell)"/>
+  <polygon points="140,104 178,82 178,110 140,132" fill="#7c4823"/>
+  <ellipse cx="170" cy="98" rx="15" ry="20" transform="rotate(-18 170 98)" fill="#222d36"/>
+  <ellipse cx="172" cy="99" rx="10" ry="14" transform="rotate(-18 172 99)" fill="url(#amberCore)"/>
+  <!-- Cooling fins -->
+  <polygon points="74,64 114,42 122,46 82,68" fill="#a2b4be"/>
+  <polygon points="84,82 124,60 132,64 92,86" fill="#a2b4be"/>
+</svg>

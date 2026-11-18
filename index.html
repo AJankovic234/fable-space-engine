@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Space 2601AE</title>
     <meta name="description" content="Berge Erz, handle zwischen sechs Raumstationen und baue dein Schiff aus. Wähle bezahlten Geleitschutz oder riskiere einen Eigenflug durch Piratengebiete." />
-    <!-- Leeres Favicon: verhindert die 404-Anfrage nach /favicon.ico -->
-    <link rel="icon" href="data:," />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/src/hangar.css" />
     <style>
       html,
@@ -110,6 +109,7 @@
         </details>
         <button id="menu-launch" class="menu-launch" type="button"><span id="menu-launch-label">Handelsflug starten</span><kbd>Enter ↵</kbd></button>
         <div class="menu-actions">
+          <button id="menu-intro" type="button">Intro-Film ▸</button>
           <button id="menu-combat" type="button">Kampfmission <kbd>F2</kbd></button>
           <button id="menu-saves" type="button">Spielstände <kbd>F8</kbd></button>
         </div>
@@ -139,6 +139,7 @@
             <dt>U</dt><dd>Mausmodus: Wischen (Stick federt zurück) oder Halten (Stick bleibt stehen)</dd>
             <dt>H · Mitteltaste</dt><dd>Heckblick, solange gehalten · mit gehaltener mittlerer Maustaste frei umsehen</dd>
             <dt>Bild ↑ / ↓</dt><dd>Verfolgerkamera näher · weiter</dd>
+            <dt>O</dt><dd>Flugoptik 1,8× und Feinsteuerung ein- oder ausschalten</dd>
             <dt>F1 · F3 · F4</dt><dd>Tastenübersicht im Flug · Bildraten-Anzeige · Sonnenschatten an/aus</dd>
             <dt>B · G</dt><dd>Andocken · Archivscan auslösen (350 m, mit RT-9 bis 700 m)</dd>
             <dt>J · B</dt><dd>Im Bombereinsatz Torpedo abfeuern · nach Helios zurückkehren</dd>
@@ -261,7 +262,7 @@
         <div id="equipment-panel" class="equipment-grid" hidden>
           <article class="equipment flagship">
             <div class="card-top"><span class="pill">AUTONOME BEWAFFNUNG</span><kbd>1</kbd></div>
-            <div class="turret-art"><img src="/assets/auto-turret.png" alt="Drehbarer automatischer Laserturm mit zwei Rohren und türkisfarbenem Zielsensor" /><span class="art-caption">SENTINEL / AT-01</span></div>
+            <div class="turret-art"><img src="/assets/auto-turret.webp" alt="Drehbarer automatischer Laserturm mit zwei Rohren und türkisfarbenem Zielsensor" /><span class="art-caption">SENTINEL / AT-01</span></div>
             <div class="equipment-copy"><h2>Auto-Turret</h2><p>Der Turm verfolgt den nächsten Gegner in Sichtweite. Verdeckt ein Asteroid die Schussbahn, hält er das Feuer.</p><div class="specs"><span><b>280 m</b> Reichweite</span><span><b>10</b> Schaden je Treffer</span><span><b>2</b> Rohre im Wechsel</span></div></div>
             <button id="buy-0" class="buy-button" type="button" aria-label="Auto-Turret kaufen"><span>INSTALLIEREN</span><strong id="price-0">350 CR</strong><span aria-hidden="true">↗</span></button>
           </article>
@@ -292,8 +293,40 @@
         <footer class="hangar-footer"><div><p id="shop-notice" role="status" aria-live="polite"></p><small>Welt und Beute-Timer pausieren am Dock. Fracht &amp; Ausrüstung bleiben bis zum Ende des Flugs.</small></div><div class="departure-actions"><button id="depart" type="button">ABDOCKEN <span>B ↗</span></button><button id="next-sector" type="button">NÄCHSTER SEKTOR →</button></div></footer>
       </div>
     </section>
+    <!-- Borderlands-inspiriertes Intro-Kino (abspielbar ueber das Hauptmenue) -->
+    <section id="intro-film" hidden aria-label="Intro-Film Space 2601AE">
+      <div id="intro-bg" aria-hidden="true"></div>
+      <canvas id="intro-fx" aria-hidden="true"></canvas>
+      <div class="intro-grain" aria-hidden="true"></div>
+      <div id="intro-flash" aria-hidden="true"></div>
+      <div class="intro-bar intro-bar-top" aria-hidden="true">
+        <span>SPACE 2601AE · INTRO</span>
+        <span class="intro-audio-meta"><canvas id="intro-wave" width="112" height="18"></canvas><span class="intro-track">♪ NO REST IN THE BELT</span></span>
+      </div>
+      <div class="intro-stage">
+        <div id="intro-subject-wrap" hidden><img id="intro-subject" alt="" /></div>
+        <div id="intro-card" hidden>
+          <p id="intro-kicker"></p>
+          <h2 id="intro-title"></h2>
+          <p id="intro-tagline"></p>
+        </div>
+        <div id="intro-caption" hidden>
+          <p class="intro-cap-kicker"></p>
+          <p id="intro-caption-line"></p>
+          <p id="intro-caption-sub"></p>
+        </div>
+      </div>
+      <div class="intro-bar intro-bar-bottom">
+        <div class="intro-progress-track" aria-hidden="true"><i id="intro-progress"></i></div>
+        <div class="intro-controls">
+          <button id="intro-mute" type="button">Ton aus</button>
+          <button id="intro-skip" type="button">Überspringen <kbd>Esc</kbd></button>
+        </div>
+      </div>
+    </section>
     <!-- Fable kompiliert src/*.fs nach build/*.js; Vite buendelt von dort. -->
     <script defer src="/pilot-profile.js"></script>
+    <script defer src="/intro-film.js"></script>
     <script type="module" src="/build/Main.js"></script>
   </body>
 </html>

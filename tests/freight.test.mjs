@@ -42,6 +42,11 @@ test('a large load blocks switching to a smaller ship, and detours retain a navi
   assert.equal(act(cargo,0,accept(1,24)),0);
   assert.equal(free(cargo),8);
   assert.equal(equip(ships,cargo,320,true,new RefitOrder(0,[2])).tag,1);
+  const courier = new RefitOrder(0,[3]);
+  assert.equal(equip(ships,cargo,539,true,courier).tag,1);
+  assert.equal(equip(ships,cargo,540,true,courier).fields[0],540);
+  assert.equal(free(cargo),0);
+  assert.equal(ships.Active,3);
   assert.ok(valid(cargo.Freight));
   for(const dest of [0,1,2,3,4,5]) for(let current=0;current<6;current++) {
     const seen=new Set();

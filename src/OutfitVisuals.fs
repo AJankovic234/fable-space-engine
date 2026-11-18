@@ -28,7 +28,8 @@ module OutfitVisuals =
     let private mounts =
         [| [| guns; pair 0.62 0.30 1.45; pair 0.66 0.422 0.53; [| Vec3(0.0, 0.25, 1.45) |] |]
            [| guns; pair 1.62 0.21 0.91; pair 1.62 0.215 -1.40; [| Vec3(0.0, 0.29, 1.42) |] |]
-           [| guns; pair 1.57 0.037 1.08; pair 0.65 0.202 -0.12; [| Vec3(0.0, 0.29, 1.46) |] |] |]
+           [| guns; pair 1.57 0.037 1.08; pair 0.65 0.202 -0.12; [| Vec3(0.0, 0.29, 1.46) |] |]
+           [| guns; pair 1.38 0.445 1.36; pair 1.36 0.405 -1.84; [| Vec3(0.0, 0.325, 1.37) |] |] |]
 
     let clear outfit =
         for batch in outfit.Visible do InstanceBatch.clear batch

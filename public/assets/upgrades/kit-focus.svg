@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="baseTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c8d99"/><stop offset="1" stop-color="#516270"/></linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6f7e"/><stop offset="1" stop-color="#2c3a46"/></linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfb18b"/><stop offset="1" stop-color="#9e6d47"/></linearGradient>
+    <radialGradient id="plasma"><stop offset="0" stop-color="#f2e6ff"/><stop offset=".45" stop-color="#a874ff"/><stop offset="1" stop-color="#4e38c2"/></radialGradient>
+  </defs>
+  <!-- Octagonal baseplate -->
+  <polygon points="40,104 88,136 154,136 202,104 202,94 154,64 88,64 40,94" fill="#354552"/>
+  <polygon points="40,94 88,126 154,126 202,94 154,62 88,62" fill="url(#baseTop)"/>
+  <!-- Capacitor body -->
+  <polygon points="60,72 114,42 174,76 120,106" fill="url(#rail)"/>
+  <polygon points="60,72 120,106 120,120 60,86" fill="#23303a"/>
+  <polygon points="174,76 120,106 120,120 174,90" fill="#18222a"/>
+  <!-- Copper focusing rings -->
+  <polygon points="84,58 100,49 148,76 132,85" fill="url(#bronze)"/>
+  <polygon points="108,45 124,36 172,63 156,72" fill="url(#bronze)"/>
+  <!-- Front emitter frame & violet plasma crystal -->
+  <polygon points="146,72 184,94 184,114 146,92" fill="#263340"/>
+  <polygon points="154,78 178,92 178,110 154,96" fill="url(#plasma)"/>
+  <!-- Side energy nodes -->
+  <polygon points="64,96 74,102 84,96 74,90" fill="#d3b8ff"/>
+  <polygon points="64,96 74,102 74,110 64,104" fill="#8957e5"/>
+  <polygon points="176,104 186,110 196,104 186,98" fill="#d3b8ff"/>
+  <polygon points="176,104 186,110 186,118 176,112" fill="#8957e5"/>
+</svg>

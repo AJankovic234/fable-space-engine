@@ -738,7 +738,8 @@ module Sound =
         const HULL_ENGINE = [
             { rateBase: 0.84, throttleRate: 0.22, boostRate: 0.30, freqBase: 150, freqThrottle: 260, freqBoost: 560, gainScale: 1.0 },
             { rateBase: 0.68, throttleRate: 0.16, boostRate: 0.22, freqBase: 118, freqThrottle: 195, freqBoost: 410, gainScale: 1.12 },
-            { rateBase: 1.02, throttleRate: 0.28, boostRate: 0.36, freqBase: 205, freqThrottle: 330, freqBoost: 680, gainScale: 0.94 }
+            { rateBase: 1.02, throttleRate: 0.28, boostRate: 0.36, freqBase: 205, freqThrottle: 330, freqBoost: 680, gainScale: 0.94 },
+            { rateBase: 0.93, throttleRate: 0.24, boostRate: 0.32, freqBase: 177, freqThrottle: 294, freqBoost: 610, gainScale: 0.98 }
         ];
         const SECTOR_AMBIENCE = [
             { space: 0.075, nebula: 0.025, cap: 0.0 },
@@ -846,7 +847,7 @@ module Sound =
                 listener.fx = fx; listener.fy = fy; listener.fz = fz;
             },
             setFlightContext(hull, kit, sector, cockpit, outpostKind, gateProx, cruiserNear) {
-                flightCtx.hull = Math.max(0, Math.min(2, hull || 0));
+                flightCtx.hull = Math.max(0, Math.min(HULL_ENGINE.length - 1, hull || 0));
                 flightCtx.kit = Math.max(0, Math.min(3, kit || 0));
                 flightCtx.sector = Math.max(0, Math.min(5, sector || 0));
                 flightCtx.cockpit = !!cockpit;

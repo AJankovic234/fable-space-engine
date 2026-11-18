@@ -23,6 +23,7 @@
     <Compile Include="UpgradeMeshes.fs" />
     <Compile Include="Input.fs" />
     <Compile Include="PhysicsAndPool.fs" />
+    <Compile Include="JumpFlight.fs" />
     <Compile Include="Salvage.fs" />
     <Compile Include="EnemyProfiles.fs" />
     <Compile Include="TradeRoutes.fs" />

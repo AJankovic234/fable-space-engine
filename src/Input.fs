@@ -67,6 +67,7 @@ type GameAction =
     | ZoomOut = 37
     | ToggleShadows = 38
     | ToggleHelp = 39
+    | ToggleOptics = 40
 
 type InputState =
     { /// Pro Aktion: 1 = Taste wird gerade gehalten.
@@ -103,7 +104,7 @@ type InputState =
 module Input =
 
     [<Literal>]
-    let private ActionCount = 40
+    let private ActionCount = 41
 
     /// Radiant Blickdrehung pro Pixel Mausweg beim freien Umsehen.
     [<Literal>]
@@ -210,6 +211,7 @@ module Input =
         | "PageDown" -> int GameAction.ZoomOut
         | "F4" -> int GameAction.ToggleShadows
         | "F1" -> int GameAction.ToggleHelp
+        | "KeyO" -> int GameAction.ToggleOptics
         | "Comma" -> int GameAction.MouseSlower
         | "Period" -> int GameAction.MouseFaster
         | _ -> -1

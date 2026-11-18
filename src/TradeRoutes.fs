@@ -72,3 +72,26 @@ module TradeRoutes =
     let quoteCargoFor terms market cargo = quoteSaleFor terms market cargo |> fst
 
     let quoteCargo market cargo = quoteCargoFor TradeTerms.standard market cargo
+
+    /// Galaktischer Durchschnittspreis (Ankauf) ueber alle kaufenden Stationen (Freelancer-Marktvergleich).
+    let galacticAverageSell (markets: StationMarket[]) (id: CommodityId) =
+        let mutable sum = 0
+        let mutable count = 0
+        for market in markets do
+            let price = TradeSystem.sellPrice market id
+            if price > 0 then
+                sum <- sum + price
+                count <- count + 1
+        if count = 0 then 0 else int (System.Math.Round(float sum / float count))
+
+    /// Bestes erreichbares Nachbarangebot fuer eine Ware ab `origin` (Sektorindex, Ankaufspreis).
+    let bestNeighborBid terms (markets: StationMarket[]) (cargo: CargoHold) origin (id: CommodityId) =
+        let mutable bestSector = -1
+        let mutable bestPrice = 0
+        for target in neighbors origin do
+            if target >= 0 && target < markets.Length then
+                let price = TradeSystem.pilotSellPrice terms markets.[target] cargo id
+                if price > bestPrice then
+                    bestPrice <- price
+                    bestSector <- target
+        if bestSector >= 0 then Some(bestSector, bestPrice) else None

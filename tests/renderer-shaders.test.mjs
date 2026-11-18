@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Shaders_fragment as mainFrag, Shaders_vertex as mainVert, RendererModule_create as createRenderer } from '../build/WebGLRenderer.js';
 import { SkyBackdropModule_create as createSky, SkyBackdropModule_draw as drawSky } from '../build/SkyBackdrop.js';
 import { CameraModule_create as createCamera, CameraModule_updateMatrices as updateCamera } from '../build/Camera.js';
+import { ProceduralMeshes_jumpGateFrame as jumpGateFrame, ProceduralMeshes_jumpGateRing as jumpGateRing } from '../build/ProceduralMeshes.js';
 
 function createMockGl() {
   const shaders = [];
@@ -109,10 +110,12 @@ function createMockGl() {
   return { mockGl, canvas, shaders, uniforms };
 }
 
-test('WebGLRenderer fragment shader includes slope bias, metallic specTint and calibrated deep-space fog', () => {
+test('WebGLRenderer fragment shader includes slope bias, metallic specTint, panel bevel, solar rim and calibrated deep-space fog', () => {
   assert.ok(mainVert.startsWith('#version 300 es'));
   assert.ok(mainFrag.includes('mix(0.00075, 0.00022, slope)'));
   assert.ok(mainFrag.includes('specTint'));
+  assert.ok(mainFrag.includes('seamAxis'));
+  assert.ok(mainFrag.includes('sunRim'));
   assert.ok(mainFrag.includes('uAmbient * 0.14'));
 });
 
@@ -133,4 +136,24 @@ test('SkyBackdrop compiles and uploads sector-matched uSunColor on draw', () => 
   assert.ok(!skyFrag.src.includes('vignette'), 'SkyBackdrop should not double-vignette over WebGLRenderer');
   const uploaded = uniforms.get('uSunColor');
   assert.ok(uploaded && Math.abs(uploaded[2] - 1.2) < 1e-5, `Expected uSunColor[2] ≈ 1.2, got ${uploaded}`);
+});
+
+test('ProceduralMeshes builds finite 3D jump gate frame and accelerator ring with emissive beacons', () => {
+  for (const [label, build] of [['jumpGateFrame', jumpGateFrame], ['jumpGateRing', jumpGateRing]]) {
+    const mesh = build();
+    assert.ok(mesh.Vertices.length >= 1000 && mesh.Indices.length >= 100, `${label} geometry too small`);
+    assert.equal(mesh.Vertices.length % 10, 0, `${label} stride mismatch`);
+    let hasEmissive = false;
+    let maxR = 0;
+    for (let i = 0; i < mesh.Vertices.length; i += 10) {
+      for (let k = 0; k < 10; k++) {
+        assert.ok(Number.isFinite(mesh.Vertices[i + k]), `${label} non-finite vertex attribute`);
+      }
+      const r = Math.hypot(mesh.Vertices[i], mesh.Vertices[i + 1], mesh.Vertices[i + 2]);
+      if (r > maxR) maxR = r;
+      if (mesh.Vertices[i + 9] > 1.0) hasEmissive = true;
+    }
+    assert.ok(hasEmissive, `${label} should include glowing beacons/coils`);
+    assert.ok(maxR > 15 && maxR < 40, `${label} unexpected radius ${maxR}`);
+  }
 });

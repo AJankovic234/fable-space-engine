@@ -22,9 +22,17 @@ module BlockadeUi =
         let grid = element "yard-blueprints"
         let cards =
             Blockade.blueprints |> Array.map (fun spec ->
+                let art =
+                    match spec.Kind with
+                    | 1 -> "/assets/ships/yard-transporter.webp"
+                    | 2 -> "/assets/ships/yard-escort.webp"
+                    | _ -> "/assets/ships/yard-bomber.webp"
                 let card = document.createElement "article"
                 card.className <- "yard-order"
-                card.innerHTML <- "<h3></h3><p></p><div class='yard-materials'></div><label>Einsatzhafen<select></select></label><button type='button'></button>"
+                card.innerHTML <- "<div class='yard-art'><img alt='' loading='lazy' /></div><h3></h3><p></p><div class='yard-materials'></div><label>Einsatzhafen<select></select></label><button type='button'></button>"
+                let img = card.querySelector("img") :?> HTMLImageElement
+                img.src <- art
+                img.alt <- spec.Name + " auf dem Baudock von Kepler-07"
                 card.querySelector("h3").textContent <- spec.Name
                 card.querySelector("p").textContent <- spec.Description
                 let select = card.querySelector("select") :?> HTMLSelectElement

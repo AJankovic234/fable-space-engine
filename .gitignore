@@ -1,6 +1,45 @@
+# Build & dependencies
 node_modules/
 build/
 dist/
 bin/
 obj/
 *.fable-temp
+__pycache__/
+.pytest_cache/
+
+# Environment variables, API keys & credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.secret
+secrets.*
+credentials.*
+*service-account*.json
+
+# Local AI agent state, transcripts & caches
+.claude/
+.codex/
+.gemini/
+.cursor/
+.aider*
+
+# Logs, local dumps, backups & temporary files
+*.log
+npm-debug.log*
+*.sqlite
+*.db
+*.bak
+tmp/
+.tmp/
+
+# IDE & OS metadata
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

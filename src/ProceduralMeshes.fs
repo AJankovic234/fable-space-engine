@@ -233,6 +233,7 @@ module DeckCargo =
     let sealedIndex = TradeSystem.commodities.Length
     let haulerMounts = [| for z in [| 0.24; -0.59; -1.42 |] do for x in [| -1.0; 1.0 |] do yield Vec3(x,0.472,z) |]
     let escortMounts = [| Vec3(-0.91,0.04,0.53); Vec3(0.91,0.04,0.53) |]
+    let courierMounts = [| for z in [| -0.99; -0.27; 0.45 |] do for x in [| -1.36; 1.36 |] do yield Vec3(x,0.42,z) |]
 
     let iter (cargo: CargoHold) visit =
         let used = TradeSystem.usedVolume cargo
@@ -335,6 +336,95 @@ module ProceduralMeshes =
             frame.Slab(fin,[|0.07;0.055;0.055;0.07|],Vec3(-sin a,0.0,cos a),paint)
         lamp.Loft([|collar 0.98 0.57;collar 1.17 0.70;collar 1.45 0.70;collar 1.65 0.54|],true,true,lens)
         frame.Build(), lamp.Build()
+
+    let private jumpGateFrameParts strut box =
+        let hull = MeshColor.rgb 0.56 0.63 0.66
+        let steel = MeshColor.rgb 0.14 0.19 0.24
+        let trim = MeshColor.rgb 0.82 0.45 0.10
+        let beaconCyan = MeshColor.glow 0.18 0.92 1.15 1.4
+        let beaconAmber = MeshColor.glow 1.25 0.66 0.14 1.5
+        let n = 12
+        let front = ring(n, 0.0, 0.0, -3.6, 22.8, 22.8)
+        let mid = ring(n, 0.0, 0.0, 0.0, 25.4, 25.4)
+        let rear = ring(n, 0.0, 0.0, 3.6, 22.8, 22.8)
+        for i in 0 .. n - 1 do
+            let j = (i + 1) % n
+            strut mid.[i] mid.[j] 1.35 (if i % 3 = 0 then trim else hull)
+            strut front.[i] front.[j] 0.68 steel
+            strut rear.[i] rear.[j] 0.68 steel
+            strut front.[i] mid.[i] 0.52 steel
+            strut rear.[i] mid.[i] 0.52 steel
+            strut front.[i] mid.[j] 0.34 hull
+        for k in 0 .. 3 do
+            let a = Math.PI * 0.25 + float k * Math.PI * 0.5
+            let dir = Vec3(cos a, sin a, 0.0)
+            let tang = Vec3(-sin a, cos a, 0.0)
+            let pIn = dir * 20.6
+            let pBase = dir * 24.4
+            let pTip = dir * 32.0
+            strut (pBase - tang * 1.4) pTip 0.95 steel
+            strut (pBase + tang * 1.4) pTip 0.95 steel
+            strut (pBase - Vec3(0.0, 0.0, 3.6)) pTip 0.62 hull
+            strut (pBase + Vec3(0.0, 0.0, 3.6)) pTip 0.62 hull
+            strut (dir * 23.0) (pTip + dir * 0.8) 1.05 trim
+            // Tip beacon & inner emitter head
+            box (pTip + dir * 1.35) (Vec3(1.15, 1.15, 1.45)) beaconAmber
+            box pIn (Vec3(0.85, 0.85, 1.85)) beaconCyan
+
+    let jumpGateOpeningRadius = 16.1
+    let jumpGateRingSegments = 12
+
+    let private jumpGateInnerEdge =
+        ring(jumpGateRingSegments, 0.0, 0.0, 0.0, jumpGateOpeningRadius, jumpGateOpeningRadius)
+
+    let jumpGateEmitters =
+        jumpGateInnerEdge |> Array.mapi (fun i p ->
+            let mid = Vec3.lerp p jumpGateInnerEdge.[(i + 1) % jumpGateRingSegments] 0.5
+            mid * (if i % 2 = 0 then 0.92 else 1.0))
+
+    let private jumpGateRingParts strut box =
+        let alloy = MeshColor.rgb 0.72 0.79 0.85
+        let core = MeshColor.rgb 0.22 0.30 0.38
+        let coil = MeshColor.glow 1.0 1.0 1.0 1.35
+        let n = jumpGateRingSegments
+        let outer = ring(n, 0.0, 0.0, 0.0, 18.2, 18.2)
+        for i in 0 .. n - 1 do
+            let j = (i + 1) % n
+            strut outer.[i] outer.[j] 0.62 alloy
+            for z in [-1.25; 1.25] do
+                let depth = Vec3(0.0, 0.0, z)
+                strut (jumpGateInnerEdge.[i] + depth) (jumpGateInnerEdge.[j] + depth) 0.36 core
+            if i % 2 = 0 then
+                let mid = Vec3.lerp jumpGateInnerEdge.[i] jumpGateInnerEdge.[j] 0.5
+                strut ((mid + Vec3(0.0, 0.0, -1.25)) * 0.96) outer.[i] 0.55 alloy
+            let half = if i % 2 = 0 then Vec3(0.75, 0.75, 1.45) else Vec3(0.45, 0.45, 1.3)
+            box jumpGateEmitters.[i] half coil
+
+    let private jumpGateMesh parts =
+        let b = MeshBuilder()
+        parts (beam b) (fun center half color -> b.Box(center, half, color))
+        b.Build()
+
+    let jumpGateFrame () = jumpGateMesh jumpGateFrameParts
+    let jumpGateRing () = jumpGateMesh jumpGateRingParts
+
+    /// Local oriented boxes built from the same struts and emitters as both meshes.
+    let private jumpGateBoxes parts =
+        let boxes = ResizeArray<_>()
+        let strut start finish width _ =
+            let delta = finish - start
+            let axis = Vec3.normalize delta
+            let reference = if abs axis.Y > 0.9 then Vec3.unitX else Vec3.unitY
+            let right = Vec3.normalize (Vec3.cross axis reference)
+            boxes.Add(struct (Vec3.lerp start finish 0.5, right, Vec3.cross axis right, axis,
+                              Vec3(width, width, Vec3.length delta * 0.5)))
+        let box center half _ =
+            boxes.Add(struct (center, Vec3.unitX, Vec3.unitY, Vec3.unitZ, half))
+        parts strut box
+        boxes.ToArray()
+
+    let jumpGateFrameBoxes = jumpGateBoxes jumpGateFrameParts
+    let jumpGateRingBoxes = jumpGateBoxes jumpGateRingParts
 
     /// Sechs geborgene Datenträger. Gehäuse und Statuslicht teilen sich ein Mesh.
     let archiveRelic (kind: StationKind) (recorderOnBoard: bool) : MeshData =
@@ -1093,6 +1183,77 @@ module ProceduralMeshes =
             finBand 0.82 1.0 red
         b.Build()
 
+    /// Eisvogel: getrennte Frachtrümpfe mit einem kurzen Brückenträger.
+    let playerCourier () : MeshData =
+        let b = MeshBuilder()
+        let petrol = MeshColor.rgb 0.034 0.27 0.32
+        let iceBlue = MeshColor.rgb 0.25 0.59 0.70
+        let ceramic = MeshColor.rgb 0.84 0.92 0.92
+        let frame = MeshColor.rgb 0.08 0.14 0.18
+        let metal = MeshColor.rgb 0.29 0.40 0.46
+        let copper = MeshColor.rgb 0.79 0.40 0.20
+        let canopy = MeshColor.glow 0.021 0.14 0.21 0.24
+        let light = MeshColor.glow 0.50 0.87 1.00 0.82
+        let jet = MeshColor.glow 0.37 0.78 1.00 1.00
+        let keel = hullSection 0.0
+
+        // Die kurze Kanzel lässt vor beiden Rümpfen freie Sicht aus dem Cockpit.
+        b.Loft([| keel -1.28 0.12 -0.07 0.24; keel -0.94 0.32 -0.15 0.31
+                  keel 0.36 0.35 -0.19 0.33; keel 0.96 0.29 -0.13 0.29
+                  keel 1.58 0.23 -0.02 0.29 |], true, true, petrol)
+        b.Loft([| keel -1.19 0.13 0.165 0.255; keel -0.81 0.31 0.23 0.54
+                  keel -0.16 0.34 0.29 0.53; keel 0.15 0.30 0.29 0.36 |], true, true, canopy)
+        b.Loft([| keel -0.81 0.25 0.535 0.56; keel -0.38 0.29 0.53 0.575
+                  keel -0.16 0.31 0.523 0.555; keel 0.18 0.28 0.31 0.36 |], true, true, ceramic)
+        b.Box(Vec3(0.0, 0.348, 0.65), Vec3(0.285, 0.022, 0.256), metal)
+        b.Box(Vec3(0.0, 0.302, 1.37), Vec3(0.25, 0.023, 0.21), frame)
+
+        for side, engine, gun in
+            [| -1.0, ShipHardpoints.playerEngineLeft, ShipHardpoints.playerGunLeft
+               1.0, ShipHardpoints.playerEngineRight, ShipHardpoints.playerGunRight |] do
+            let p x y z = Vec3(side * x, y, z)
+            let hull x z width low high = hullSection (side * x) z width low high
+
+            // Gestrakte Frachtrümpfe mit frei auslaufenden Bug- und Heckspitzen.
+            b.Loft([| hull 1.29 -2.48 0.065 -0.18 0.005; hull 1.35 -2.15 0.29 -0.29 0.31
+                      hull 1.36 -1.96 0.425 -0.295 0.40; hull 1.36 0.88 0.45 -0.295 0.40
+                      hull 1.38 1.38 0.45 -0.22 0.43; hull 1.43 1.79 0.34 -0.16 0.34
+                      hull 1.48 1.89 0.21 -0.11 0.18 |], true, true, petrol)
+            b.Loft([| hull 1.29 -2.50 0.057 -0.11 0.016; hull 1.35 -2.15 0.30 -0.04 0.321
+                      hull 1.36 -1.95 0.429 0.055 0.407; hull 1.36 -1.42 0.431 0.085 0.404 |], true, true, ceramic)
+            b.Loft([| hull 1.37 0.79 0.457 0.13 0.411; hull 1.38 1.38 0.456 0.12 0.445
+                      hull 1.43 1.79 0.348 0.06 0.357; hull 1.48 1.91 0.215 0.02 0.204 |], true, true, ceramic)
+            armorPanel b
+                [| p 1.797 0.10 -1.38; p 1.797 0.237 -1.21; p 1.808 0.247 0.72
+                   p 1.810 0.145 0.83; p 1.807 0.066 0.63 |] (p 1.0 0.0 0.0) 0.026 iceBlue frame
+            b.Box(p 1.48 0.133 1.916, Vec3(0.127, 0.022, 0.014), frame)
+            b.Box(p 1.48 0.133 1.933, Vec3(0.093, 0.014, 0.009), light)
+            b.Box(p 1.36 0.035 -2.269, Vec3(0.092, 0.026, 0.024), light)
+
+            let crossSection x front rear y =
+                [| p x y front; p x (y + 0.095) (front + 0.046)
+                   p x (y + 0.095) (rear - 0.048); p x y rear
+                   p x (y - 0.075) (rear - 0.049); p x (y - 0.075) (front + 0.070) |]
+            b.Loft([| crossSection 0.28 0.39 0.88 0.185; crossSection 0.88 0.51 0.86 0.130
+                      crossSection 1.20 0.59 0.88 0.117 |], true, true, iceBlue)
+
+            // Sechs Kisten greifen mit den Füßen in die niedrigen Führungsschienen.
+            for dx in [| -0.18; 0.18 |] do
+                b.Box(p (1.36 + dx) 0.408 -0.27, Vec3(0.031, 0.014, 1.03), frame)
+            for z in [| -0.99; -0.27; 0.45 |] do
+                b.Box(p 1.647 0.405 z, Vec3(0.036, 0.035, 0.060), copper)
+                b.Box(p 1.075 0.403 z, Vec3(0.028, 0.027, 0.055), metal)
+            playerGunPod b gun petrol metal frame light
+
+            // Zwei niedrig eingezogene Schubkanäle, mit offenem Spalt bis zur Heckkante.
+            let motor z radius = ring (12, engine.X, engine.Y, z, radius, radius * 0.81)
+            b.Loft([| motor 0.84 0.14; motor 1.13 0.267; motor 1.68 0.296; motor 1.83 0.28 |],
+                   true, true, frame)
+            let mount z radius = hull (abs engine.X) z radius -0.14 0.22
+            b.Loft([| mount 1.12 0.14; mount 1.38 0.395; mount 1.72 0.47; mount 1.83 0.35 |], true, true, iceBlue)
+            nozzle b engine.X engine.Y engine.Z 0.285 0.19 metal frame jet
+        b.Build()
+
     // ---------------------------------------------------------------------------------
     //  Gegnerflotte: alle Modelle nutzen die Waffen- und Motorpositionen der Physik.
     // ---------------------------------------------------------------------------------
@@ -1553,8 +1714,8 @@ module ProceduralMeshes =
 
         positions.ToArray(), triangles
 
-    /// Organischer Asteroid. subdivisions: 1 = 80, 2 = 320, 3 = 1280 Dreiecke.
-    let asteroid (seed: int) (subdivisions: int) : MeshData =
+    /// Regional geology is purely visual. The same surface is used for barren and ore-bearing bodies.
+    let sectorAsteroid kind (seed: int) (subdivisions: int) : MeshData =
         let rng = Rng(seed)
         let positions, triangles = icosphere subdivisions
 
@@ -1620,7 +1781,26 @@ module ProceduralMeshes =
                     if over > 0.0 then
                         p <- p - cutNormal.[k] * over
 
-                p)
+                match kind with
+                | MiningDepot -> p
+                | Refinery ->
+                    // Cooled slag: broad rafts of crust sit above recessed seams.
+                    let joint = abs (sin (direction.X * 4.2 + detailPhase + 1.6 * direction.Y * direction.Z))
+                    p * (0.91 + 0.12 * min 1.0 (joint * 3.5))
+                | FrontierBazaar ->
+                    // Two lobes meet at a worn neck. Vary the join with the original seed.
+                    let waist = 0.74 + 0.28 * min 1.0 (abs (p.X + 0.12 * p.Z) * 2.8)
+                    Vec3(p.X * 1.12, p.Y * waist, p.Z * waist)
+                | OrbitalYard ->
+                    // Broad cleavage planes on opaque blue ice.
+                    Vec3(max -0.79 (min 0.86 p.X), min 0.57 (max -0.67 p.Y), p.Z * 0.96)
+                | ResearchRelay ->
+                    let bed = sin (direction.Y * 13.0 + direction.Z * 2.4 + detailPhase)
+                    Vec3(p.X * (1.0 + 0.075 * bed), p.Y * 0.84, p.Z * (1.0 + 0.075 * bed))
+                | FleetDock ->
+                    // Rounded regmaglypts give the iron meteorites a thumb-pressed surface.
+                    let pocket = max 0.0 (sin (direction.X * 7.0 + detailPhase) * cos (direction.Y * 8.0 - direction.Z * 4.0))
+                    p * (1.0 - 0.15 * pocket * pocket))
 
         // Auf Huellkugelradius 1 normieren: Instanz-Skalierung = Kollisionsradius
         let maxRadius = displaced |> Array.fold (fun m p -> Math.Max(m, Vec3.length p)) 0.0
@@ -1636,7 +1816,26 @@ module ProceduralMeshes =
             let depression, _ = craterBowl direction
             let shade = 0.53 + strata * 0.055 - depression * 0.65
             let vein = max 0.0 (1.0 - abs mineral * 8.0)
-            MeshColor.rgb (shade + vein * 0.16) (shade * 0.92 + vein * 0.09) (shade * 0.82 + vein * 0.025)
+            let surface (from: Vec3) (towards: Vec3) amount =
+                let c = Vec3.lerp from towards (max 0.0 (min 1.0 amount))
+                MeshColor.rgb c.X c.Y c.Z
+            match kind with
+            | MiningDepot -> MeshColor.rgb (shade + vein * 0.16) (shade * 0.92 + vein * 0.09) (shade * 0.82 + vein * 0.025)
+            | Refinery ->
+                let joint = abs (sin (direction.X * 4.2 + detailPhase + 1.6 * direction.Y * direction.Z))
+                let seam = max 0.0 (1.0 - joint * 3.5)
+                let crust = surface (Vec3(0.20,0.14,0.15)) (Vec3(0.93,0.31,0.065)) (0.14 + 0.14 * strata + 0.8 * seam)
+                { crust with Emissive = 0.46 * seam * seam }
+            | FrontierBazaar ->
+                surface (Vec3(0.12,0.23,0.22)) (Vec3(0.53,0.65,0.49)) (0.40 + 0.29 * strata + vein * 0.23)
+            | OrbitalYard ->
+                let frost = 0.60 + 0.27 * direction.Y + 0.21 * strata - 0.52 * (1.0 - abs mineral) ** 4.0
+                surface (Vec3(0.10,0.35,0.49)) (Vec3(0.88,0.96,1.0)) frost
+            | ResearchRelay ->
+                let bed = sin (direction.Y * 13.0 + direction.Z * 2.4 + detailPhase)
+                surface (Vec3(0.19,0.15,0.29)) (Vec3(0.69,0.53,0.66)) (0.41 + 0.38 * bed + 0.12 * strata)
+            | FleetDock ->
+                surface (Vec3(0.23,0.26,0.31)) (Vec3(0.65,0.49,0.38)) (0.38 + 0.24 * strata + 0.27 * vein - depression)
 
         let colors = positions |> Array.map rockColor
 
@@ -1666,13 +1865,17 @@ module ProceduralMeshes =
                 let corner (i: int) =
                     let n = smooth.[i]
                     let n = if Vec3.lengthSq n > 1e-14 then Vec3.normalize n else face
-                    b.Vertex(displaced.[i] * scale, (if Vec3.dot n face > 0.64 then n else face), colors.[i])
+                    let crease = if kind = OrbitalYard then 0.985 else 0.64
+                    b.Vertex(displaced.[i] * scale, (if Vec3.dot n face > crease then n else face), colors.[i])
 
                 corner ia
                 corner ib
                 corner ic
 
         b.Build()
+
+    /// Original belt rock, also shared with the small debris pool.
+    let asteroid seed subdivisions = sectorAsteroid MiningDepot seed subdivisions
 
     // ---------------------------------------------------------------------------------
     //  Laser-Bolt: gestrecktes Oktaeder im Einheitswuerfel (Laenge entlang Z)
