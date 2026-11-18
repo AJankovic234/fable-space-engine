@@ -1,0 +1,139 @@
+<section id="ae-sprungnetz" lang="de" aria-label="Entwurf der Universumskarte">
+  <header><h2>Sprungnetz</h2><span>Heimathafen · Kestrel</span></header>
+  <div class="ae-map" role="group" aria-label="Acht Sektoren zur Auswahl">
+    <svg class="ae-lanes" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true"></svg>
+  </div>
+  <div class="ae-legend"><span><i></i>Bestehendes Tor</span><span><i></i>Geplantes Tor</span></div>
+  <div class="ae-detail" aria-live="polite">
+    <div><span class="ae-kind"></span><h3></h3><p class="ae-desc"></p></div>
+    <div class="ae-nav"><span class="ae-count"></span><p class="ae-course"></p><label hidden>Zwischenstopp <select></select></label></div>
+  </div>
+</section>
+<style>
+#ae-sprungnetz{color:#e1ebef;background:#101c25;border:1px solid #364853;border-radius:9px;overflow:hidden;font:14px/1.45 "Segoe UI",sans-serif;color-scheme:dark}
+#ae-sprungnetz *{box-sizing:border-box}
+#ae-sprungnetz header{display:flex;align-items:center;gap:18px;border-bottom:1px solid #31434e;padding:12px 18px;background:#13232e}
+#ae-sprungnetz h2,#ae-sprungnetz h3,#ae-sprungnetz p{margin:0}
+#ae-sprungnetz h2{font-size:19px;letter-spacing:.02em;color:#e6f0ee}
+#ae-sprungnetz header span,#ae-sprungnetz .ae-kind,#ae-sprungnetz .ae-count{font:11px/1.5 Consolas,monospace;letter-spacing:.06em;color:#b1c5ca}
+#ae-sprungnetz .ae-map{position:relative;isolation:isolate;overflow:hidden;height:clamp(405px,54vw,420px);background:radial-gradient(ellipse at 25% 80%,#13304195,transparent 47%),radial-gradient(ellipse at 77% 23%,#2c2b407d,transparent 46%),#0b151e}
+#ae-sprungnetz .ae-map::before{content:"";position:absolute;inset:0;background-image:linear-gradient(to right,#94b8d008 1px,transparent 1px),linear-gradient(#94b8d008 1px,transparent 1px);background-size:46px 46px}
+#ae-sprungnetz .ae-lanes{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+#ae-sprungnetz .ae-lanes line{stroke:#647888;stroke-width:1.4;vector-effect:non-scaling-stroke}
+#ae-sprungnetz .ae-lanes .new-lane{stroke:#a296a7;stroke-dasharray:5 5}
+#ae-sprungnetz .ae-lanes .course-lane{stroke:#72e8cf;stroke-width:3}
+#ae-sprungnetz .ae-map button{position:absolute;transform:translate(-50%,-22px);display:flex;align-items:center;flex-direction:column;gap:3px;min-height:45px;min-width:48px;padding:0 2px 2px;border:0;border-radius:4px;background:transparent;color:#d0dfe5;font:600 13px/1.2 "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+#ae-sprungnetz .ae-map button:focus-visible,#ae-sprungnetz select:focus-visible{outline:2px solid #ffc47a;outline-offset:3px}
+#ae-sprungnetz .ae-marker{position:relative;width:44px;height:44px;display:grid;place-items:center}
+#ae-sprungnetz .ae-marker::after{content:"";position:absolute;inset:5px;border-radius:50%;border:1px solid transparent}
+#ae-sprungnetz .ae-map [aria-pressed=true] .ae-marker::after{inset:1px;border:2px solid #72e8cf}
+#ae-sprungnetz .ae-map .home .ae-marker::after{inset:2px;border:1px dashed #b5d0d1}
+#ae-sprungnetz .ae-body{width:23px;height:23px;position:relative;display:block;border-radius:50%;background:var(--surface);box-shadow:inset -5px -3px 6px #081018bb,0 0 8px var(--glow,#709fbd55)}
+#ae-sprungnetz .ring .ae-body::before{content:"";position:absolute;inset:7px -6px;transform:rotate(-24deg);border:2px solid #b6beac;border-top-color:#b6beac55;border-radius:50%}
+#ae-sprungnetz .moon .ae-body::after{content:"";position:absolute;right:-6px;top:0;width:5px;height:5px;background:#bbc8cc;border-radius:50%}
+#ae-sprungnetz .jet .ae-body::before{content:"";position:absolute;inset:-9px 10px;transform:rotate(27deg);background:linear-gradient(transparent,#a4ecff,#e6fcff,#a4ecff,transparent)}
+#ae-sprungnetz .yard .ae-body::before{content:"";position:absolute;inset:2px -3px;border:1px solid #94afd3;transform:rotate(43deg)}
+#ae-sprungnetz .new .ae-label::before{content:"◇ ";color:#e2bd8a}
+#ae-sprungnetz .ae-label{padding:1px 4px;border-radius:3px;background:#101d27eb}
+#ae-sprungnetz [aria-pressed=true] .ae-label{color:#a4f2dc}
+#ae-sprungnetz .ae-legend{display:flex;flex-wrap:wrap;gap:12px 20px;padding:4px 18px 10px;background:#0c171f;color:#b6c6ce;font-size:12px}
+#ae-sprungnetz .ae-legend i{display:inline-block;width:24px;border-top:2px solid #8095a2;margin:0 7px 3px 0}
+#ae-sprungnetz .ae-legend span+span i{border-top:2px dashed #a296a7}
+#ae-sprungnetz .ae-detail{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;padding:14px 18px 17px;border-top:1px solid #344651}
+#ae-sprungnetz h3{font-size:19px;color:#f2f5f1;margin:2px 0}
+#ae-sprungnetz .ae-desc{color:#b8c8d0}
+#ae-sprungnetz .ae-count{color:#80dfc8}
+#ae-sprungnetz .ae-course{color:#dfedea;margin:4px 0}
+#ae-sprungnetz .ae-nav label{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#b5c6ce}
+#ae-sprungnetz .ae-nav [hidden]{display:none}
+#ae-sprungnetz select{max-width:100%;background:#1b2e39;border:1px solid #526c78;border-radius:4px;padding:3px 5px;color:#e2efed;font:inherit}
+@media(max-width:490px){#ae-sprungnetz header{padding:10px 12px}#ae-sprungnetz .ae-detail{grid-template-columns:1fr;gap:8px;padding:12px}#ae-sprungnetz .ae-map{height:380px}#ae-sprungnetz .ae-map button{font-size:12px}#ae-sprungnetz .ae-label{padding:1px 2px}#ae-sprungnetz .ae-legend{padding-left:12px}}
+</style>
+<script>
+(() => {
+  const root = document.getElementById("ae-sprungnetz");
+  const map = root.querySelector(".ae-map"), lanes = root.querySelector("svg");
+  const select = root.querySelector("select");
+  const sectors = {
+    kestrel: ["Kestrel","Bergbau-Depot Kestrel","Äußerer Gürtel","Hier beginnt dein Kurs. Kryo-Erz geht nach Helios-IV.",40,30,"home ring","linear-gradient(145deg,#cfbf9e,#6c8879 46%,#b5b792 55%,#7b9a90)"],
+    helios: ["Helios-IV","Raffinerie Helios-IV","Schmelzwerk Helios","Die Raffinerie nimmt Kryo-Erz ab. Hier lässt sich eine Lieferung von Kestrel quittieren.",25,9,"","repeating-linear-gradient(32deg,#ef975b 0 3px,#b15432 4px 8px,#773933 9px 12px)"],
+    drift: ["Drift-9","Freihafen Drift-9","Grenz-Drift","Vom Freihafen führt eine direkte Verbindung zur Werft und eine zweite zum Forschungsrelais.",54,48,"moon","linear-gradient(125deg,#3fcbd2,#3479ac 48%,#72bdb7 55%,#367e9c)"],
+    kepler: ["Kepler-07","Orbitalwerft Kepler-07","Orbitalwerft 07","Von Kestrel liegt die Werft zwei Sprünge entfernt. Der Weg über Helios passt zu einer Erzlieferung.",78,12,"yard","linear-gradient(145deg,#edf2f5,#8da3c8 43%,#d2e6ea 56%,#829cb1)"],
+    theta: ["Theta","Forschungs-Relais Theta","Äther-Relais","Am Pulsar laufen die Verbindungen aus Drift-9 und Bastion Morgenlicht zusammen.",26,80,"jet","radial-gradient(circle at 40% 35%,#f7faff,#89c9de 40%,#5f85b7)"],
+    bastion: ["Morgenlicht","Flotten-Dock Morgenlicht","Bastion Morgenlicht","Die Bastion ist über Kepler-07 oder Relais Theta erreichbar.",81,86,"","radial-gradient(circle at 54% 48%,#101923 46%,#412925 60%,#f8a05b 76%,#663c2d)"],
+    kalt: ["Kaltstrom","Kondensatdepot Kaltstrom","Sektorentwurf · Handel","Pumpen am Eisriesen brauchen Treibstoffzellen. Die Rückladung besteht aus Kryo-Erz für Helios.",14,47,"new ring","repeating-linear-gradient(12deg,#a0c8da 0 3px,#73a1bb 4px 7px,#c8e0da 8px 11px)"],
+    wrack: ["Wracksaum","Schlepperdock Wracksaum","Sektorentwurf · Bergung","Vorbei am Schlepperdock geht es nach Morgenlicht. Im Trümmerring abseits der Torlinie liegen bergbare Plasmakerne.",68,66,"new moon","linear-gradient(145deg,#c5a28a,#846763 32%,#bea28e 38%,#736669 58%,#b1a499)"]
+  };
+  const links = [["kestrel","helios"],["kestrel","drift"],["helios","kepler"],["drift","kepler"],["drift","theta"],["kepler","bastion"],["theta","bastion"],["helios","kalt"],["kalt","theta"],["drift","wrack"],["wrack","bastion"]];
+  const svgNS = "http://www.w3.org/2000/svg", buttons = {}, lines = [];
+  let random = 31;
+  function sample() { random = (random * 48271) % 2147483647; return random / 2147483647; }
+  for (let i=0; i<100; i++) {
+    const mark = document.createElementNS(svgNS,"circle");
+    mark.setAttribute("cx",100 * sample()); mark.setAttribute("cy",100 * sample());
+    mark.setAttribute("r",0.06 + sample()*0.13); mark.setAttribute("fill","#c9e4ed"); mark.setAttribute("opacity",0.12+sample()*0.5);
+    lanes.append(mark);
+  }
+  for (const [a,b] of links) {
+    const line = document.createElementNS(svgNS,"line");
+    for (const [point,suffix] of [[a,"1"],[b,"2"]]) {
+      line.setAttribute("x"+suffix,sectors[point][4]); line.setAttribute("y"+suffix,sectors[point][5]);
+      if (sectors[point][6].includes("new")) line.classList.add("new-lane");
+    }
+    lanes.append(line); lines.push(line);
+  }
+  for (const [id,[short,name,area,,x,y,kind,paint]] of Object.entries(sectors)) {
+    const node = document.createElement("button");
+    node.type = "button"; node.className = "cursor-interaction "+kind;
+    node.style.left = x+"%"; node.style.top=y+"%"; node.style.setProperty("--surface",paint);
+    node.innerHTML = '<span class="ae-marker"><i class="ae-body"></i></span><span class="ae-label"></span>';
+    node.querySelector(".ae-label").textContent=short;
+    node.setAttribute("aria-label",name+" · "+area);
+    node.onclick=()=>choose(id);
+    map.append(node); buttons[id]=node;
+  }
+  function shortest(goal) {
+    const queue=[["kestrel"]], results=[];
+    for (let i=0;i<queue.length;i++) {
+      const path=queue[i], at=path[path.length-1];
+      if (results.length && path.length>results[0].length) break;
+      if (at===goal) {results.push(path); continue;}
+      for (const [a,b] of links) {
+        const next=at===a?b:at===b?a:null;
+        if (next && !path.includes(next)) queue.push([...path,next]);
+      }
+    }
+    return results;
+  }
+  let destination, routes;
+  function draw(index,remember) {
+    const path=routes[index];
+    select.value=String(index);
+    links.forEach(([a,b],i)=>{
+      const aPos=path.indexOf(a), bPos=path.indexOf(b);
+      lines[i].classList.toggle("course-lane",aPos>=0 && bPos>=0 && Math.abs(aPos-bPos)===1);
+    });
+    root.querySelector(".ae-count").textContent=path.length===1?"Standort":path.length===2?"Kursvorschau · 1 Sprung":"Kursvorschau · "+(path.length-1)+" Sprünge";
+    root.querySelector(".ae-course").textContent=path.map(key=>sectors[key][0]).join(" → ");
+    if(remember) window.openai?.setWidgetState?.({modelContent:{ziel:sectors[destination][0]},privateContent:{destination,index}})?.catch(()=>{});
+  }
+  function choose(id,index=0,remember=true) {
+    destination=id; routes=shortest(id);
+    const [,title,area,desc]=sectors[id];
+    root.querySelector(".ae-kind").textContent=area; root.querySelector("h3").textContent=title;
+    root.querySelector(".ae-desc").textContent=desc;
+    Object.entries(buttons).forEach(([key,node])=>node.setAttribute("aria-pressed",String(key===id)));
+    select.replaceChildren();
+    routes.forEach((path,n)=>select.add(new Option(path.slice(1,-1).map(key=>sectors[key][0]).join(" → ")||"Direkt",n)));
+    select.parentElement.hidden=routes.length<2;
+    draw(Number.isInteger(index)&&index>=0&&index<routes.length?index:0,remember);
+  }
+  select.onchange=()=>draw(Number(select.value),true);
+  function restore(state) {
+    const saved=state?.privateContent;
+    choose(Object.hasOwn(sectors,saved?.destination)?saved.destination:"kepler",saved?.index??0,false);
+  }
+  restore(window.openai?.widgetState);
+  window.addEventListener("openai:set_globals",e=>{if(e.detail?.globals?.widgetState) restore(e.detail.globals.widgetState);});
+})();
+</script>

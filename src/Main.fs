@@ -1,7 +1,7 @@
 module SpaceEngine.Main
 
 // =====================================================================================
-//  Main.fs  -  Spielschleife, Game-States und Wave-System
+//  Main.fs  -  Spielschleife, Missionsabschnitte und Aufrüstung
 //
 //  Ablauf eines Frames (requestAnimationFrame, variable Bildrate):
 //    1. Eingabe-Flanken auswerten (Start, Pause, Kamera)
@@ -11,14 +11,9 @@ module SpaceEngine.Main
 //    4. Wave-System fortschreiben
 //    5. Kamera nachfuehren, Szene interpoliert zeichnen, HUD zeichnen
 //
-//  Game-States:   Menu --Start--> Playing <--P--> Paused
-//                                    |
-//                             Schiff zerstoert
-//                                    v
-//                                 GameOver --Neustart--> Playing
-//
-//  Wave-System:   Intermission --(Timer)--> Fighting --(alle Gegner zerstoert)--> Intermission
-//                 Jede Welle bringt einen Gegner mehr (bis 8) und staerkere Gegner.
+//  Playing <-> Paused; abgeschlossener Sektor -> Refitting -> Playing.
+//  Sechs gesicherte Sektoren -> Victory; Schiff zerstört -> GameOver.
+//  Pro Sektor treffen feste gemischte Verbände in Verstärkungsgruppen ein.
 // =====================================================================================
 
 open Fable.Core
@@ -31,11 +26,13 @@ open Browser.Dom
 // -------------------------------------------------------------------------------------
 
 type GameState =
-    /// Titelbildschirm; die Welt laeuft als Kulisse.
+    /// Titelbildschirm mit Kestrels Anflugbild.
     | Menu
     | Playing
     /// Simulation angehalten, Bild bleibt stehen.
     | Paused
+    | Refitting
+    | Victory
     /// Spieler zerstoert; die Welt laeuft weiter, bis neu gestartet wird.
     | GameOver
 
@@ -44,6 +41,7 @@ type WavePhase =
     | Intermission
     /// Gegner der aktuellen Welle sind unterwegs.
     | Fighting
+    | Salvaging
 
 /// Einmal angelegte Instanzen der feldlosen DU-Faelle: Fable wuerde sonst bei jeder
 /// Zuweisung ein neues Objekt erzeugen.
@@ -51,9 +49,12 @@ module private States =
     let menu = Menu
     let playing = Playing
     let paused = Paused
+    let refitting = Refitting
+    let victory = Victory
     let gameOver = GameOver
     let intermission = Intermission
     let fighting = Fighting
+    let salvaging = Salvaging
 
 // -------------------------------------------------------------------------------------
 //  Konstanten
@@ -70,9 +71,9 @@ let private MaxStepsPerFrame = 8
 [<Literal>]
 let private InitialAsteroids = 420
 
-/// Plaetze fuer Gegner in der Welt = groesste Welle.
+/// Plätze für den größten Missionsverband einschließlich Reserve.
 [<Literal>]
-let private MaxEnemies = 8
+let private MaxEnemies = 16
 
 [<Literal>]
 let private DustCount = 420
@@ -85,13 +86,9 @@ let private DustCell = 160.0
 [<Literal>]
 let private DustStride = 4
 
-/// Aenderung des Schubhebels pro Sekunde bei gehaltener Taste.
-[<Literal>]
-let private ThrottleRate = 0.7
-
 /// Sekunden zwischen zwei Wellen.
 [<Literal>]
-let private IntermissionTime = 5.0
+let private IntermissionTime = 8.0
 
 /// Sekunden zwischen der Zerstoerung des Spielers und dem Game-Over-Bildschirm.
 [<Literal>]
@@ -105,18 +102,60 @@ let private BestKey = "fable-space-engine.best"
 //  Szene
 // -------------------------------------------------------------------------------------
 
+type private BlockadeModels =
+    { Cruiser: InstanceBatch
+      Shutter: InstanceBatch
+      Breach: InstanceBatch
+      Battery: InstanceBatch
+      Bomber: InstanceBatch
+      Torpedoes: InstanceBatch }
+
 type private Scene =
     { Renderer: Renderer
       Hud: Hud
+      Shop: ShopUi
+      Skills: SkillUi
+      Yard: BlockadeUi
+      mutable Blockade: BlockadeState
+      mutable Sortie: CapitalFlightState
+      mutable School: FlightSchoolState
+      mutable Fleet: HangarFleet
+      mutable SovereignWarningArmed: bool
+      CustomsBatches: Lazy<BlockadeModels>
+      Contact: DockContact
+      Saves: SaveUi
+      mutable SaveReturnState: GameState
+      mutable SaveDirty: bool
+      mutable FlightChanged: bool
+      mutable SaveTimer: float
+      mutable SaveRetryDelay: float
+      mutable ResumeJson: string option
+      Wallet: Wallet
+      Cargo: CargoHold
+      Markets: StationMarket[]
+      Turret: AutoTurret
+      Pickups: ResizeArray<MineralPickup>
       Sound: SoundEngine
       Input: InputState
       Camera: Camera
       World: World
       Brains: AiBrain[]
       // --- Batches (je ein Draw-Call) ---
-      ShipBatch: InstanceBatch
-      EnemyBatch: InstanceBatch
+      HullBatches: Lazy<InstanceBatch>[]
+      Outfit: OutfitVisuals
+      DeckCargoBatches: InstanceBatch[]
+      EnemyBatches: InstanceBatch[]
+      CrystalBatch: InstanceBatch
+      StationBatches: Lazy<InstanceBatch>[]
+      RelicBatches: (Vec3 * Lazy<InstanceBatch>)[]
+      mutable ArchiveScan: ArchiveScan option
+      FreighterBatch: InstanceBatch
+      BuoyFrames: InstanceBatch
+      BuoyLenses: InstanceBatch
+      TurretBaseBatch: InstanceBatch
+      TurretBatch: InstanceBatch
       AsteroidBatches: InstanceBatch[]
+      AsteroidFrustum: FrustumPlanes
       DebrisBatch: InstanceBatch
       Sky: SkyBackdrop
       DustBatch: InstanceBatch
@@ -126,7 +165,6 @@ type private Scene =
       LaserBatch: InstanceBatch
       GlowBatch: InstanceBatch
       Dust: JS.Float32Array
-      ShipScale: Vec3
       EnemyScale: Vec3
       // --- Spielzustand ---
       mutable State: GameState
@@ -140,14 +178,47 @@ type private Scene =
       mutable Best: int
       mutable DeathTimer: float
       mutable EnemiesAlive: int
+      mutable Spawned: int
+      mutable SpawnTimer: float
+      mutable Trading: bool
+      mutable Sector: int
+      mutable TradeProfit: float
+      mutable Trips: int
+      mutable Patrol: EnemyRole[]
+      Upgrades: int[]
       /// Kamerawackeln nach Treffern und nahen Explosionen (klingt ab).
       mutable Shake: float
+      /// Boost-Vorrat 0..1. Leer gesperrt, bis er sich teilweise erholt hat.
+      mutable BoostReserve: float
+      /// Sekunden seit dem letzten Boost (Erholung setzt verzoegert ein).
+      mutable BoostRest: float
+      mutable BoostLocked: bool
+      /// Heckblick war im letzten Frame aktiv (Kamera springt beim Wechsel).
+      mutable LookBack: bool
+      /// FPS-/Draw-Call-Zeile oben links (F3).
+      mutable ShowStats: bool
+      /// Aufeinanderfolgende Frames unter 20 FPS bei aktiver Kantenglaettung.
+      mutable SlowFrames: int
+      /// Schub folgt dem Tempo des erfassten Ziels (L), bis der Pilot selbst regelt.
+      mutable MatchSpeed: bool
+      /// Der Regler im Hauptmenue wurde bewegt: Sein Wert gilt statt des gespeicherten.
+      mutable SensitivityOverride: bool
+      /// Tastenuebersicht ueber dem Flugbild (F1).
+      mutable ShowHelp: bool
+      // --- Audio-Zustandsflanken ---
+      mutable PrevBoostLocked: bool
+      mutable PrevOverdrive: float
+      mutable PrevShieldUp: bool
+      mutable PrevShieldDelay: float
+      mutable UpgradeNotified: bool
+      mutable JumpNotifiedSector: int
       // --- Zeit ---
       mutable Time: float
       mutable LastTimestamp: float
       mutable Accumulator: float
       mutable FrameCounter: int
       mutable StatTimer: float }
+    member scene.Pilot = scene.World.Pilot
 
 let private createDust () : JS.Float32Array =
     let rng = Rng(4711)
@@ -177,6 +248,12 @@ let private saveBest (value: int) =
     with _ ->
         ()
 
+let private stationOrientation =
+    Quat.fromAxisAngle Vec3.unitY -0.39 * Quat.fromAxisAngle Vec3.unitX 0.16
+
+[<Literal>]
+let private ApproachPairs = 5
+
 let private createScene () : Scene =
     let glCanvas = unbox<HTMLCanvasElement> (document.getElementById "gl-canvas")
     let hudCanvas = unbox<HTMLCanvasElement> (document.getElementById "hud-canvas")
@@ -191,8 +268,36 @@ let private createScene () : Scene =
     Lights.setAmbient renderer.Lights 0.085 0.10 0.14
 
     // Meshes
-    let shipMesh = Renderer.createMesh renderer (ProceduralMeshes.playerShip ())
-    let enemyMesh = Renderer.createMesh renderer (ProceduralMeshes.interceptor ())
+    let crystalMesh = Renderer.createMesh renderer (ProceduralMeshes.mineralCrystal ())
+    let stationBatches =
+        Universe.sectors |> Array.map (fun sector ->
+            lazy (
+                let outpost = sector.Outpost
+                let mesh = Renderer.createMesh renderer (ProceduralMeshes.tradeOutpost outpost.Kind)
+                let batch = Renderer.createBatch renderer mesh 1 Opaque
+                batch.Shininess <- 42.0
+                batch.Specular <- 0.31
+                InstanceBatch.push batch outpost.Position stationOrientation (Vec3(0.75,0.75,0.75)) 1.0 1.0 1.0 0.0
+                batch))
+    let freighterMesh = Renderer.createMesh renderer (ProceduralMeshes.freightHauler ())
+    let relicBatch kind p = lazy (
+        let mesh = Renderer.createMesh renderer (ProceduralMeshes.archiveRelic kind true)
+        let batch = Renderer.createBatch renderer mesh 1 Opaque
+        batch.Shininess <- 34.0
+        batch.Specular <- 0.29
+        InstanceBatch.push batch p (Recovery.rotation kind) Vec3.one 1.0 1.0 1.0 0.0
+        batch)
+    let relicBatches =
+        Universe.sectors |> Array.mapi (fun i sector ->
+            let p = RelicArchive.position sector.Outpost.Position i
+            p, relicBatch sector.Outpost.Kind p)
+    let buoyBody, buoyLens = ProceduralMeshes.approachBuoy ()
+    let buoyBatch data = Renderer.createBatch renderer (Renderer.createMesh renderer data) (2*ApproachPairs) Opaque
+    let freighters = Renderer.createBatch renderer freighterMesh 2 Opaque
+    freighters.Shininess <- 35.0
+    freighters.Specular <- 0.28
+    let turretMesh = Renderer.createMesh renderer (ProceduralMeshes.autoTurret ())
+    let turretBaseMesh = Renderer.createMesh renderer (ProceduralMeshes.autoTurretBase ())
     let boltMesh = Renderer.createMesh renderer (ProceduralMeshes.laserBolt ())
     let exhaustMesh = Renderer.createMesh renderer (ProceduralMeshes.exhaustPlume ())
     let shieldMesh = Renderer.createMesh renderer (ProceduralMeshes.shieldBubble ())
@@ -208,12 +313,27 @@ let private createScene () : Scene =
     World.reset world InitialAsteroids
 
     // Batches
-    let shipBatch = Renderer.createBatch renderer shipMesh 1 Opaque
-    shipBatch.Shininess <- 70.0
-    shipBatch.Specular <- 0.6
-    let enemyBatch = Renderer.createBatch renderer enemyMesh MaxEnemies Opaque
-    enemyBatch.Shininess <- 60.0
-    enemyBatch.Specular <- 0.55
+    let hullBatches =
+        [| ProceduralMeshes.playerShip; ProceduralMeshes.playerHauler; ProceduralMeshes.playerInterceptor |]
+        |> Array.map (fun geometry -> lazy (
+            let batch = Renderer.createBatch renderer (Renderer.createMesh renderer (geometry ())) 1 Opaque
+            batch.Shininess <- 70.0
+            batch.Specular <- 0.6
+            batch))
+    let enemyBatches =
+        Array.init (int EnemyRole.Commander + 1) (fun index ->
+            let mesh =
+                match enum<EnemyRole> index with
+                | EnemyRole.Drone -> ProceduralMeshes.sentryDrone ()
+                | EnemyRole.Scout -> ProceduralMeshes.interceptor ()
+                | EnemyRole.Gunship -> ProceduralMeshes.gunship ()
+                | EnemyRole.Bomber -> ProceduralMeshes.bomber ()
+                | EnemyRole.Commander -> ProceduralMeshes.commandShip ()
+                | _ -> invalidArg "index" "Unbekannte Gegnerrolle"
+            let batch = Renderer.createBatch renderer (Renderer.createMesh renderer mesh) MaxEnemies Opaque
+            batch.Shininess <- 60.0
+            batch.Specular <- 0.55
+            batch)
 
     let asteroidBatches =
         asteroidMeshes
@@ -231,8 +351,11 @@ let private createScene () : Scene =
     debrisBatch.Material <- 1.0
 
     let dustBatch = Renderer.createBatch renderer boltMesh DustCount Additive
-    let exhaustBatch = Renderer.createBatch renderer exhaustMesh (4 + MaxEnemies * 2) Additive
-    let engineHaloBatch = Renderer.createBatch renderer particleMesh (8 + MaxEnemies * 3) Additive
+    let exhaustBatch = Renderer.createBatch renderer exhaustMesh (7 + MaxEnemies * 2 + CapitalMeshes.drives.Length) Additive
+    // Hoefe stehen gross im Bild: feinere Scheibe als die wenige Pixel grossen Partikel.
+    let haloMesh = Renderer.createMesh renderer (ProceduralMeshes.glowSprite 28 6)
+    let engineHaloBatch =
+        Renderer.createBatch renderer haloMesh (8 + MaxEnemies * 3 + CapitalMeshes.drives.Length + CapitalMeshes.beacons.Length) Additive
     let shieldBatch = Renderer.createBatch renderer shieldMesh (1 + MaxEnemies) Additive
     let laserBatch = Renderer.createBatch renderer boltMesh world.Lasers.Capacity Additive
     let glowBatch = Renderer.createBatch renderer particleMesh world.Particles.Capacity Additive
@@ -245,51 +368,273 @@ let private createScene () : Scene =
     Hud.setBest hud best
     let scale = ShipHardpoints.interceptorScale
 
-    { Renderer = renderer
-      Hud = hud
-      Sound = sound
-      Input = Input.attach glCanvas
-      Camera = camera
-      World = world
-      Brains = Array.init MaxEnemies AI.createBrain
-      ShipBatch = shipBatch
-      EnemyBatch = enemyBatch
-      AsteroidBatches = asteroidBatches
-      DebrisBatch = debrisBatch
-      Sky = sky
-      DustBatch = dustBatch
-      ExhaustBatch = exhaustBatch
-      EngineHaloBatch = engineHaloBatch
-      ShieldBatch = shieldBatch
-      LaserBatch = laserBatch
-      GlowBatch = glowBatch
-      Dust = createDust ()
-      ShipScale = Vec3.one
-      EnemyScale = Vec3(scale, scale, scale)
-      State = States.menu
-      StateTime = 0.0
-      Phase = States.intermission
-      PhaseTimer = 0.0
-      Wave = 0
-      Score = 0
-      Kills = 0
-      Best = best
-      DeathTimer = 0.0
-      EnemiesAlive = 0
-      Shake = 0.0
-      Time = 0.0
-      LastTimestamp = -1.0
-      Accumulator = 0.0
-      FrameCounter = 0
-      StatTimer = 0.0 }
+    let scene =
+        { Renderer = renderer
+          Hud = hud
+          Shop = Shop.create ()
+          Skills = SkillUi.create ()
+          Yard = BlockadeUi.create ()
+          Blockade = Blockade.create ()
+          Sortie = CapitalFlight.create ()
+          School = FlightSchool.create ()
+          Fleet = ShipCatalog.create ()
+          SovereignWarningArmed = false
+          CustomsBatches = lazy (
+            let batch model count = Renderer.createBatch renderer (Renderer.createMesh renderer (model ())) count Opaque
+            // The dark armour catches a hard highlight in the Helios sun.
+            let armoured model count =
+                let b = batch model count
+                b.Shininess <- 48.0
+                b.Specular <- 0.42
+                b
+            { Cruiser = armoured CapitalMeshes.cruiser 1
+              Shutter = armoured (fun () -> CapitalMeshes.shutter false) 1
+              Breach = armoured (fun () -> CapitalMeshes.shutter true) 1
+              Battery = armoured CapitalMeshes.battery 2
+              Bomber = batch ProceduralMeshes.keplerBomber 1
+              Torpedoes = batch ProceduralMeshes.torpedo 2 })
+          Contact = DockContact.create sound
+          Saves = SaveUi.create ()
+          SaveReturnState = States.menu
+          SaveDirty = false
+          FlightChanged = false
+          SaveTimer = 0.0
+          SaveRetryDelay = 0.0
+          ResumeJson = None
+          Wallet = Economy.create ()
+          Cargo = TradeSystem.createCargo 16
+          Markets = TradeSystem.createUniverseMarkets ()
+          Turret = Turret.create ()
+          Pickups = Salvage.create ()
+          Sound = sound
+          Input = Input.attach glCanvas
+          Camera = camera
+          World = world
+          Brains = Array.init MaxEnemies AI.createBrain
+          HullBatches = hullBatches
+          Outfit = OutfitVisuals.create renderer
+          DeckCargoBatches = Array.init (DeckCargo.sealedIndex + 1) (fun i ->
+              let geometry = if i = DeckCargo.sealedIndex then ProceduralMeshes.sealedFreight () else ProceduralMeshes.deckPackage TradeSystem.commodities.[i].Id
+              Renderer.createBatch renderer (Renderer.createMesh renderer geometry) DeckCargo.haulerMounts.Length Opaque)
+          EnemyBatches = enemyBatches
+          CrystalBatch = Renderer.createBatch renderer crystalMesh Salvage.Capacity Opaque
+          StationBatches = stationBatches
+          RelicBatches = relicBatches
+          ArchiveScan = None
+          FreighterBatch = freighters
+          BuoyFrames = buoyBatch buoyBody
+          BuoyLenses = buoyBatch buoyLens
+          TurretBaseBatch = Renderer.createBatch renderer turretBaseMesh 1 Opaque
+          TurretBatch = Renderer.createBatch renderer turretMesh 1 Opaque
+          AsteroidBatches = asteroidBatches
+          AsteroidFrustum = Frustum.create ()
+          DebrisBatch = debrisBatch
+          Sky = sky
+          DustBatch = dustBatch
+          ExhaustBatch = exhaustBatch
+          EngineHaloBatch = engineHaloBatch
+          ShieldBatch = shieldBatch
+          LaserBatch = laserBatch
+          GlowBatch = glowBatch
+          Dust = createDust ()
+          EnemyScale = Vec3(scale, scale, scale)
+          State = States.menu
+          StateTime = 0.0
+          Phase = States.intermission
+          PhaseTimer = 0.0
+          Wave = 0
+          Score = 0
+          Kills = 0
+          Best = best
+          DeathTimer = 0.0
+          EnemiesAlive = 0
+          Spawned = 0
+          SpawnTimer = 0.0
+          Trading = true
+          Sector = 0
+          TradeProfit = 0.0
+          Trips = 0
+          Patrol = Array.empty
+          Upgrades = Array.zeroCreate 3
+          Shake = 0.0
+          BoostReserve = 1.0
+          BoostRest = 0.0
+          BoostLocked = false
+          LookBack = false
+          ShowStats = false
+          SlowFrames = 0
+          MatchSpeed = false
+          SensitivityOverride = false
+          ShowHelp = false
+          PrevBoostLocked = false
+          PrevOverdrive = 0.0
+          PrevShieldUp = true
+          PrevShieldDelay = 0.0
+          UpgradeNotified = false
+          JumpNotifiedSector = -1
+          Time = 0.0
+          LastTimestamp = -1.0
+          Accumulator = 0.0
+          FrameCounter = 0
+          StatTimer = 0.0 }
+    let initAtmo = (Universe.sectorByIndex 0).Atmosphere
+    Lights.setSun renderer.Lights initAtmo.SunDir.X initAtmo.SunDir.Y initAtmo.SunDir.Z initAtmo.SunColor.X initAtmo.SunColor.Y initAtmo.SunColor.Z
+    Lights.setAmbient renderer.Lights initAtmo.Ambient.X initAtmo.Ambient.Y initAtmo.Ambient.Z
+    renderer.ClearColor.[0] <- float32 initAtmo.ClearColor.X
+    renderer.ClearColor.[1] <- float32 initAtmo.ClearColor.Y
+    renderer.ClearColor.[2] <- float32 initAtmo.ClearColor.Z
+    scene
 
 // -------------------------------------------------------------------------------------
 //  Spielablauf
 // -------------------------------------------------------------------------------------
 
+let private clearArchiveScan (scene: Scene) =
+    scene.ArchiveScan <- None
+    Hud.hideRecovery ()
+    Sound.receiver scene.Sound -1.0
+
 let private setState (scene: Scene) (state: GameState) =
     scene.State <- state
+    Hud.showSchool (if state = Playing then scene.School.Step else FlightSchool.Off)
     scene.StateTime <- 0.0
+    if state = Paused || state = Menu || state = GameOver then Sound.clearRadio scene.Sound
+    if state <> Playing then clearArchiveScan scene
+    let menu = document.getElementById "flight-menu"
+    if state = Menu then menu.removeAttribute "hidden" else menu.setAttribute ("hidden", "")
+
+let private sectorIndex (scene: Scene) = if scene.Trading then scene.Sector else max 0 (scene.Wave - 1)
+let private currentSector (scene: Scene) = Universe.sectorByIndex (sectorIndex scene)
+
+let private storage =
+    { Read = fun key -> window.localStorage.getItem key
+      Write = fun key json -> window.localStorage.setItem(key, json) }
+
+let private readSlot slot = SaveStore.read storage slot GameSave.isValid
+
+let private canSave (scene: Scene) =
+    scene.State <> Menu && scene.State <> GameOver && scene.World.Player.Alive
+
+let private saveNotice (scene: Scene) failed text =
+    scene.Hud.SaveFailed <- failed
+    scene.Hud.SaveText <- text
+    scene.Saves.Status.textContent <- text
+    if scene.State = Menu then (document.getElementById "menu-notice").textContent <- if failed then text else ""
+
+let private refreshSaveSlots (scene: Scene) =
+    let entries = SaveStore.slots |> Array.map (fun slot -> slot, readSlot slot)
+    let latest =
+        entries
+        |> Array.choose (fun (_, entry) ->
+            entry.Json |> Option.bind (fun json ->
+                match GameSave.decode json with
+                | Ok data -> Some(data, json)
+                | Error _ -> None))
+        |> Array.sortByDescending (fun (data, _) -> data.SavedAt)
+        |> Array.tryHead
+    scene.ResumeJson <- latest |> Option.map snd
+    scene.Hud.HasSave <- latest.IsSome
+    let brief = document.getElementById "menu-brief"
+    let launch = document.getElementById "menu-launch-label"
+    let record = document.getElementById "menu-record"
+    match latest with
+    | Some(data, _) ->
+        brief.setAttribute ("hidden","")
+        launch.textContent <- "Flug fortsetzen"
+        record.textContent <- SaveUi.summary data
+    | None ->
+        brief.removeAttribute "hidden"
+        launch.textContent <- "Handelsflug starten"
+        record.textContent <- "200 CR Startguthaben · 16 t Frachtraum"
+    match entries |> Array.tryFind (fun (_, entry) -> entry.Error <> "") with
+    | Some(_, entry) -> saveNotice scene true entry.Error
+    | None -> ()
+    if scene.Saves.Visible then SaveUi.render scene.Saves entries (canSave scene)
+
+let private snapshot (scene: Scene) =
+    let run =
+        { Trading = scene.Trading; SectorId = (currentSector scene).Id; Wave = scene.Wave
+          Phase = (match scene.Phase with Intermission -> 0 | Fighting -> 1 | Salvaging -> 2)
+          PhaseTimer = scene.PhaseTimer; Spawned = scene.Spawned; SpawnTimer = scene.SpawnTimer
+          Patrol = Array.map int scene.Patrol; Score = scene.Score; Kills = scene.Kills
+          Profit = scene.TradeProfit; Trips = scene.Trips; Docked = (scene.State = Refitting)
+          Completed = (scene.State = Victory); Combo = scene.Hud.Combo; ComboTimer = scene.Hud.ComboTimer
+          HeardContacts = Some (DockContact.heard scene.Contact)
+          School = if scene.Trading then Some scene.School else None
+          Blockade = if scene.Trading then Some scene.Blockade else None
+          Sortie = if scene.Trading then Some scene.Sortie else None
+          Fleet = if scene.Trading then Some scene.Fleet else None
+          Recovery = None }
+    let settings =
+        { Camera = (if scene.Camera.Mode = Cockpit then 1 else 0); Muted = scene.Sound.Muted
+          InvertPitch = scene.Input.InvertPitch; Sensitivity = scene.Input.MouseSensitivity }
+    GameSave.capture run settings (SaveUi.now()) scene.World scene.Brains scene.Wallet scene.Cargo scene.Markets scene.Upgrades scene.Turret scene.Pickups
+
+let private saveFlight (scene: Scene) slot =
+    if canSave scene then
+        let data = snapshot scene
+        let json = GameSave.encode data
+        let result = SaveStore.write storage slot json GameSave.isValid
+        if result.Ok then
+            scene.ResumeJson <- Some json
+            scene.Hud.HasSave <- true
+        if slot = "auto" then
+            scene.SaveDirty <- false
+            scene.FlightChanged <- not result.Ok
+            scene.SaveTimer <- 0.0
+            scene.SaveRetryDelay <- if result.Ok then 0.0 else 20.0
+        if result.Ok then
+            saveNotice scene false (if slot = "auto" then "Automatisch gesichert · F8" else SaveUi.label slot + " gesichert.")
+            if slot <> "auto" then Sound.tradeConfirm scene.Sound
+        else
+            saveNotice scene true result.Error
+            if scene.Saves.Visible then Sound.uiError scene.Sound
+
+let private applySectorAtmosphere (scene: Scene) =
+    let sector = sectorIndex scene
+    scene.World.Customs <- if scene.Trading && sector = 1 && not scene.Blockade.Lifted then Some scene.Sortie else None
+    if scene.World.SectorIndex <> sector then
+        scene.Pilot.PulseTime <- 0.0
+        clearArchiveScan scene
+    scene.World.SectorIndex <- sector
+    if not (PilotSkills.contains scene.Pilot.Visited sector) then
+        scene.Hud.RewardText <- "+1 STACK-PUNKT · SEKTOR ENTDECKT"
+        scene.Hud.RewardTime <- 4.0
+    PilotSkills.visit scene.Pilot sector
+    let atmo = (currentSector scene).Atmosphere
+    Lights.setSun scene.Renderer.Lights atmo.SunDir.X atmo.SunDir.Y atmo.SunDir.Z atmo.SunColor.X atmo.SunColor.Y atmo.SunColor.Z
+    Lights.setAmbient scene.Renderer.Lights atmo.Ambient.X atmo.Ambient.Y atmo.Ambient.Z
+    scene.Renderer.ClearColor.[0] <- float32 atmo.ClearColor.X
+    scene.Renderer.ClearColor.[1] <- float32 atmo.ClearColor.Y
+    scene.Renderer.ClearColor.[2] <- float32 atmo.ClearColor.Z
+let private canAdvance (scene: Scene) = not scene.Trading && scene.Phase = Salvaging && scene.Wave > 0 && scene.Wave < Mission.stages.Length
+
+let private encounterRoles (scene: Scene) = if scene.Trading then scene.Patrol else (Mission.stage scene.Wave).Enemies
+
+let private dockBlocked (scene: Scene) =
+    scene.School.Step = FlightSchool.Off && scene.Phase = Fighting &&
+    (not scene.Trading || scene.World.Enemies |> Array.exists (fun enemy -> enemy.Alive && Vec3.distance enemy.Position (currentSector scene).Outpost.Position < 230.0))
+
+/// Stationsanflug freihalten; Asteroiden außerhalb der Zone bleiben unverändert.
+let private clearDockingArea (scene: Scene) =
+    let outpost = (currentSector scene).Outpost
+    let archive = RelicArchive.position outpost.Position (sectorIndex scene)
+    let field = scene.World.Asteroids
+    let mutable i = 0
+    while i < field.Count do
+        let o = i * AsteroidField.Stride
+        let point = Vec3(float field.Data.[o], float field.Data.[o+1], float field.Data.[o+2])
+        let inArrivalLane = abs (point.X-outpost.Position.X) < 40.0 + float field.Data.[o+6] && abs (point.Y-outpost.Position.Y) < 40.0 + float field.Data.[o+6] && point.Z > outpost.Position.Z && point.Z < outpost.Position.Z+720.0
+        let inCustomsLane =
+            if not scene.Trading || scene.Sector <> 1 || scene.Blockade.Lifted then false
+            else
+                let d = point - CapitalFlight.position
+                let margin = float field.Data.[o+6]
+                let e = CapitalFlight.extent
+                abs d.X < e.X + 16.0 + margin && abs d.Y < e.Y + 14.0 + margin && d.Z > -e.Z - 8.0 - margin && d.Z < 475.0 + margin
+        if inArrivalLane || inCustomsLane || Vec3.distance point archive < float field.Data.[o+6] + 60.0 || Vec3.length (point - outpost.Position) < outpost.DockRadius + float field.Data.[o+6] + 25.0 then
+            AsteroidField.remove field i
+        else i <- i + 1
 
 /// Liegt der Punkt mit `margin` Abstand ausserhalb aller Asteroiden?
 let private isFreeSpace (field: AsteroidField) (x: float) (y: float) (z: float) (margin: float) : bool =
@@ -308,7 +653,7 @@ let private isFreeSpace (field: AsteroidField) (x: float) (y: float) (z: float) 
 
     free
 
-/// Setzt einen Gegner 500-700 Einheiten vom Spieler entfernt in freien Raum.
+/// Verstärkungen kommen mit Abstand und vorwiegend aus dem vorderen Halbraum.
 /// Sein Patrouillengebiet ist die aktuelle Position des Spielers - er fliegt
 /// also heran und entdeckt ihn dabei.
 let private spawnEnemy (scene: Scene) (index: int) =
@@ -320,111 +665,627 @@ let private spawnEnemy (scene: Scene) (index: int) =
     let mutable placed = false
 
     while not placed && attempts < 12 do
-        let direction = rng.UnitVector()
-        // Flach halten: Gegner kommen eher von der Seite als von oben/unten
-        let flat = Vec3.normalize (Vec3(direction.X, direction.Y * 0.35, direction.Z + 0.001))
-        position <- player.Position + flat * rng.Range(500.0, 700.0)
+        let angle = float index * 2.39996 + rng.Range(-0.25, 0.25)
+        let local = Vec3(sin angle * 0.9, rng.Range(-0.22, 0.22), -0.7 - abs (cos angle) * 0.5)
+        let direction = Quat.rotateVec3 player.Rotation (Vec3.normalize local)
+        position <- player.Position + direction * rng.Range(320.0, 440.0)
         placed <- isFreeSpace world.Asteroids position.X position.Y position.Z 30.0
         attempts <- attempts + 1
 
     let enemy = world.Enemies.[index]
+    let role = (encounterRoles scene).[index]
+    EnemyProfiles.configure enemy role (if scene.Trading then (currentSector scene).DangerLevel - 1 else scene.Wave - 1)
+    scene.Brains.[index].Role <- role
     Ship.reset enemy position (Quat.lookRotation (player.Position - position) Vec3.unitY)
     AI.reset scene.Brains.[index] enemy player.Position
 
-/// Anzahl der Gegner in Welle `wave`: zwei in der ersten, dann jeweils einer mehr.
-let private waveSize (wave: int) : int = System.Math.Min(MaxEnemies, wave + 1)
-
-/// Startet die naechste Welle. Ab der zweiten Welle werden die Gegner pro Welle
-/// 10 % robuster und ihre Laser 6 % staerker.
+/// Neue Abschnitte haben feste gemischte Verbände und zeitversetzte Verstärkung.
 let private startWave (scene: Scene) =
+    scene.SaveDirty <- true
     scene.Wave <- scene.Wave + 1
-    let count = waveSize scene.Wave
-    let level = float (scene.Wave - 1)
-
-    for i in 0 .. count - 1 do
-        let enemy = scene.World.Enemies.[i]
-        enemy.MaxHull <- 45.0 * (1.0 + 0.10 * level)
-        enemy.MaxShield <- 25.0 * (1.0 + 0.10 * level)
-        enemy.LaserDamage <- 8.0 * (1.0 + 0.06 * level)
+    clearDockingArea scene
+    applySectorAtmosphere scene
+    let stage = Mission.stage scene.Wave
+    scene.Spawned <- min 3 stage.Enemies.Length
+    scene.SpawnTimer <- 5.0
+    for i in 0 .. scene.Spawned - 1 do
         spawnEnemy scene i
-
+    scene.EnemiesAlive <- scene.Spawned
     scene.Phase <- States.fighting
-    Sound.waveStart scene.Sound
-    Hud.notify scene.Hud ("WELLE " + string scene.Wave) (string count + " Abfangjaeger im Anflug") 3.5
+    scene.Hud.Objective <- stage.Objective
+    scene.Hud.StageName <- stage.Name
+    if stage.Enemies.[0] = EnemyRole.Commander then
+        scene.SovereignWarningArmed <- true
+        Sound.capitalHornAt scene.Sound scene.World.Enemies.[0].Position
+        Sound.capitalComm scene.Sound 2
+    else Sound.waveStart scene.Sound
+    Hud.notify scene.Hud ("SEKTOR " + string scene.Wave + " / 6") stage.Hint 5.0
 
-/// Alle Gegner der Welle sind zerstoert: Bonus, Feldreparatur, kurze Pause.
+let private finishGame (scene: Scene) (won: bool) =
+    Shop.hide scene.Shop
+    let isBest = scene.Score > scene.Best
+    if isBest then
+        scene.Best <- scene.Score
+        saveBest scene.Best
+        Hud.setBest scene.Hud scene.Best
+    scene.Hud.ResultVictory <- won
+    Hud.setResult scene.Hud scene.Score scene.Wave scene.Kills scene.Best isBest
+    if scene.Trading then
+        scene.Hud.ResultDetailText <- string scene.Trips + " Reisen · " + string (int scene.TradeProfit) + " CR Handelsergebnis · " + string scene.Kills + " Abschüsse"
+    if won then Sound.waveCleared scene.Sound else Sound.gameOver scene.Sound
+    setState scene (if won then States.victory else States.gameOver)
+
+/// Der Sektor ist erst ohne lebende UND ohne ausstehende Gegner abgeschlossen.
 let private completeWave (scene: Scene) =
-    let player = scene.World.Player
+    scene.SaveDirty <- true
     let bonus = 250 * scene.Wave
     scene.Score <- scene.Score + bonus
-    player.Hull <- System.Math.Min(player.MaxHull, player.Hull + 35.0)
-    scene.Phase <- States.intermission
-    scene.PhaseTimer <- IntermissionTime
-    Sound.waveCleared scene.Sound
+    scene.World.Lasers.Count <- 0
+    scene.Hud.BannerTime <- 0.0
+    scene.Hud.Combo <- 1
+    scene.Hud.ComboTimer <- 0.0
+    scene.Accumulator <- 0.0
+    if scene.Wave = Mission.stages.Length then
+        scene.Score <- scene.Score + 2000
+        finishGame scene true
+    else
+        Sound.waveCleared scene.Sound
+        scene.World.Player.Hull <- min scene.World.Player.MaxHull (scene.World.Player.Hull + 25.0)
+        scene.World.Player.Shield <- scene.World.Player.MaxShield
+        scene.Phase <- States.salvaging
+        scene.Hud.Objective <- "Erz bergen, Station anfliegen und Fracht verkaufen."
+        Hud.notify scene.Hud "SEKTOR GESICHERT" "Freie Bergung · Stationsmarker folgen · Im Andockradius [B] drücken. +25 Hülle." 5.0
 
-    Hud.notify
-        scene.Hud
-        ("WELLE " + string scene.Wave + " ABGEWEHRT")
-        ("+" + string bonus + " Punkte   ::   Huelle repariert")
-        3.5
+let private tradeTerms (scene: Scene) =
+    { SignalLevel = PilotSkills.level scene.Pilot 0; FixerLevel = PilotSkills.level scene.Pilot 1 }
+
+let private canTrain (scene: Scene) =
+    scene.Trading && scene.Sector = 0 && scene.Phase = Salvaging && scene.Sortie.Role = 0
+
+let private clearScreen (scene: Scene) =
+    for enemy in scene.World.Enemies do enemy.Alive <- false
+    scene.World.Lasers.Count <- 0
+    scene.Patrol <- Array.empty
+    scene.Spawned <- 0
+    scene.EnemiesAlive <- 0
+    scene.Phase <- States.salvaging
+    scene.Hud.Target <- -1
+    Turret.reset scene.Turret
+
+let private endSchool (scene: Scene) =
+    if FlightSchool.onRange scene.School.Step then
+        clearScreen scene
+        scene.Hud.ManualLock <- false
+    scene.School.Step <- FlightSchool.Off
+    scene.SaveDirty <- true
+    Hud.showSchool FlightSchool.Off
+
+let private refreshShop (scene: Scene) =
+    let training = document.getElementById "school-replay"
+    if canTrain scene then training.removeAttribute "hidden" else training.setAttribute ("hidden","")
+    SkillUi.refresh scene.Skills scene.Pilot
+    DockContact.refreshArchive scene.Contact scene.Pilot
+    let terms = tradeTerms scene
+    Shop.refresh scene.Shop terms scene.Wallet scene.Upgrades scene.Cargo scene.Markets.[sectorIndex scene] (currentSector scene).Outpost (canAdvance scene) scene.Fleet
+    let trained = PilotSkills.level scene.Pilot 2 >= 1
+    ShipyardUi.refreshEquipment scene.Fleet scene.Upgrades trained
+    ShipyardUi.refresh scene.Shop.Shipyard scene.Fleet scene.Cargo scene.Wallet.Credits (currentSector scene).Outpost.HasUpgrades scene.Trading scene.Upgrades.[0] trained
+    FreightUi.refresh scene.Shop.FreightDesk scene.Cargo (sectorIndex scene) scene.Trading
+    Shop.refreshRoutes scene.Shop terms scene.Wallet scene.Cargo scene.Markets (sectorIndex scene) scene.Trading scene.TradeProfit scene.Blockade
+    BlockadeUi.refresh scene.Yard scene.Blockade scene.Trading (sectorIndex scene) scene.Wallet scene.Cargo scene.Markets
+
+let private showDock (scene: Scene) arrived =
+    let graduated = scene.School.Step = FlightSchool.Dock
+    if scene.School.Step <> FlightSchool.Off then endSchool scene
+    let sector = currentSector scene
+    scene.Input.UiMode <- true
+    Shop.show scene.Shop sector.Outpost
+    DockContact.dock scene.Contact sector.Outpost.Id scene.Pilot
+    refreshShop scene
+    let next = Universe.sectorByIndex scene.Wave
+    let route = document.getElementById "route-hint"
+    route.textContent <-
+        if scene.Trading then
+            if scene.Trips = 0 then "Erster Handel: Kryo-Erz für Helios einkaufen. Unter Routen & Kurse siehst du Zielpreise und Geleitschutzkosten. Erz kannst du auch selbst bergen."
+            else "Vergleiche unter Routen & Kurse die Nachbarstationen. Der Warenwert berücksichtigt deren freie Lager; Geleitschutz geht extra vom Guthaben ab."
+        elif canAdvance scene then
+            "Nächster Halt: " + next.Outpost.Name + " · Kryo-Erz-Ankauf dort aktuell " + string (TradeSystem.pilotSellPrice (tradeTerms scene) scene.Markets.[scene.Wave] scene.Cargo CommodityId.CryoOre) + " CR. Fracht mitnehmen oder hier verkaufen."
+        else "Blaue Kristalle laden 1 t, goldene 2 t Kryo-Erz. Erst beim Verkauf erhältst du Credits."
+    scene.World.Player.Velocity <- Vec3.zero
+    scene.World.Player.Controls.Throttle <- 0.0
+    scene.Accumulator <- 0.0
+    setState scene States.refitting
+    if graduated then scene.Shop.Notice.textContent <- "Flugschule abgeschlossen. Hier auf Kestrel kannst du Kryo-Erz für deine erste Handelsroute kaufen."
+    if arrived then
+        Sound.clearRadio scene.Sound
+        match sector.Outpost.Kind with
+        | OrbitalYard ->
+            Sound.shipyardEnter scene.Sound
+            Sound.capitalComm scene.Sound 1
+        | FleetDock -> Sound.shipyardEnter scene.Sound
+        | _ -> Sound.dockOpen scene.Sound
+
+let private learnSkill (scene: Scene) branch rank =
+    if PilotSkills.learn scene.Pilot branch rank then
+        if branch = 1 && rank = 2 then scene.Cargo.Capacity <- scene.Cargo.Capacity + 8
+        Mission.applyLoadout scene.World.Player scene.Upgrades scene.Pilot scene.Fleet
+        scene.SaveDirty <- true
+        Sound.uiConfirm scene.Sound
+        refreshShop scene
+        scene.Shop.Notice.textContent <- "Fähigkeit gelernt. Der Vorteil ist jetzt aktiv."
+
+let private updateArchiveScan (scene: Scene) dt =
+    let sector = sectorIndex scene
+    let kind = (currentSector scene).Outpost.Kind
+    let ship = scene.World.Player
+    if not ship.Alive then
+        if scene.ArchiveScan.IsSome then clearArchiveScan scene
+    elif Input.wasPressed scene.Input GameAction.ScanRelic then
+        let source = fst scene.RelicBatches.[sector]
+        let radius = RelicArchive.range scene.Pilot
+        let echo = Recovery.scan scene.Pilot sector ship.Position source
+        scene.ArchiveScan <- Some { Echo = echo; Elapsed = 0.0 }
+        Sound.receiver scene.Sound -1.0
+        Sound.scannerPing scene.Sound
+        match echo with
+        | NoEcho ->
+            Hud.showRecovery "Kein Archivecho" (sprintf "Scanradius %d m" (int radius)) "Versuche es an einer anderen Stelle im Stationsanflug." 0.0
+        | KnownRecording distance | NewRecording distance ->
+            let status =
+                match echo with
+                | NewRecording _ ->
+                    scene.SaveDirty <- true
+                    Sound.printerTick scene.Sound
+                    "+1 Stack-Punkt · Bericht am Dock"
+                | _ -> "Bereits im Fundarchiv"
+            Hud.showRecovery (fst RelicArchive.entries.[sector]) (sprintf "Echo auf %d m · %s" (int (round distance)) status)
+                (Recovery.transmission kind) (1.0 - distance / radius)
+    else
+        match scene.ArchiveScan with
+        | Some scan ->
+            scan.Elapsed <- scan.Elapsed + dt
+            if scan.Elapsed >= Recovery.readoutDuration then clearArchiveScan scene
+            elif kind = FrontierBazaar && scan.Echo <> NoEcho then Sound.receiver scene.Sound 1.0
+        | None -> ()
+
+let private openShop (scene: Scene) =
+    let sector = currentSector scene
+    match Universe.evaluateDocking sector.Outpost scene.World.Player.Position (dockBlocked scene) with
+    | ReadyToDock _ when scene.World.Player.Alive ->
+        scene.SaveDirty <- true
+        showDock scene true
+    | BlockedByCombat _ ->
+        Sound.dockJam scene.Sound
+        Hud.notify scene.Hud "DOCK GESPERRT" (if scene.Trading then "Piraten bedrohen die Station. Locke sie weg oder schalte sie aus." else "Sichere zuerst diesen Sektor. Abschüsse bringen je 100 CR.") 2.5
+    | _ ->
+        Sound.uiError scene.Sound
+        Hud.notify scene.Hud "STATION ANFLIEGEN" (sector.Outpost.Name + " · Zum Andocken näher als " + string (int sector.Outpost.DockRadius) + " m heranfliegen.") 2.5
+
+let private buyEquipment (scene: Scene) (item: int) =
+    if (currentSector scene).Outpost.HasUpgrades && Economy.buyFor (tradeTerms scene) scene.Wallet scene.World.Player scene.Upgrades item then
+        Mission.applyLoadout scene.World.Player scene.Upgrades scene.Pilot scene.Fleet
+        scene.SaveDirty <- true
+        scene.Shop.Notice.textContent <- if item = 0 then "Auto-Turret installiert. Er erfasst selbstständig Gegner in 280 m Reichweite." else "Verbesserung eingebaut. Hülle repariert und Schild geladen."
+        Sound.tradeConfirm scene.Sound
+        if item = 0 then Sound.autoTurretOnline scene.Sound
+    else
+        Sound.uiError scene.Sound
+        scene.Shop.Notice.textContent <- "Nicht genug Credits oder bereits vollständig ausgebaut."
+    refreshShop scene
+
+let private trade (scene: Scene) (action: int) =
+    let market = scene.Markets.[sectorIndex scene]
+    let terms = tradeTerms scene
+    let before = TradeSystem.copyCargo scene.Cargo
+    let result =
+        if action < 6 then TradeSystem.buyGood market scene.Cargo scene.Wallet.Credits (enum<CommodityId> action) 1
+        elif action < 12 then TradeSystem.sellGoodFor terms market scene.Cargo (enum<CommodityId> (action-6)) 1
+        elif action = 12 then TradeSystem.sellAllFor terms market scene.Cargo
+        elif (currentSector scene).Outpost.HasUpgrades then TradeSystem.upgradeHullCargo terms ShipCatalog.hulls.[scene.Fleet.Active].Hold scene.Cargo scene.Wallet.Credits
+        else { Ok = false; CreditsDelta = 0; VolumeDelta = 0; Message = "Diese Station bietet keinen Ausbau an." }
+    if result.Ok then
+        scene.SaveDirty <- true
+        if result.CreditsDelta > 0 then
+            Economy.earn scene.Wallet result.CreditsDelta true
+            let profit = TradeSystem.saleProfit result.CreditsDelta before scene.Cargo
+            scene.TradeProfit <- scene.TradeProfit + profit
+            if profit > 0.0 then Sound.tradeProfit scene.Sound
+        else scene.Wallet.Credits <- scene.Wallet.Credits + result.CreditsDelta
+        Sound.tradeConfirm scene.Sound
+    else Sound.uiError scene.Sound
+    scene.Shop.Notice.textContent <- result.Message
+    refreshShop scene
+
+let private refitShip (scene: Scene) order =
+    if scene.Trading && scene.State = Refitting then
+        match ShipCatalog.equip scene.Fleet scene.Cargo scene.Wallet.Credits (currentSector scene).Outpost.HasUpgrades order with
+        | Error message ->
+            scene.Shop.Notice.textContent <- message
+            Sound.uiError scene.Sound
+        | Ok cost ->
+            scene.Wallet.Credits <- scene.Wallet.Credits - cost
+            Mission.applyLoadout scene.World.Player scene.Upgrades scene.Pilot scene.Fleet
+            let hull = ShipCatalog.hulls.[scene.Fleet.Active]
+            let kit = ShipCatalog.kits.[scene.Fleet.Kit]
+            scene.Shop.Notice.textContent <- sprintf "%s flugbereit · %s · %d t Frachtraum." hull.Name kit.Name scene.Cargo.Capacity
+            scene.SaveDirty <- true
+            Sound.refit scene.Sound
+        refreshShop scene
+
+let private handleFreight (scene: Scene) action =
+    if scene.Trading && scene.State = Refitting then
+        match Freight.apply scene.Cargo scene.Sector action with
+        | None -> Sound.uiError scene.Sound
+        | Some payment ->
+            scene.SaveDirty <- true
+            scene.Shop.Notice.textContent <-
+                match action with
+                | AcceptLoad _ -> "Fracht verladen. Die Lieferroute ist unter Routen & Kurse markiert."
+                | ReturnLoad -> "Die Station hat die versiegelte Ladung zurückgenommen."
+                | DeliverLoad ->
+                    Economy.earn scene.Wallet payment false
+                    scene.TradeProfit <- scene.TradeProfit + float payment
+                    sprintf "Lieferung quittiert. %d CR Honorar gutgeschrieben." payment
+            Sound.tradeConfirm scene.Sound
+            refreshShop scene
+
+let private departShop (scene: Scene) =
+    DockContact.leave scene.Contact
+    Sound.clearRadio scene.Sound
+    Sound.undock scene.Sound
+    scene.SaveDirty <- true
+    scene.Input.UiMode <- false
+    Shop.hide scene.Shop
+    scene.Input.StickX <- 0.0
+    scene.Input.StickY <- 0.0
+    scene.Hud.Target <- -1
+    scene.Hud.ManualLock <- false
+    Hud.notify scene.Hud "ABGEDOCKT" "Schub mit ↑ erhöhen · Weiter bergen oder zum Stationsmarkt zurückkehren." 3.0
+    setState scene States.playing
+
+let private advanceSector (scene: Scene) =
+    if canAdvance scene then
+        departShop scene
+        Sound.jumpGate scene.Sound
+        scene.Phase <- States.intermission
+        scene.PhaseTimer <- IntermissionTime
+        let stage = Mission.stage (scene.Wave + 1)
+        scene.Hud.StageName <- stage.Name
+        scene.Hud.Objective <- stage.Objective
+        Hud.notify scene.Hud "ROUTE FREIGEGEBEN" "Nächster Sektor in 8 Sekunden · Fracht und Ausrüstung bleiben an Bord." 4.0
+
+/// Ein Sprung versetzt das Schiff zum Anflug, heilt aber weder Hülle noch Schild.
+let private arrive (scene: Scene) distance =
+    let ship = scene.World.Player
+    let hull, shield, delay = ship.Hull, ship.Shield, ship.ShieldDelay
+    let point = (currentSector scene).Outpost.Position + Vec3(0.0,0.0,distance)
+    Ship.reset ship point Quat.identity
+    ship.Hull <- hull
+    ship.Shield <- shield
+    ship.ShieldDelay <- delay
+    scene.Input.StickX <- 0.0
+    scene.Input.StickY <- 0.0
+    Camera.snap scene.Camera point Quat.identity
+    clearDockingArea scene
+    applySectorAtmosphere scene
+
+let private beginSchool scene =
+    clearScreen scene
+    scene.School.Step <- FlightSchool.Accelerate
+    arrive scene 310.0
+    // The targets lie against open sky beside the dock, away from its bright approach ring.
+    let ship = scene.World.Player
+    let heading = Quat.lookRotation (Vec3(0.25,0.07,-1.0)) Vec3.up
+    ship.Rotation <- heading
+    ship.PrevRotation <- heading
+    Camera.snap scene.Camera ship.Position heading
+    scene.Hud.BannerTime <- 0.0
+    scene.SaveDirty <- true
+    Hud.showSchool scene.School.Step
+
+let private launchTrainingDrone (scene: Scene) =
+    let player = scene.World.Player
+    let port = (currentSector scene).Outpost.Position
+    let lateral = if scene.School.Step = FlightSchool.MovingTarget then 4.0 else 0.0
+    let ahead distance = player.Position + Quat.rotateVec3 player.Rotation (Vec3(lateral,0.0,-distance))
+    let position =
+        [|78.0; 52.0; 105.0; 34.0|] |> Array.map ahead
+        |> Array.tryFind (fun p -> Vec3.distance p port > 65.0 && isFreeSpace scene.World.Asteroids p.X p.Y p.Z 10.0)
+        |> Option.defaultValue (port + Vec3(0.0,2.0,165.0))
+    let drone,brain = scene.World.Enemies.[0],scene.Brains.[0]
+    EnemyProfiles.configure drone EnemyRole.Drone 0
+    Ship.reset drone position (Quat.lookRotation (player.Position-position) Vec3.up)
+    brain.Role <- EnemyRole.Drone
+    AI.reset brain drone position
+    brain.State <- AiState.Patrol
+    FlightSchool.guideTarget scene.School.Step scene.World.Time drone
+    scene.Patrol <- [|EnemyRole.Drone|]
+    scene.Spawned <- 1
+    scene.EnemiesAlive <- 1
+    scene.Phase <- States.fighting
+    scene.Hud.Target <- 0
+
+let private advanceSchool (scene: Scene) =
+    let ship = scene.World.Player
+    let next = FlightSchool.helmStep scene.School.Step ship.Controls.Throttle ship.Controls.Brake (Vec3.length ship.Velocity)
+    if next <> scene.School.Step then
+        scene.School.Step <- next
+        if next = FlightSchool.FirstTarget then launchTrainingDrone scene
+        scene.SaveDirty <- true
+        Hud.showSchool next
+        if next = FlightSchool.Dock then Sound.tradeConfirm scene.Sound
+        else Sound.uiConfirm scene.Sound
+
+let private configureBomber (ship: Ship) =
+    ship.ShieldRechargeDelay <- Combat.ShieldRegenDelay
+    ship.CruiseSpeed <- 46.0
+    ship.MaxYawRate <- 0.87
+    ship.MaxPitchRate <- 0.94
+    ship.LaserDamage <- 11.0
+    ship.MaxHull <- 100.0
+    ship.MaxShield <- 100.0
+
+let private launchSortie (scene: Scene) role =
+    let ship = scene.World.Player
+    let flight = scene.Sortie
+    CapitalFlight.beginSortie flight role ship.Hull ship.Shield
+    departShop scene
+    clearScreen scene
+    if role = CapitalFlight.Bomber then configureBomber ship
+    let point = CapitalFlight.position + Vec3(24.0,16.0,365.0)
+    let heading = Quat.lookRotation (CapitalFlight.position - point) Vec3.up
+    Ship.reset ship point heading
+    if role = CapitalFlight.Escort then
+        ship.Hull <- flight.ParkedHull
+        ship.Shield <- flight.ParkedShield
+    Input.reset scene.Input
+    Camera.snap scene.Camera point heading
+    clearDockingArea scene
+    scene.Patrol <- [| EnemyRole.Drone; EnemyRole.Scout |]
+    scene.Spawned <- scene.Patrol.Length
+    for i in 0..scene.Spawned-1 do
+        if flight.Defeated &&& (1 <<< i) = 0 then
+            let enemy, brain = scene.World.Enemies.[i], scene.Brains.[i]
+            let p = CapitalFlight.position + (if i = 0 then Vec3(-61.0,39.0,202.0) else Vec3(89.0,2.0,148.0))
+            let role = scene.Patrol.[i]
+            EnemyProfiles.configure enemy role ((currentSector scene).DangerLevel-1)
+            Ship.reset enemy p (Quat.lookRotation (point-p) Vec3.up)
+            AI.reset brain enemy point
+            brain.Role <- role
+            scene.EnemiesAlive <- scene.EnemiesAlive + 1
+    scene.Phase <- if scene.EnemiesAlive = 0 then States.salvaging else States.fighting
+    scene.SaveDirty <- true
+    scene.Hud.BannerTime <- 0.0
+    if role = CapitalFlight.Escort then
+        scene.Hud.RewardText <- "Kepler Zwei · »Halt uns die beiden Jäger vom Hals.«"
+        scene.Hud.RewardTime <- 3.5
+
+let private recoverSortie (scene: Scene) message =
+    let ship, flight = scene.World.Player, scene.Sortie
+    let hull, shield =
+        if flight.Role = CapitalFlight.Bomber then flight.ParkedHull, flight.ParkedShield
+        else max 1.0 ship.Hull, ship.Shield
+    CapitalFlight.standDown flight
+    clearScreen scene
+    ship.MaxHull <- ShipCatalog.hullStrength scene.Upgrades.[2]
+    ship.MaxShield <- ShipCatalog.shieldCapacity scene.Upgrades.[1]
+    Mission.applyLoadout ship scene.Upgrades scene.Pilot scene.Fleet
+    ship.Hull <- hull
+    ship.Shield <- shield
+    arrive scene 72.0
+    scene.DeathTimer <- 0.0
+    showDock scene true
+    scene.Shop.Notice.textContent <- message
+    scene.SaveDirty <- true
+
+let private yardAction (scene: Scene) action =
+    if scene.State = Refitting && scene.Trading then
+        match action with
+        | FlyBomber | FlyEscort ->
+            if Blockade.canSortie scene.Blockade scene.Sector && scene.Sortie.Role = 0 then
+                launchSortie scene (if action = FlyBomber then CapitalFlight.Bomber else CapitalFlight.Escort)
+        | _ ->
+            if Blockade.apply scene.Blockade scene.Sector scene.Wallet scene.Cargo scene.Markets action then
+                scene.SaveDirty <- true
+                match action with
+                | Commission _ -> Sound.shipyardCrane scene.Sound
+                | _ -> Sound.tradeConfirm scene.Sound
+                refreshShop scene
+
+let private updateSortie (scene: Scene) dt =
+    let f,world = scene.Sortie,scene.World
+    let ship = world.Player
+    if scene.Trading && scene.Sector = 1 && (scene.Blockade.Lifted || scene.Blockade.Permit = 2) &&
+       Vec3.distance ship.Position (currentSector scene).Outpost.Position < 235.0 then
+        f.Landing <- min CapitalFlight.landingTime (f.Landing + dt)
+    if f.Role <> 0 && (not ship.Alive || f.WingHull <= 0.0) then
+        recoverSortie scene "Der Flugdienst hat den Einsatz abgebrochen. Die Werft stellt den Bomber wieder bereit."
+    elif f.Role <> 0 && not scene.Blockade.Lifted then
+        let previousLock, ammo, hits = f.Lock,f.Ammo,f.Hits
+        let fire = Input.wasPressed scene.Input GameAction.LaunchTorpedo
+        CapitalFlight.advance f ship.Position (Quat.forward ship.Rotation) (scene.EnemiesAlive = 0) fire dt
+        if previousLock < CapitalFlight.lockTime && f.Lock >= CapitalFlight.lockTime then Sound.targetLock scene.Sound
+        if f.Ammo < ammo then
+            let attitude = if f.Role = CapitalFlight.Escort then Quat.lookRotation (CapitalFlight.position-f.Launch) Vec3.up else ship.Rotation
+            f.Launch <- f.Launch + Quat.rotateVec3 attitude ShipHardpoints.bomberRails.[f.Ammo]
+            Sound.torpedoLaunch scene.Sound
+            scene.SaveDirty <- true
+        if f.Hits > hits then
+            let p = CapitalFlight.position
+            Effects.shipExplosion world p.X p.Y (p.Z + 14.0 * CapitalFlight.hullScale) 0.0 0.0 0.0 (10.0 * CapitalFlight.hullScale)
+            let distance = Vec3.distance ship.Position p
+            scene.SaveDirty <- true
+            if f.Hits = 2 && Blockade.lift scene.Blockade scene.Markets then
+                Sound.capitalExplosionAt scene.Sound p
+                for x in [-42.0;4.0;45.0] do
+                    Effects.shipExplosion world (p.X + x * CapitalFlight.hullScale) p.Y p.Z 0.0 0.0 0.0 (18.0 * CapitalFlight.hullScale)
+                world.Customs <- None
+                clearScreen scene
+                f.Landing <- 0.0
+                Hud.notify scene.Hud "HELIOS · DURCHFLUG FREI" "»Frachter Sechs an Hafenmeister. Wir kommen rein.«  B bringt dich zum Dock." 6.0
+            else Sound.torpedoImpact scene.Sound
+
+let private travel (scene: Scene) action =
+    if scene.Trading && scene.State = Refitting then
+        let target, escorted = action / 2, action % 2 = 1
+        let terms = tradeTerms scene
+        match TradeRoutes.tryPlanWithEscort terms scene.Blockade.EscortPort scene.Sector target escorted scene.Wallet.Credits with
+        | None ->
+            Sound.uiError scene.Sound
+            scene.Shop.Notice.textContent <- "Route nicht erreichbar oder Guthaben für Geleitschutz zu klein."
+            refreshShop scene
+        | Some plan ->
+            Blockade.onTravel scene.Blockade scene.Markets scene.Sector plan.Destination |> ignore
+            scene.Wallet.Credits <- scene.Wallet.Credits - plan.Fee
+            scene.TradeProfit <- scene.TradeProfit - float plan.Fee
+            scene.Sector <- plan.Destination
+            scene.Trips <- scene.Trips + 1
+            scene.Patrol <- plan.Patrol
+            for enemy in scene.World.Enemies do enemy.Alive <- false
+            scene.World.Lasers.Count <- 0
+            scene.World.Particles.Count <- 0
+            scene.World.Events.Clear()
+            scene.Pickups.Clear()
+            Turret.reset scene.Turret
+            AsteroidField.generate scene.World.Asteroids scene.World.Rng InitialAsteroids
+            departShop scene
+            Sound.jumpGate scene.Sound
+            arrive scene 650.0
+            if scene.Sector = Blockade.kepler then Sound.capitalComm scene.Sound 0
+            elif scene.World.Customs.IsSome then
+                Sound.capitalHornAt scene.Sound CapitalFlight.position
+            scene.Spawned <- 0
+            scene.EnemiesAlive <- 0
+            scene.Phase <- if plan.Patrol.Length = 0 then States.salvaging else States.intermission
+            scene.PhaseTimer <- TradeRoutes.patrolDelay terms
+            Hud.notify scene.Hud (currentSector scene).Name (if plan.Patrol.Length = 0 then "Gesicherte Überfahrt · Station anfliegen · [X] stoppt · [B] andocken" else sprintf "Piraten in %d Sekunden. Zur Station durchbrechen oder kämpfen." (int scene.PhaseTimer)) 5.0
 
 /// Beginnt ein neues Spiel (aus dem Menue oder nach Game Over).
-let private startGame (scene: Scene) =
+let private startGame (scene: Scene) (trading: bool) =
+    scene.School <- FlightSchool.create ()
+    scene.Fleet <- ShipCatalog.create ()
+    Sound.clearRadio scene.Sound
+    scene.SovereignWarningArmed <- false
+    scene.Blockade <- Blockade.create ()
+    scene.Sortie <- CapitalFlight.create ()
+    scene.Yard.Request <- None
+    scene.World.Pilot <- PilotSkills.create ()
+    clearArchiveScan scene
+    scene.Skills.Request <- None
+    DockContact.restore scene.Contact 0
+    scene.SaveDirty <- true
+    scene.SaveRetryDelay <- 0.0
+    Input.reset scene.Input
     let world = scene.World
     Sound.unlock scene.Sound
+    Mission.resetPlayer world.Player
+    Economy.reset scene.Wallet
+    scene.Trading <- trading
+    scene.Sector <- 0
+    scene.TradeProfit <- 0.0
+    scene.Trips <- 0
+    scene.Patrol <- Array.empty
+    scene.Wallet.Credits <- if trading then 200 else 0
+    TradeSystem.resetCargo scene.Cargo 16
+    for i in 0 .. scene.Markets.Length - 1 do
+        scene.Markets.[i] <- TradeSystem.createMarket Universe.sectors.[i]
+    if trading then Blockade.beginRun scene.Blockade scene.Markets |> ignore
+    Turret.reset scene.Turret
+    scene.Pickups.Clear()
+    Shop.hide scene.Shop
+    Array.fill scene.Upgrades 0 scene.Upgrades.Length 0
+    scene.Input.UiMode <- false
     World.reset world InitialAsteroids
     Camera.snap scene.Camera world.Player.Position world.Player.Rotation
     scene.Score <- 0
     scene.Kills <- 0
     scene.Wave <- 0
-    scene.Phase <- States.intermission
-    scene.PhaseTimer <- 2.5
+    clearDockingArea scene
+    applySectorAtmosphere scene
+    scene.Phase <- if trading then States.salvaging else States.intermission
+    scene.PhaseTimer <- 12.0
+    scene.Spawned <- 0
+    scene.SpawnTimer <- 0.0
+    scene.EnemiesAlive <- 0
     scene.DeathTimer <- 0.0
     scene.Shake <- 0.0
     scene.Accumulator <- 0.0
+    scene.PrevBoostLocked <- false
+    scene.PrevOverdrive <- 0.0
+    scene.PrevShieldUp <- true
+    scene.PrevShieldDelay <- 0.0
+    scene.UpgradeNotified <- false
+    scene.JumpNotifiedSector <- -1
     scene.Hud.DamageFlash <- 0.0
     scene.Hud.Target <- -1
     scene.Hud.ManualLock <- false
     scene.Hud.Combo <- 1
     scene.Hud.ComboTimer <- 0.0
-    Hud.notify scene.Hud "BEREIT MACHEN" "Die erste Welle ist im Anflug" 2.3
+    scene.Hud.ResultVictory <- false
+    scene.Hud.RewardTime <- 0.0
+    scene.Hud.StageName <- (Mission.stage 1).Name
+    scene.Hud.Objective <- (Mission.stage 1).Objective
+    if trading then beginSchool scene
+    else Hud.notify scene.Hud "OPERATION MORGENLICHT" "Kampfmission · Erster Gegneranflug in 12 Sekunden · X stoppt dein Schiff." 6.0
     setState scene States.playing
 
 /// Spielende: Bestwert aktualisieren und Ergebnis fuer den Bildschirm hinterlegen.
 let private endGame (scene: Scene) =
-    let isBest = scene.Score > scene.Best
+    finishGame scene false
 
-    if isBest then
-        scene.Best <- scene.Score
-        saveBest scene.Best
-        Hud.setBest scene.Hud scene.Best
+// Anzeige-Einstellungen gehoeren zum Geraet, nicht zum Spielstand.
+[<Literal>]
+let private ZoomKey = "space2601.camera-zoom"
 
-    Sound.gameOver scene.Sound
-    Hud.setResult scene.Hud scene.Score scene.Wave scene.Kills scene.Best isBest
-    setState scene States.gameOver
+[<Literal>]
+let private ShadowKey = "space2601.shadows"
+
+[<Emit("(() => { try { const v = parseFloat(localStorage.getItem($0)); return Number.isFinite(v) ? v : $1; } catch { return $1; } })()")>]
+let private loadSetting (key: string) (fallback: float) : float = jsNative
+
+[<Emit("(() => { try { localStorage.setItem($0, String($1)); } catch { } })()")>]
+let private saveSetting (key: string) (value: float) : unit = jsNative
+
+/// Ein voller Boost-Vorrat reicht fuer so viele Sekunden Dauerboost.
+[<Literal>]
+let private BoostDuration = 8.0
+
+/// Sekunden, bis sich ein leerer Vorrat vollstaendig erholt hat.
+[<Literal>]
+let private BoostRecovery = 6.0
 
 /// Uebertraegt die Eingabe in die Steuerbefehle des Spielerschiffs.
-let private applyPlayerInput (input: InputState) (ship: Ship) (dt: float) =
+let private applyPlayerInput (scene: Scene) (input: InputState) (ship: Ship) (dt: float) =
     let c = ship.Controls
     c.Pitch <- Input.pitch input
     c.Yaw <- Input.yaw input
     c.Roll <- Input.roll input
-    let throttle = c.Throttle + Input.throttleChange input * ThrottleRate * dt
-    c.Throttle <- System.Math.Min(1.0, System.Math.Max(0.0, throttle))
-    c.Boost <- Input.isDown input GameAction.Boost
+    c.Throttle <- Flight.adjustThrottle c.Throttle (Input.throttleChange input) dt
     c.Brake <- Input.isDown input GameAction.Brake
-    c.Fire <- Input.fire input
 
-/// Kulisse im Menue: Das Schiff steht und dreht sich langsam - die Kamera
-/// schwenkt dadurch gemaechlich ueber Asteroidenfeld und Himmel.
-let private applyMenuControls (ship: Ship) =
-    let c = ship.Controls
-    c.Pitch <- 0.0
-    c.Yaw <- 0.13
-    c.Roll <- 0.0
-    c.Boost <- false
-    c.Brake <- true
-    c.Fire <- false
+    // Boost zehrt vom Vorrat. Ein leergeflogener Vorrat sperrt, bis 30 % zurueck sind,
+    // damit der Antrieb an der Grenze nicht im Takt der Erholung stottert.
+    if scene.BoostLocked && scene.BoostReserve >= 0.3 then
+        scene.BoostLocked <- false
+
+    let boosting = Input.isDown input GameAction.Boost && not c.Brake && not scene.BoostLocked
+
+    if boosting then
+        scene.BoostRest <- 0.0
+        scene.BoostReserve <- scene.BoostReserve - dt / BoostDuration
+
+        if scene.BoostReserve <= 0.0 then
+            scene.BoostReserve <- 0.0
+            scene.BoostLocked <- true
+    else
+        scene.BoostRest <- scene.BoostRest + dt
+
+        if scene.BoostRest > 0.8 then
+            scene.BoostReserve <- System.Math.Min(1.0, scene.BoostReserve + dt / BoostRecovery)
+
+    c.Boost <- boosting
+    c.Fire <- Input.fire input
+    Input.centerStick input dt
 
 /// Wertet die Ereignisse der Simulation aus: Punkte, Treffer-Feedback, Sound, Spielende.
 let private processEvents (scene: Scene) =
@@ -440,20 +1301,55 @@ let private processEvents (scene: Scene) =
         match events.[i] with
         | AsteroidDestroyed(radius, team, position) ->
             if playing then
-                let distance = Vec3.distance position player.Position
-                Sound.explosion scene.Sound (System.Math.Min(1.2, radius * 0.06)) distance
+                Sound.explosionAt scene.Sound (System.Math.Min(1.2, radius * 0.06)) position
 
                 if team = Team.Player then
                     scene.Score <- scene.Score + (10 + int radius) * scene.Hud.Combo
-        | ShipDestroyed(victim, position) ->
+        | MineralReleased(position, kind, count) ->
+            if playing then
+                Salvage.spawn scene.Pickups position kind count
+                Sound.mineralCrack scene.Sound position
+                scene.Hud.RewardText <- "MINERALIEN FREIGELEGT · HINFLIEGEN & EINSAMMELN"
+                scene.Hud.RewardTime <- 3.0
+        | StackRescue ->
+            scene.SaveDirty <- true
+            Hud.notify scene.Hud "NOTFALL-SYNC" "Hülle auf 30 %, Schild voll. Rettung für diesen Sektor verbraucht." 5.0
+            Sound.shieldDown scene.Sound
+        | ShipDestroyed(Team.Enemy, position, 0) when playing && FlightSchool.onRange scene.School.Step ->
+            let bounty = FlightSchool.targetDown scene.School
+            if bounty > 0 then Economy.earn scene.Wallet bounty false
+            scene.Hud.RewardText <- if bounty > 0 then "ZIEL BESTÄTIGT · +100 CR ÜBUNGSPRÄMIE" else "ZIEL BESTÄTIGT"
+            scene.Hud.RewardTime <- 2.0
+            Sound.explosionAt scene.Sound 1.2 position
+            if scene.School.Step = FlightSchool.MovingTarget then launchTrainingDrone scene
+            else clearScreen scene
+            Hud.showSchool scene.School.Step
+            scene.SaveDirty <- true
+        | ShipDestroyed(victim, position, slot) ->
             let distance = Vec3.distance position player.Position
 
             if playing then
-                Sound.explosion scene.Sound 1.5 distance
+                if victim = Team.Enemy && slot >= 0 && scene.Brains.[slot].Role = EnemyRole.Commander then
+                    scene.SovereignWarningArmed <- false
+                    Sound.clearRadio scene.Sound
+                    Sound.capitalExplosionAt scene.Sound position
+                else Sound.explosionAt scene.Sound 1.5 position
 
             if victim = Team.Enemy then
                 if playing then
+                    if scene.Sortie.Role <> 0 && slot >= 0 && slot < 2 then
+                        scene.Sortie.Defeated <- scene.Sortie.Defeated ||| (1 <<< slot)
+                        scene.SaveDirty <- true
                     scene.Kills <- scene.Kills + 1
+                    Economy.earn scene.Wallet 100 false
+                    scene.Hud.RewardText <- "+100 CR · ABSCHUSS"
+                    scene.Hud.RewardTime <- 2.5
+                    if slot >= 0 && PilotSkills.level scene.Pilot 0 >= 2 then
+                        match scene.Brains.[slot].Role with
+                        | EnemyRole.Gunship | EnemyRole.Bomber ->
+                            Salvage.spawn scene.Pickups position 3 1
+                            scene.Hud.RewardText <- "+100 CR · NAV-DATEN-KAPSEL FREI"
+                        | _ -> ()
 
                     if scene.Hud.ComboTimer > 0.0 then
                         scene.Hud.Combo <- System.Math.Min(4, scene.Hud.Combo + 1)
@@ -464,7 +1360,7 @@ let private processEvents (scene: Scene) =
                     scene.Score <- scene.Score + 100 * System.Math.Max(1, scene.Wave) * scene.Hud.Combo
 
                     // Schild-Boost bei jedem Abschuss; ab 3x Kombo aktiviert sich der Waffen-Overdrive
-                    player.Shield <- System.Math.Min(player.MaxShield, player.Shield + 16.0)
+                    player.Shield <- System.Math.Min(player.MaxShield, player.Shield + (if PilotSkills.level scene.Pilot 2 >= 2 then 31.0 else 16.0))
                     player.ShieldFlash <- System.Math.Max(player.ShieldFlash, 0.45)
 
                     if scene.Hud.Combo >= 3 then
@@ -479,16 +1375,29 @@ let private processEvents (scene: Scene) =
         | ShipHit(victim, damage, shieldAbsorbed) ->
             if playing then
                 Sound.hit scene.Sound shieldAbsorbed (victim = Team.Player)
+                if victim = Team.Player && not shieldAbsorbed && player.Alive && player.Hull <= 0.25 * player.MaxHull then
+                    Sound.lowHullWarn scene.Sound
+                    Sound.hullCritical scene.Sound
 
             if victim = Team.Player then
                 Hud.damage scene.Hud damage
                 scene.Shake <- scene.Shake + damage * 0.03
             else
                 Hud.hitMarker scene.Hud
-        | LaserFired(team, position) ->
+        | LaserFired(team, position, slot) ->
             if playing then
-                let distance = if team = Team.Player then 0.0 else Vec3.distance position player.Position
-                Sound.laser scene.Sound (team = Team.Player) distance (player.Overdrive > 0.0)
+                if slot >= 0 && scene.Brains.[slot].Role = EnemyRole.Commander then Sound.macroCannonAt scene.Sound position
+                else
+                    let role = if slot >= 0 then int scene.Brains.[slot].Role else -1
+                    Sound.laserAt scene.Sound (team = Team.Player) position (player.Overdrive > 0.0) scene.Upgrades.[0] scene.Fleet.Kit role
+        | TurretFired position ->
+            if playing then Sound.turretFireAt scene.Sound position
+        | CapitalGunFired position ->
+            if playing then Sound.macroCannonAt scene.Sound position
+        | CapitalHit(position, part, destroyed) ->
+            if playing then Sound.capitalHit scene.Sound position (part < 0) destroyed
+        | CollisionImpact(position, intensity, isPlayer) ->
+            if playing then Sound.collisionImpact scene.Sound position intensity isPlayer
 
     events.Clear()
 
@@ -502,22 +1411,57 @@ let private updateWaves (scene: Scene) (dt: float) =
             alive <- alive + 1
             // Jaeger, die den Spieler verloren haben, patrouillieren um seine aktuelle
             // Position statt um den alten Treffpunkt - so findet jede Welle ihr Ende.
-            scene.Brains.[i].Home <- scene.World.Player.Position
+            if scene.State = Playing then scene.Brains.[i].Home <- scene.World.Player.Position
 
     scene.EnemiesAlive <- alive
 
     match scene.State with
     | Playing ->
         if scene.World.Player.Alive then
+            if scene.SovereignWarningArmed && enemies.[0].Alive && scene.Brains.[0].WeaponCharge > 0.0 &&
+               Sound.tryMacroWarning scene.Sound then scene.SovereignWarningArmed <- false
+            for i in 0 .. enemies.Length - 1 do
+                if enemies.[i].Alive && (scene.Brains.[i].Role = EnemyRole.Commander || scene.Brains.[i].Role = EnemyRole.Bomber) &&
+                   scene.Brains.[i].WeaponCharge > 0.35 && scene.Brains.[i].WeaponCharge < 0.75 then
+                    Sound.macroCharge scene.Sound
             match scene.Phase with
             | Intermission ->
                 scene.PhaseTimer <- scene.PhaseTimer - dt
 
                 if scene.PhaseTimer <= 0.0 then
-                    startWave scene
+                    if scene.Trading then
+                        scene.SaveDirty <- true
+                        scene.Spawned <- min 2 scene.Patrol.Length
+                        for i in 0 .. scene.Spawned-1 do spawnEnemy scene i
+                        scene.EnemiesAlive <- scene.Spawned
+                        scene.SpawnTimer <- 8.0
+                        scene.Phase <- States.fighting
+                        Hud.notify scene.Hud "PIRATEN AUF ABFANGKURS" "Zur Station durchbrechen oder kämpfen · 100 CR je Abschuss · X bremst." 4.0
+                        Sound.pirateAmbush scene.Sound
+                    else startWave scene
             | Fighting ->
-                if alive = 0 then
-                    completeWave scene
+                let count = (encounterRoles scene).Length
+                if scene.Spawned < count then
+                    scene.SpawnTimer <- scene.SpawnTimer - dt
+                    if scene.SpawnTimer <= 0.0 then
+                        let next = min count (scene.Spawned + 2)
+                        for i in scene.Spawned .. next - 1 do
+                            spawnEnemy scene i
+                        scene.EnemiesAlive <- alive + next - scene.Spawned
+                        scene.Spawned <- next
+                        scene.SpawnTimer <- if scene.Trading then 8.0 else 5.0
+                elif alive = 0 then
+                    if scene.Trading then
+                        scene.SaveDirty <- true
+                        scene.Phase <- States.salvaging
+                        if scene.Sortie.Role <> 0 then
+                            scene.Hud.RewardText <- if scene.Sortie.Role = CapitalFlight.Escort then "Kepler Zwei · »Danke. Wir haben freie Sicht.«" else "Abfangjäger ausgeschaltet"
+                            scene.Hud.RewardTime <- 3.0
+                        else
+                            Hud.notify scene.Hud "HANDELSWEG FREI" "Patrouille ausgeschaltet · Station anfliegen, handeln oder Erz bergen." 4.0
+                            Sound.sectorClear scene.Sound
+                    else completeWave scene
+            | Salvaging -> ()
         else
             // Die Explosion des eigenen Schiffs noch zeigen, dann Game Over
             scene.DeathTimer <- scene.DeathTimer - dt
@@ -526,12 +1470,236 @@ let private updateWaves (scene: Scene) (dt: float) =
                 endGame scene
     | _ -> ()
 
+    let hud = scene.Hud
+    hud.Credits <- scene.Wallet.Credits
+    hud.CargoUsed <- TradeSystem.usedVolume scene.Cargo
+    hud.CargoCapacity <- scene.Cargo.Capacity
+    hud.TurretOwned <- scene.Wallet.TurretOwned
+    hud.TurretTarget <- scene.Turret.Target
+    hud.Salvaging <- scene.Phase = Salvaging
+    hud.Trading <- scene.Trading
+    hud.Trips <- scene.Trips
+    hud.TradeProfit <- int scene.TradeProfit
+    let total = max 1 (encounterRoles scene).Length
+    if scene.Phase = Fighting then
+        hud.PendingEnemies <- max 0 (total - scene.Spawned)
+        hud.StageProgress <- float (total - scene.EnemiesAlive - hud.PendingEnemies) / float total
+        hud.Countdown <- 0
+    elif scene.Phase = Intermission then
+        hud.PendingEnemies <- 0
+        hud.StageProgress <- 0.0
+        hud.Countdown <- max 0 (int (ceil scene.PhaseTimer))
+    else
+        hud.StageProgress <- 1.0
+        hud.PendingEnemies <- 0
+        hud.Countdown <- 0
+
+    if scene.Trading then
+        hud.StageName <- (currentSector scene).Name
+        hud.StageProgress <- if scene.Sortie.Role <> 0 then float scene.Sortie.Hits / 2.0 else max 0.0 (min 1.0 (scene.TradeProfit / 1000.0))
+        hud.Objective <-
+            if scene.Sortie.Role <> 0 && scene.Blockade.Lifted then "Frachter Sechs hat Freigabe. B bringt dich nach Helios zurück."
+            elif scene.Sortie.Role = CapitalFlight.Bomber then "Kreuzer im Visier halten · J Torpedo bei Zielton · B Rückzug"
+            elif scene.Sortie.Role = CapitalFlight.Escort then "Kepler Zwei decken · Abfangjäger ausschalten · B Rückzug"
+            elif scene.Phase = Fighting then "Piraten: Durchbrechen oder bekämpfen. Nur nahe Feinde sperren das Dock."
+            elif scene.Cargo.Freight.IsSome then Freight.hint scene.Sector scene.Cargo.Freight.Value
+            else
+                match Blockade.manifestLeg scene.Blockade scene.Sector with
+                | Some leg -> leg.Hint
+                | None when scene.Sector = Blockade.helios && not scene.Blockade.Lifted && scene.Blockade.Permit = 0 ->
+                    "AETHER hält den Filterfrachter fest. Orlov wartet am Dock."
+                | None when scene.TradeProfit >= 1000.0 -> "Handelsziel erreicht! Neue Routen, größere Fracht oder bessere Ausrüstung?"
+                | None when scene.Trips = 0 && TradeSystem.usedVolume scene.Cargo = 0 -> "Erster Handel: Kestrel anfliegen, Kryo-Erz kaufen oder selbst bergen."
+                | None -> "Fracht verkaufen, Kurse vergleichen und deine nächste Route wählen."
+
+let private closeSaves (scene: Scene) =
+    let wasOpen = scene.Saves.Visible
+    SaveUi.hide scene.Saves
+    scene.Saves.Imported <- ""
+    scene.Input.SaveDialogOpen <- false
+    Input.reset scene.Input
+    if wasOpen then
+        setState scene scene.SaveReturnState
+        Sound.uiClick scene.Sound
+        if scene.State = Refitting then
+            scene.Shop.Root.removeAttribute "hidden"
+            DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot
+            (document.getElementById "depart" :?> HTMLButtonElement).focus()
+    scene.Input.UiMode <- scene.State = Refitting || scene.State = Menu
+    if wasOpen && scene.State = Menu then (document.getElementById "menu-saves").focus()
+
+let private openSaves (scene: Scene) =
+    if not scene.Saves.Visible then
+        scene.SaveReturnState <- scene.State
+        if scene.State = Playing then setState scene States.paused
+        if scene.State = Refitting then
+            DockContact.leave scene.Contact
+            Sound.clearRadio scene.Sound
+            Shop.hide scene.Shop
+        scene.Input.SaveDialogOpen <- true
+        scene.Input.UiMode <- true
+        Input.reset scene.Input
+        SaveUi.show scene.Saves
+        Sound.uiClick scene.Sound
+        scene.Saves.Status.textContent <- scene.Hud.SaveText
+        refreshSaveSlots scene
+
+let private loadFlight (scene: Scene) json =
+    match GameSave.decode json with
+    | Error error -> saveNotice scene true error
+    | Ok data ->
+        scene.SovereignWarningArmed <- false
+        closeSaves scene
+        scene.Skills.Request <- None
+        Shop.hide scene.Shop
+        scene.Input.UiMode <- false
+        document.exitPointerLock()
+        GameSave.restore data scene.World scene.Brains scene.Wallet scene.Cargo scene.Markets scene.Upgrades scene.Turret scene.Pickups
+        let run = data.Run
+        scene.School <- defaultArg run.School (FlightSchool.create ())
+        scene.Fleet <- defaultArg run.Fleet (ShipCatalog.create ())
+        scene.Shop.Shipyard.Request <- None
+        scene.Shop.FreightDesk.Request <- None
+        scene.Blockade <- defaultArg run.Blockade (Blockade.create ())
+        scene.Sortie <- defaultArg run.Sortie (CapitalFlight.create ())
+        if scene.Sortie.Role = CapitalFlight.Bomber then configureBomber scene.World.Player
+        scene.Yard.Request <- None
+        if run.Trading then Blockade.beginRun scene.Blockade scene.Markets |> ignore
+        DockContact.restore scene.Contact (defaultArg run.HeardContacts 0)
+        scene.Trading <- run.Trading
+        scene.Sector <- Universe.sectors |> Array.findIndex (fun sector -> sector.Id = run.SectorId)
+        scene.Wave <- run.Wave
+        scene.Phase <- match run.Phase with 0 -> States.intermission | 1 -> States.fighting | _ -> States.salvaging
+        scene.PhaseTimer <- run.PhaseTimer
+        scene.Spawned <- run.Spawned
+        scene.SpawnTimer <- run.SpawnTimer
+        scene.Patrol <- run.Patrol |> Array.map enum<EnemyRole>
+        scene.Score <- run.Score
+        scene.Kills <- run.Kills
+        scene.Trips <- run.Trips
+        scene.TradeProfit <- run.Profit
+        scene.DeathTimer <- 0.0
+        scene.Accumulator <- 0.0
+        scene.Shake <- 0.0
+        scene.PrevBoostLocked <- false
+        scene.PrevOverdrive <- scene.World.Player.Overdrive
+        scene.PrevShieldUp <- scene.World.Player.Shield > 0.0
+        scene.PrevShieldDelay <- scene.World.Player.ShieldDelay
+        scene.UpgradeNotified <- scene.Wallet.TurretOwned || scene.Wallet.Credits >= 350
+        scene.JumpNotifiedSector <- -1
+        scene.Time <- data.WorldTime
+        scene.Hud.Target <- -1
+        scene.Hud.ManualLock <- false
+        scene.Hud.BannerTime <- 0.0
+        scene.Hud.RewardTime <- 0.0
+        scene.Hud.HitMarker <- 0.0
+        scene.Hud.DamageFlash <- 0.0
+        scene.Hud.Combo <- run.Combo
+        scene.Hud.ComboTimer <- run.ComboTimer
+        scene.Hud.ResultVictory <- run.Completed
+        scene.Camera.Mode <- if data.Settings.Camera = 1 then Cockpit else CameraMode.Chase
+        scene.Input.InvertPitch <- data.Settings.InvertPitch
+        if scene.SensitivityOverride then
+            scene.SensitivityOverride <- false
+            scene.SaveDirty <- true
+        else
+            scene.Input.MouseSensitivity <- data.Settings.Sensitivity
+        if scene.Sound.Muted <> data.Settings.Muted then Sound.toggleMute scene.Sound
+        Sound.unlock scene.Sound
+        scene.Hud.Muted <- scene.Sound.Muted
+        Camera.snap scene.Camera scene.World.Player.Position scene.World.Player.Rotation
+        applySectorAtmosphere scene
+        setState scene States.paused
+        let stage = Mission.stage (if scene.Phase = Intermission then run.Wave + 1 else run.Wave)
+        scene.Hud.StageName <- stage.Name
+        scene.Hud.Objective <- if scene.Phase = Salvaging then "Erz bergen, Station anfliegen und Fracht verkaufen." else stage.Objective
+        updateWaves scene 0.0
+        if run.Completed then
+            Hud.setResult scene.Hud run.Score run.Wave run.Kills scene.Best false
+            setState scene States.victory
+        elif run.Docked then showDock scene false
+        scene.SaveRetryDelay <- 0.0
+        scene.SaveDirty <- true
+
+let private handleSaveAction (scene: Scene) action slot confirmed =
+    let ui = scene.Saves
+    let ask action slot message = SaveUi.ask ui action slot message
+    match action with
+    | "open" -> openSaves scene
+    | "close" -> closeSaves scene
+    | "newtrade" | "newcombat" ->
+        if not confirmed && (scene.ResumeJson.IsSome || canSave scene) then
+            openSaves scene
+            ask action "" "Neuen Flug starten? Der automatische Spielstand wird ersetzt. Deine manuellen Speicherplätze bleiben erhalten."
+        else
+            closeSaves scene
+            startGame scene (action = "newtrade")
+    | "save" when canSave scene && Array.contains slot SaveStore.slots ->
+        let existing = readSlot slot
+        if slot <> "auto" && not confirmed && (existing.Json.IsSome || existing.Error <> "") then
+            ask action slot (SaveUi.label slot + " mit dem aktuellen Flug überschreiben?")
+        else
+            saveFlight scene slot
+            refreshSaveSlots scene
+    | "load" | "export" ->
+        let entry = readSlot slot
+        match entry.Json with
+        | None -> saveNotice scene true (if entry.Error = "" then "Dieser Speicherplatz ist leer." else entry.Error)
+        | Some json when action = "export" ->
+            SaveUi.download json ("fable-space-" + slot + ".json")
+        | Some _ when not confirmed && canSave scene ->
+            ask action slot "Diesen Spielstand laden und den aktuellen Flug ersetzen?"
+        | Some json -> loadFlight scene json
+    | "exportcurrent" when canSave scene ->
+        let json = snapshot scene |> GameSave.encode
+        match GameSave.decode json with
+        | Ok _ -> SaveUi.download json "fable-space-flug.json"
+        | Error error -> saveNotice scene true error
+    | "import" when slot = "slot1" || slot = "slot2" || slot = "slot3" ->
+        match GameSave.decode ui.Imported with
+        | Error error ->
+            ui.Imported <- ""
+            saveNotice scene true error
+        | Ok _ ->
+            let existing = readSlot slot
+            if not confirmed && (existing.Json.IsSome || existing.Error <> "") then
+                ask action slot (SaveUi.label slot + " mit der importierten Datei überschreiben?")
+            else
+                let result = SaveStore.write storage slot ui.Imported GameSave.isValid
+                ui.Imported <- ""
+                if result.Ok then
+                    refreshSaveSlots scene
+                    saveNotice scene false ("Datei in " + SaveUi.label slot + " importiert.")
+                else saveNotice scene true result.Error
+    | _ -> ()
+
+let private processSaveUi (scene: Scene) =
+    let ui = scene.Saves
+    let action = ui.Action
+    let slot = ui.Slot
+    ui.Action <- ""
+    if not ui.Visible && (action = "open" || Input.wasPressed scene.Input GameAction.OpenSaves) then
+        openSaves scene
+        true
+    elif ui.Visible then
+        match ui.Pending, action with
+        | Some(pending, target), "confirm" ->
+            SaveUi.cancel ui
+            handleSaveAction scene pending target true
+        | Some _, "cancel" ->
+            ui.Imported <- ""
+            SaveUi.cancel ui
+        | _, "close" -> closeSaves scene
+        | None, action when action <> "" -> handleSaveAction scene action slot false
+        | _ -> ()
+        true
+    else false
+
 // -------------------------------------------------------------------------------------
 //  Darstellung
 // -------------------------------------------------------------------------------------
 
-/// Schreibt alle Asteroiden in ihre Batches. `backstep` verschiebt bewegte
-/// Objekte auf den interpolierten Darstellungszeitpunkt zurueck.
+/// Prüft die Hüllkugel an derselben interpolierten Position, die das Mesh erhält.
 let private pushAsteroids (scene: Scene) (backstep: float) =
     let field = scene.World.Asteroids
     let a = field.Data
@@ -543,25 +1711,24 @@ let private pushAsteroids (scene: Scene) (backstep: float) =
     for i in 0 .. field.Count - 1 do
         let o = i * AsteroidField.Stride
         let radius = float a.[o + 6]
-        let half = (float a.[o + 11] + time * float a.[o + 10]) * 0.5
-        let s = sin half
-
-        InstanceBatch.pushTRS
-            scene.AsteroidBatches.[int field.Variant.[i]]
-            (float a.[o] - float a.[o + 3] * backstep)
-            (float a.[o + 1] - float a.[o + 4] * backstep)
-            (float a.[o + 2] - float a.[o + 5] * backstep)
-            (float a.[o + 7] * s)
-            (float a.[o + 8] * s)
-            (float a.[o + 9] * s)
-            (cos half)
-            radius
-            radius
-            radius
-            (float a.[o + 12])
-            (float a.[o + 13])
-            (float a.[o + 14])
-            0.0
+        let x = float a.[o] - float a.[o + 3] * backstep
+        let y = float a.[o + 1] - float a.[o + 4] * backstep
+        let z = float a.[o + 2] - float a.[o + 5] * backstep
+        if Frustum.intersectsSphere scene.AsteroidFrustum x y z radius then
+            let half = (float a.[o + 11] + time * float a.[o + 10]) * 0.5
+            let s = sin half
+            InstanceBatch.pushTRS
+                scene.AsteroidBatches.[int field.Variant.[i]]
+                x y z
+                (float a.[o + 7] * s)
+                (float a.[o + 8] * s)
+                (float a.[o + 9] * s)
+                (cos half)
+                radius radius radius
+                (float a.[o + 12])
+                (float a.[o + 13])
+                (float a.[o + 14])
+                0.0
 
 /// Alle Laser-Bolts in einem Draw-Call. Jeder Bolt bekommt zusaetzlich einen
 /// Lichthof im Glow-Batch - von hinten gesehen waere ein Bolt sonst nur ein Punkt.
@@ -571,6 +1738,7 @@ let private pushLasers (scene: Scene) (backstep: float) =
     let d = pool.Data
     let cameraRotation = scene.Camera.Rotation
     let overdrive = scene.World.Player.Overdrive > 0.0
+    let focus = scene.Fleet.Kit = 2 && scene.Sortie.Role <> CapitalFlight.Bomber
     InstanceBatch.clear scene.LaserBatch
 
     for i in 0 .. pool.Count - 1 do
@@ -579,9 +1747,11 @@ let private pushLasers (scene: Scene) (backstep: float) =
         let x = float d.[o] - float d.[o + 3] * backstep
         let y = float d.[o + 1] - float d.[o + 4] * backstep
         let z = float d.[o + 2] - float d.[o + 5] * backstep
-        let r = if isPlayer then (if overdrive then 0.95 else 0.25) else 1.7
-        let g = if isPlayer then (if overdrive then 1.85 else 1.6) else 0.22
-        let b = if isPlayer then (if overdrive then 1.95 else 0.75) else 0.12
+        let r, g, b =
+            if not isPlayer then 1.7, 0.22, 0.12
+            elif overdrive then 0.95, 1.85, 1.95
+            elif focus then 0.95, 0.55, 1.9
+            else 0.25, 1.6, 0.75
         let thickness = if isPlayer && overdrive then 0.65 else 0.5
 
         InstanceBatch.pushTRS
@@ -711,7 +1881,9 @@ let private pushDust (scene: Scene) =
         qz <- q.Z
         qw <- q.W
 
-    let stretch = speed * 0.035
+    // Gedeckelt: ungebremst wuerden die Koerner im Boost zu bildschirmlangen Strichen.
+    let stretch = System.Math.Min(5.5, speed * (0.035 + scene.World.Player.Boost * 0.085))
+    let boostGlow = scene.World.Player.Boost * 0.35
     InstanceBatch.clear scene.DustBatch
 
     for i in 0 .. DustCount - 1 do
@@ -724,11 +1896,14 @@ let private pushDust (scene: Scene) =
         dy <- dy - floor (dy / DustCell) * DustCell - half
         dz <- dz - floor (dz / DustCell) * DustCell - half
         // Zum Rand hin ausblenden, damit das Umspringen unsichtbar bleibt
-        let fade = 1.0 - (dx * dx + dy * dy + dz * dz) / (half * half)
+        let distanceSq = dx * dx + dy * dy + dz * dz
+        let fade = 1.0 - distanceSq / (half * half)
 
         if fade > 0.0 then
             let size = float d.[o + 3]
-            let brightness = 0.55 * fade
+            // Koerner direkt vor der Linse blenden aus, statt quer durchs Bild zu ziehen.
+            let near = System.Math.Min(1.0, distanceSq / 144.0)
+            let brightness = (0.55 + boostGlow) * fade * near
 
             InstanceBatch.pushTRS
                 scene.DustBatch
@@ -793,8 +1968,11 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
     let player = world.Player
     // Leichtes Flackern aller Flammen
     let flicker = 0.92 + 0.08 * sin (scene.Time * 71.0)
-    InstanceBatch.clear scene.ShipBatch
-    InstanceBatch.clear scene.EnemyBatch
+    let hullBatch = scene.HullBatches.[scene.Fleet.Active].Value
+    InstanceBatch.clear hullBatch
+    OutfitVisuals.clear scene.Outfit
+    for batch in scene.DeckCargoBatches do InstanceBatch.clear batch
+    for batch in scene.EnemyBatches do InstanceBatch.clear batch
     InstanceBatch.clear scene.ExhaustBatch
     InstanceBatch.clear scene.EngineHaloBatch
     InstanceBatch.clear scene.ShieldBatch
@@ -805,15 +1983,21 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
         // In der Cockpit-Perspektive wird das eigene Aussenmodell ausgeblendet,
         // damit die Kamera nicht in die Rumpfnase schneidet.
         if scene.Camera.Mode = Chase then
-            InstanceBatch.push
-                scene.ShipBatch
-                playerPosition
-                playerRotation
-                scene.ShipScale
-                (1.0 + flash * 0.5)
-                (1.0 + flash * 0.5)
-                (1.0 + flash * 0.5)
-                (flash * 0.25)
+            if scene.Sortie.Role <> CapitalFlight.Bomber then
+                let tint = 1.0 + flash * 0.5
+                InstanceBatch.push hullBatch playerPosition playerRotation Vec3.one tint tint tint (flash * 0.25)
+                OutfitVisuals.push scene.Outfit scene.Fleet scene.Upgrades playerPosition playerRotation flash
+                if scene.Trading && scene.Fleet.Active = 0 then
+                    DeckCargo.iter scene.Cargo (fun bay commodity ->
+                        let p = playerPosition + Quat.rotateVec3 playerRotation bay
+                        InstanceBatch.push scene.DeckCargoBatches.[commodity] p playerRotation Vec3.one tint tint tint (flash*0.25))
+                elif scene.Cargo.Freight.IsSome then
+                    let job = scene.Cargo.Freight.Value
+                    let mounts = if scene.Fleet.Active = 1 then DeckCargo.haulerMounts else DeckCargo.escortMounts
+                    let count = min mounts.Length (job.Tonnes / 4)
+                    for i in 0 .. count - 1 do
+                        let p = playerPosition + Quat.rotateVec3 playerRotation mounts.[i]
+                        InstanceBatch.push scene.DeckCargoBatches.[DeckCargo.sealedIndex] p playerRotation Vec3.one tint tint tint (flash*0.25)
 
             if player.ShieldFlash > 0.01 then
                 let sf = player.ShieldFlash
@@ -833,19 +2017,23 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
 
         if player.FireCooldown > interval - 0.045 then
             pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerGunLeft 0.95 0.35 1.4 0.95
+            let muzzle = playerPosition + Quat.rotateVec3 playerRotation (Vec3(0.0, -0.2, 2.4))
+            Lights.addPoint scene.Renderer.Lights muzzle.X muzzle.Y muzzle.Z 24.0 0.32 0.90 1.0 1.25
             pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerGunRight 0.95 0.35 1.4 0.95
 
         let thrust = if player.Controls.Brake then 0.0 else player.Controls.Throttle
-        let length = (0.35 + 1.5 * thrust + 3.4 * player.Boost) * flicker
+        let courier = scene.Fleet.Kit = 1 && scene.Sortie.Role <> CapitalFlight.Bomber
+        let length = (0.35 + (if courier then 2.15 else 1.5) * thrust + 3.4 * player.Boost) * flicker
         let glow = 0.35 + 0.65 * thrust + 0.9 * player.Boost
         let haloSize = 0.72 + player.Boost * 0.38
         pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerEngineLeft haloSize (0.06 * glow) (0.26 * glow) (0.6 * glow)
         pushEngineHalo scene playerPosition playerRotation ShipHardpoints.playerEngineRight haloSize (0.06 * glow) (0.26 * glow) (0.6 * glow)
 
         // Pro Triebwerk ein breiter blauer Mantel und ein schmaler heisser Kern
-        pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineLeft length 0.34 (0.10 * glow) (0.36 * glow) (0.95 * glow)
+        let outerR, outerG, outerB = if courier then 1.0 * glow, 0.48 * glow, 0.1 * glow else 0.10 * glow, 0.36 * glow, 0.95 * glow
+        pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineLeft length 0.34 outerR outerG outerB
         pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineLeft (length * 0.6) 0.17 (0.75 * glow) (0.9 * glow) glow
-        pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineRight length 0.34 (0.10 * glow) (0.36 * glow) (0.95 * glow)
+        pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineRight length 0.34 outerR outerG outerB
         pushFlame scene playerPosition playerRotation ShipHardpoints.playerEngineRight (length * 0.6) 0.17 (0.75 * glow) (0.9 * glow) glow
 
         // Triebwerkslicht: beleuchtet Heck und nahe Asteroiden
@@ -859,41 +2047,52 @@ let private pushShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Qua
             let position = Vec3.lerp enemy.PrevPosition enemy.Position alpha
             let rotation = Quat.slerp enemy.PrevRotation enemy.Rotation alpha
             let flash = enemy.HitFlash
+            let brain = scene.Brains.[i]
+            let profile = EnemyProfiles.profile brain.Role
+            let training = FlightSchool.onRange scene.School.Step
+            let tint = if training then Vec3(0.48,1.48,1.20) else profile.Tint
+            let size = profile.Scale.X
+            let scalePoint (point: Vec3) = point * size
 
             InstanceBatch.push
-                scene.EnemyBatch
+                scene.EnemyBatches.[int brain.Role]
                 position
                 rotation
-                scene.EnemyScale
-                (1.0 + flash * 1.5)
-                (1.0 + flash * 1.5)
-                (1.0 + flash * 1.5)
+                (scene.EnemyScale * size)
+                (tint.X + flash * 1.5)
+                (tint.Y + flash * 1.5)
+                (tint.Z + flash * 1.5)
                 (flash * 0.6)
 
             if enemy.ShieldFlash > 0.01 then
                 let sf = enemy.ShieldFlash
-                let center = position + Quat.rotateVec3 rotation ShipHardpoints.interceptorObbCenter
+                let center = position + Quat.rotateVec3 rotation enemy.ObbCenter
                 InstanceBatch.push
                     scene.ShieldBatch
                     center
                     rotation
-                    (Vec3(2.55, 1.05, 2.85))
+                    (Vec3(2.55, 1.05, 2.85) * size)
                     (0.35 * sf)
                     (0.78 * sf)
                     (1.5 * sf)
                     1.0
 
             if enemy.FireCooldown > enemy.FireInterval - 0.05 then
-                pushEngineHalo scene position rotation ShipHardpoints.interceptorGunLeft 0.9 1.4 0.3 0.15
-                pushEngineHalo scene position rotation ShipHardpoints.interceptorGunRight 0.9 1.4 0.3 0.15
+                pushEngineHalo scene position rotation enemy.GunLeft (0.9 * size) 1.4 0.3 0.15
+                pushEngineHalo scene position rotation enemy.GunRight (0.9 * size) 1.4 0.3 0.15
+            elif brain.WeaponCharge > 0.0 then
+                let charge = brain.WeaponCharge
+                pushEngineHalo scene position rotation enemy.GunLeft ((0.5 + charge) * size) charge (charge * 0.65) 0.05
+                pushEngineHalo scene position rotation enemy.GunRight ((0.5 + charge) * size) charge (charge * 0.65) 0.05
 
             let thrust = if enemy.Controls.Brake then 0.0 else enemy.Controls.Throttle
             let length = (0.3 + 1.3 * thrust + 2.6 * enemy.Boost) * flicker
             let glow = 0.4 + 0.6 * thrust + 0.8 * enemy.Boost
-            pushEngineHalo scene position rotation ShipHardpoints.interceptorEngine 1.2 (0.7 * glow) (0.16 * glow) (0.025 * glow)
-            pushFlame scene position rotation ShipHardpoints.interceptorEngine (length * 1.5) 0.66 (0.95 * glow) (0.30 * glow) (0.06 * glow)
-            pushFlame scene position rotation ShipHardpoints.interceptorEngine (length * 0.9) 0.32 glow (0.8 * glow) (0.5 * glow)
-            let engine = position + Quat.rotateVec3 rotation (Vec3(0.0, 0.0, 2.9))
+            let nozzle = scalePoint ShipHardpoints.interceptorEngine
+            pushEngineHalo scene position rotation nozzle (1.2 * size) (profile.Tint.X * glow) (profile.Tint.Y * glow * 0.5) (profile.Tint.Z * glow * 0.4)
+            pushFlame scene position rotation nozzle (length * 1.5 * size) (0.66 * size) (0.95 * glow) (0.30 * glow) (0.06 * glow)
+            pushFlame scene position rotation nozzle (length * 0.9 * size) (0.32 * size) glow (0.8 * glow) (0.5 * glow)
+            let engine = position + Quat.rotateVec3 rotation nozzle
             // Lights.addPoint verwirft Lichter jenseits des Limits von selbst
             Lights.addPoint lights engine.X engine.Y engine.Z 12.0 1.0 0.45 0.15 (0.4 + 1.2 * thrust)
 
@@ -918,10 +2117,225 @@ let private pushFlashLights (scene: Scene) =
                 (float f.[o + 6])
                 intensity
 
+let private pushEquipmentAndMinerals (scene: Scene) (position: Vec3) (rotation: Quat) =
+    InstanceBatch.clear scene.CrystalBatch
+    InstanceBatch.clear scene.TurretBaseBatch
+    InstanceBatch.clear scene.TurretBatch
+    let crystal (point: Vec3) (size: float) (kind: int) (angle: float) =
+        let tint = if kind = 3 then Vec3(1.5, 0.55, 1.7) elif kind = 2 then Vec3(1.7, 0.95, 0.15) else Vec3(0.14, 1.2, 1.4)
+        InstanceBatch.push scene.CrystalBatch point (Quat.fromAxisAngle Vec3.unitY angle) (Vec3(size,size,size)) tint.X tint.Y tint.Z 0.35
+    // Nur bereits freigelegte Mineralien darstellen. Der Erzvorrat eines noch
+    // ungetroffenen Asteroiden beeinflusst weder Geometrie noch Farbe oder Licht.
+    for pickup in scene.Pickups do
+        crystal pickup.Position (if pickup.Kind = 2 then 1.3 else 1.0) pickup.Kind (scene.Time * 1.2 + pickup.Life)
+        if Vec3.distanceSq position pickup.Position < 40000.0 then
+            let p = pickup.Position
+            let glow = if pickup.Kind = 2 then Vec3(0.27,0.17,0.04) else Vec3(0.04,0.22,0.22)
+            InstanceBatch.push scene.GlowBatch p scene.Camera.Rotation (Vec3(4.0,4.0,4.0)) glow.X glow.Y glow.Z 1.0
+    if scene.Wallet.TurretOwned && scene.World.Player.Alive && scene.Sortie.Role <> CapitalFlight.Bomber then
+        let mount = position + Quat.rotateVec3 rotation Turret.Mount
+        let head = mount - Quat.forward scene.Turret.Rotation * (scene.Turret.Flash * 0.09)
+        InstanceBatch.push scene.TurretBaseBatch mount rotation Vec3.one 1.0 1.0 1.0 0.0
+        InstanceBatch.push scene.TurretBatch head scene.Turret.Rotation Vec3.one 1.0 1.0 1.0 0.0
+        if scene.Turret.Flash > 0.0 then
+            let gun = if scene.Turret.LastBarrel = 0 then ShipHardpoints.turretGunLeft else ShipHardpoints.turretGunRight
+            let flash = scene.Turret.Flash
+            pushEngineHalo scene head scene.Turret.Rotation gun (0.28 + flash * 0.25) (0.15 * flash) (1.5 * flash) (1.8 * flash)
+
+    // Leuchtfeuer der Sprungtore im aktuellen Sektor (Corona + Kern + PointLight)
+    let pulse = 0.88 + 0.12 * sin (scene.Time * 3.2)
+    for gate in (currentSector scene).Gates do
+        let gp = gate.Position
+        InstanceBatch.push scene.GlowBatch gp scene.Camera.Rotation (Vec3(18.0 * pulse, 18.0 * pulse, 18.0 * pulse)) 0.12 0.42 0.62 1.0
+        InstanceBatch.push scene.GlowBatch gp scene.Camera.Rotation (Vec3(7.5, 7.5, 7.5)) 0.95 0.68 0.22 1.0
+        Lights.addPoint scene.Renderer.Lights gp.X gp.Y gp.Z 65.0 0.28 0.78 1.0 (1.15 * pulse)
+
+/// Dockside traffic follows the saved simulation clock; both hulls share one draw.
+let private pushFreighters (scene: Scene) =
+    let batch = scene.FreighterBatch
+    InstanceBatch.clear batch
+    let port = (currentSector scene).Outpost.Position
+    if scene.Trading && Vec3.distanceSq port scene.Camera.Position < 1000.0 * 1000.0 then
+        let berth = port + Quat.rotateVec3 stationOrientation (Vec3(30.5,-12.0,14.7))
+        let berthedHeading = stationOrientation * Quat.fromAxisAngle Vec3.unitY 0.60
+        let helios = scene.Sector = Blockade.helios
+        let holding = port + Vec3(-71.0,21.0,174.0)
+        let t = scene.Sortie.Landing / CapitalFlight.landingTime
+        let eased = t*t*(3.0-2.0*t)
+        let freightSix = if helios then CapitalFlight.freightSix port berth scene.Sortie.Landing else berth
+        let aligned = if helios then Quat.slerp (Quat.lookRotation (berth-holding) Vec3.up) berthedHeading eased else berthedHeading
+        InstanceBatch.push batch freightSix aligned (Vec3(0.70,0.70,0.70)) 0.78 0.89 1.0 0.0
+        // An elevated holding orbit clears the centreline of the player's approach.
+        let phase = 2.35 + float scene.Sector * 0.81 + scene.World.Time * 0.042
+        let offset = Vec3(76.0 * cos phase, 34.0, 41.0 * sin phase - 9.0)
+        let yaw = atan2 (76.0 * sin phase) (-41.0 * cos phase)
+        if helios && not scene.Blockade.Lifted then
+            InstanceBatch.push batch (holding+Vec3(64.0,5.0,48.0)) Quat.identity Vec3.one 1.0 1.0 1.0 0.0
+        else InstanceBatch.push batch (port + offset) (Quat.fromAxisAngle Vec3.unitY yaw) Vec3.one 1.0 1.0 1.0 0.0
+
+/// Drive plumes, the stern light and the slow red strobes of the customs cruiser.
+/// Runs before beginFrame so the drive light reaches the hull.
+let private pushCustomsGlow (scene: Scene) =
+    if scene.World.Customs.IsSome then
+        let p, k = CapitalFlight.position, CapitalFlight.hullScale
+        let flicker = 0.93 + 0.07 * sin (scene.Time * 53.0)
+        // Plumes extend along their local +Z; this turn points them aft (-X).
+        let aft = Quat.fromAxisAngle Vec3.unitY (-0.5 * System.Math.PI)
+        for nozzle, radius in CapitalMeshes.drives do
+            let exit = p + nozzle * k
+            pushFlame scene exit aft Vec3.zero (radius * k * 7.0 * flicker) (radius * k * 2.0) 0.35 0.60 1.2
+            pushEngineHalo scene exit aft Vec3.zero (radius * k * 2.4) 0.35 0.55 1.0
+        let q = scene.Camera.Rotation
+        for i in 0 .. CapitalMeshes.beacons.Length - 1 do
+            let on = if (scene.Time * 0.7 + float i * 0.137) % 1.0 < 0.09 then 1.0 else 0.12
+            let size = 1.6 * k * (0.6 + 0.4 * on)
+            let b = p + CapitalMeshes.beacons.[i] * k
+            InstanceBatch.pushTRS scene.EngineHaloBatch b.X b.Y b.Z q.X q.Y q.Z q.W size size size (1.6 * on) (0.12 * on) (0.06 * on) 1.0
+        let stern = p + Vec3(-95.0 * k, 0.0, 0.0)
+        Lights.addPoint scene.Renderer.Lights stern.X stern.Y stern.Z (140.0 * k) 0.35 0.55 1.0 2.2
+
+let private pushCustomsShips (scene: Scene) (playerPosition: Vec3) (playerRotation: Quat) =
+    match scene.World.Customs with
+    | None -> ()
+    | Some f ->
+        let models = scene.CustomsBatches.Value
+        let p = CapitalFlight.position
+        let scale = Vec3(CapitalFlight.hullScale, CapitalFlight.hullScale, CapitalFlight.hullScale)
+        let shutter = if f.Hits > 0 then models.Breach else models.Shutter
+        InstanceBatch.clear models.Cruiser
+        InstanceBatch.push models.Cruiser p Quat.identity scale 1.0 1.0 1.0 0.0
+        InstanceBatch.clear shutter
+        InstanceBatch.push shutter p Quat.identity scale 1.0 1.0 1.0 0.0
+        // The batteries train on whoever they would fire at, within their side's arc.
+        let target = if f.Role = CapitalFlight.Escort then CapitalFlight.allyPosition f else playerPosition
+        InstanceBatch.clear models.Battery
+        for i in 0..1 do
+            if f.Guns.[i] > 0.0 then
+                let gun = p + CapitalFlight.gunOffsets.[i]
+                let yaw =
+                    if Vec3.distance gun target < 900.0 then max (-1.75) (min 1.75 (atan2 (target.X - gun.X) (target.Z - gun.Z)))
+                    else 0.0
+                InstanceBatch.push models.Battery gun (Quat.fromAxisAngle Vec3.unitY yaw) scale 1.0 1.0 1.0 0.0
+
+    let f = scene.Sortie
+    if f.Role <> 0 then
+        let models = scene.CustomsBatches.Value
+        InstanceBatch.clear models.Bomber
+        InstanceBatch.clear models.Torpedoes
+        let own = f.Role = CapitalFlight.Bomber
+        if (own && scene.World.Player.Alive && scene.Camera.Mode = Chase) || (not own && not scene.Blockade.Lifted) then
+            let p = if own then playerPosition else CapitalFlight.allyPosition f
+            let q = if own then playerRotation else Quat.lookRotation (CapitalFlight.position-p) Vec3.up
+            let flash = if own then scene.World.Player.HitFlash else 0.0
+            let tint = 1.0 + flash*0.5
+            InstanceBatch.push models.Bomber p q Vec3.one tint tint tint (flash*0.25)
+            for i in 0 .. f.Ammo-1 do
+                let rack = p + Quat.rotateVec3 q ShipHardpoints.bomberRails.[i]
+                InstanceBatch.push models.Torpedoes rack q Vec3.one tint tint tint (flash*0.25)
+            if not own then
+                pushFlame scene p q ShipHardpoints.playerEngineLeft 1.65 0.30 0.17 0.58 1.0
+                pushFlame scene p q ShipHardpoints.playerEngineRight 1.65 0.30 0.17 0.58 1.0
+        if f.Flight > 0.0 && not scene.Blockade.Lifted then
+            let q = Quat.lookRotation (CapitalFlight.position-f.Launch) Vec3.up
+            let p = CapitalFlight.torpedoPosition f
+            InstanceBatch.push models.Torpedoes p q Vec3.one 1.0 1.0 1.0 0.0
+            let motor = Vec3(0.0,0.0,1.08)
+            pushFlame scene p q motor 4.2 0.31 1.45 0.51 0.10
+            pushEngineHalo scene p q motor 1.9 1.05 0.39 0.065
+
+let private drawCustomsShadow (scene: Scene) =
+    if scene.World.Customs.IsSome || scene.Sortie.Role <> 0 then
+        let models = scene.CustomsBatches.Value
+        match scene.World.Customs with
+        | Some f ->
+            let shutter = if f.Hits > 0 then models.Breach else models.Shutter
+            Renderer.drawShadow scene.Renderer models.Cruiser
+            Renderer.drawShadow scene.Renderer shutter
+            Renderer.drawShadow scene.Renderer models.Battery
+        | None -> ()
+        if scene.Sortie.Role <> 0 then
+            Renderer.drawShadow scene.Renderer models.Bomber
+            Renderer.drawShadow scene.Renderer models.Torpedoes
+
+let private drawCustomsShips (scene: Scene) =
+    if scene.World.Customs.IsSome || scene.Sortie.Role <> 0 then
+        let models = scene.CustomsBatches.Value
+        match scene.World.Customs with
+        | Some f ->
+            let shutter = if f.Hits > 0 then models.Breach else models.Shutter
+            Renderer.draw scene.Renderer models.Cruiser
+            Renderer.draw scene.Renderer shutter
+            Renderer.draw scene.Renderer models.Battery
+        | None -> ()
+        if scene.Sortie.Role <> 0 then
+            Renderer.draw scene.Renderer models.Bomber
+            Renderer.draw scene.Renderer models.Torpedoes
+
+/// The clear arrival corridor runs along world +Z. Light travels from the outer
+/// pair toward the dock. Closed ports show a steady amber signal instead.
+let private pushApproachBuoys (scene: Scene) =
+    InstanceBatch.clear scene.BuoyFrames
+    InstanceBatch.clear scene.BuoyLenses
+    let port = (currentSector scene).Outpost
+    if Vec3.distanceSq scene.Camera.Position port.Position < 800.0 * 800.0 then
+        let closed = dockBlocked scene
+        let inner = port.DockRadius * 0.66
+        let outer = port.ApproachRadius * 0.91
+        for pair in 0 .. ApproachPairs-1 do
+            let t = float pair / float (ApproachPairs-1)
+            let depth = inner + t*(outer-inner)
+            let width = 10.0 + 12.0*t
+            let signal = 0.5 + 0.5*cos (scene.World.Time*2.55 + float pair*1.27)
+            let intensity = 0.59 + 1.65*signal*signal*signal
+            let r,g,b = if closed then 1.92,0.56,0.045 else 0.11*intensity,1.04*intensity,0.86*intensity
+            for side in 0..1 do
+                let x = if side = 0 then -width else width
+                let p = port.Position + Vec3(x,-5.6,depth)
+                InstanceBatch.push scene.BuoyFrames p Quat.identity Vec3.one 1.0 1.0 1.0 0.0
+                InstanceBatch.push scene.BuoyLenses p Quat.identity Vec3.one r g b 1.0
+
+/// Schiebt die Verfolgerkamera aus groesseren Asteroiden heraus. Camera.update
+/// berechnet die Position jeden Frame neu, die Korrektur haeuft sich also nicht auf.
+let private keepCameraOutOfRock (scene: Scene) =
+    let field = scene.World.Asteroids
+    let a = field.Data
+    let mutable p = scene.Camera.Position
+    let mutable moved = false
+
+    for i in 0 .. field.Count - 1 do
+        let o = i * AsteroidField.Stride
+        let radius = float a.[o + 6]
+
+        if radius > 3.0 then
+            // Das Mesh fuellt seine Huellkugel nicht ganz aus.
+            let keepOut = radius * 0.92 + 0.6
+            let dx = p.X - float a.[o]
+            let dy = p.Y - float a.[o + 1]
+            let dz = p.Z - float a.[o + 2]
+            let distanceSq = dx * dx + dy * dy + dz * dz
+
+            if distanceSq < keepOut * keepOut && distanceSq > 1e-6 then
+                let push = keepOut / sqrt distanceSq
+                p <- Vec3(float a.[o] + dx * push, float a.[o + 1] + dy * push, float a.[o + 2] + dz * push)
+                moved <- true
+
+    if moved then
+        scene.Camera.Position <- p
+
 let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: float) =
     let renderer = scene.Renderer
     let camera = scene.Camera
     let hud = scene.Hud
+    hud.BoostReserve <- scene.BoostReserve
+    hud.BoostLocked <- scene.BoostLocked
+    hud.HoldStick <- scene.Input.HoldStick
+    hud.MatchSpeed <- scene.MatchSpeed
+
+    // Rein optische Querneigung: Das Aussenmodell legt sich in Gierkurven, waehrend
+    // Flugphysik, Kamera und Zielhilfe bei der echten Lage bleiben.
+    let player = scene.World.Player
+    let bank = if camera.Mode = Chase then player.YawRate / System.Math.Max(0.01, player.MaxYawRate) * 0.2 else 0.0
+    let hull = if bank <> 0.0 then rotation * Quat.fromAxisAngle Vec3.unitZ bank else rotation
     // Die Welt steht einen Bruchteil eines Physikschritts "vor" dem Darstellungs-
     // zeitpunkt; bewegte Pool-Objekte werden um diese Zeit zurueckgerechnet.
     let backstep = (1.0 - alpha) * PhysicsStep
@@ -938,34 +2352,82 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     pushFlashLights scene
 
     // Instanzen schreiben
-    pushShips scene position rotation alpha
-    pushAsteroids scene backstep
+    pushShips scene position hull alpha
     pushParticles scene backstep
     pushLasers scene backstep
+    pushEquipmentAndMinerals scene position hull
     pushDust scene
+    pushFreighters scene
+    pushApproachBuoys scene
+    pushCustomsShips scene position hull
+    pushCustomsGlow scene
 
     // Zeichnen: erst deckend, dann additiv
     Renderer.beginFrame renderer camera.View camera.Projection camera.Position
-    SkyBackdrop.draw renderer scene.Sky camera
+    Frustum.update scene.AsteroidFrustum renderer.ViewProj
+    pushAsteroids scene backstep
+
+    // Sonnenschatten: alle deckenden Koerper in Spielernaehe in die Tiefenkarte.
+    // Im freien Flug eng um das Schiff (scharf); nahe der Station oder des Zollkreuzers weitet sich der Bereich.
+    let stationDistance = Vec3.distance position (currentSector scene).Outpost.Position
+    let nearStation = 1.0 - System.Math.Max(0.0, System.Math.Min(1.0, (stationDistance - 260.0) / 240.0))
+    let nearCruiser =
+        if scene.World.Customs.IsSome then
+            let cd = Vec3.distance position CapitalFlight.position
+            1.0 - System.Math.Max(0.0, System.Math.Min(1.0, (cd - 320.0) / 280.0))
+        else 0.0
+    let shadowSpan = Layout.ShadowRadius + max (150.0 * nearStation * nearStation) (190.0 * nearCruiser * nearCruiser)
+    Renderer.beginShadows renderer position shadowSpan
+    for v in 0 .. AsteroidField.Variants - 1 do
+        Renderer.drawShadow renderer scene.AsteroidBatches.[v]
+    Renderer.drawShadow renderer scene.HullBatches.[scene.Fleet.Active].Value
+    for batch in scene.Outfit.Visible do Renderer.drawShadow renderer batch
+    for batch in scene.DeckCargoBatches do Renderer.drawShadow renderer batch
+    for batch in scene.EnemyBatches do Renderer.drawShadow renderer batch
+    Renderer.drawShadow renderer scene.StationBatches.[sectorIndex scene].Value
+    drawCustomsShadow scene
+    Renderer.drawShadow renderer scene.FreighterBatch
+    Renderer.drawShadow renderer scene.TurretBaseBatch
+    Renderer.drawShadow renderer scene.TurretBatch
+    Renderer.endShadows renderer
+
+    SkyBackdrop.draw renderer scene.Sky camera (sectorIndex scene)
 
     for v in 0 .. AsteroidField.Variants - 1 do
         Renderer.draw renderer scene.AsteroidBatches.[v]
 
     Renderer.draw renderer scene.DebrisBatch
-    Renderer.draw renderer scene.ShipBatch
-    Renderer.draw renderer scene.EnemyBatch
+    Renderer.draw renderer scene.HullBatches.[scene.Fleet.Active].Value
+    for batch in scene.Outfit.Visible do Renderer.draw renderer batch
+    for batch in scene.DeckCargoBatches do Renderer.draw renderer batch
+    for batch in scene.EnemyBatches do Renderer.draw renderer batch
+    let sector = sectorIndex scene
+    Renderer.draw renderer scene.StationBatches.[sector].Value
+    drawCustomsShips scene
+    let origin, relic = scene.RelicBatches.[sector]
+    if Frustum.intersectsSphere scene.AsteroidFrustum origin.X origin.Y origin.Z 9.0 then
+        Renderer.draw renderer relic.Value
+    Renderer.draw renderer scene.FreighterBatch
+    Renderer.draw renderer scene.BuoyFrames
+    Renderer.draw renderer scene.BuoyLenses
+    Renderer.draw renderer scene.CrystalBatch
+    Renderer.draw renderer scene.TurretBaseBatch
+    Renderer.draw renderer scene.TurretBatch
     Renderer.draw renderer scene.DustBatch
     Renderer.draw renderer scene.ShieldBatch
     Renderer.draw renderer scene.ExhaustBatch
     Renderer.draw renderer scene.EngineHaloBatch
     Renderer.draw renderer scene.LaserBatch
     Renderer.draw renderer scene.GlowBatch
+    Renderer.setEffects renderer scene.World.Player.Boost scene.World.Player.HitFlash
+    Renderer.endFrame renderer
 
     // HUD je nach Game-State
     Hud.clear hud
+    let scanElapsed = match scene.ArchiveScan with Some scan -> scan.Elapsed | None -> -1.0
 
     match scene.State with
-    | Menu -> Hud.drawMenu hud
+    | Menu -> ()
     | Playing ->
         Hud.drawFlight
             hud
@@ -974,6 +2436,8 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             camera.Mode
             scene.World
             scene.Brains
+            scene.Pickups
+            scanElapsed
             scene.Input
             alpha
             position
@@ -981,6 +2445,15 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             scene.Wave
             scene.Score
             scene.EnemiesAlive
+            (scene.Sortie.Role <> 0)
+            scene.School.Step
+        if (scene.Sortie.Role = 0 || scene.Blockade.Lifted) && (scene.School.Step = FlightSchool.Off || scene.School.Step = FlightSchool.Dock) then
+            Hud.drawStation hud renderer.ViewProj (Renderer.aspect renderer) (currentSector scene).Outpost position (dockBlocked scene)
+            if scene.School.Step = FlightSchool.Off then Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
+        if scene.Trading && scene.Sector = Blockade.helios then
+            let port = (currentSector scene).Outpost.Position
+            let berth = port + Quat.rotateVec3 stationOrientation (Vec3(30.5,-12.0,14.7))
+            Hud.drawCustoms hud renderer.ViewProj scene.Blockade scene.Sortie position (CapitalFlight.freightSix port berth scene.Sortie.Landing)
     | Paused ->
         Hud.drawFlight
             hud
@@ -989,6 +2462,8 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             camera.Mode
             scene.World
             scene.Brains
+            scene.Pickups
+            scanElapsed
             scene.Input
             alpha
             position
@@ -996,9 +2471,23 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             scene.Wave
             scene.Score
             scene.EnemiesAlive
+            (scene.Sortie.Role <> 0)
+            scene.School.Step
 
-        Hud.drawPaused hud
+        if (scene.Sortie.Role = 0 || scene.Blockade.Lifted) && (scene.School.Step = FlightSchool.Off || scene.School.Step = FlightSchool.Dock) then
+            Hud.drawStation hud renderer.ViewProj (Renderer.aspect renderer) (currentSector scene).Outpost position (dockBlocked scene)
+            if scene.School.Step = FlightSchool.Off then Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
+        if scene.Trading && scene.Sector = Blockade.helios then
+            let port = (currentSector scene).Outpost.Position
+            let berth = port + Quat.rotateVec3 stationOrientation (Vec3(30.5,-12.0,14.7))
+            Hud.drawCustoms hud renderer.ViewProj scene.Blockade scene.Sortie position (CapitalFlight.freightSix port berth scene.Sortie.Landing)
+        Hud.drawPaused hud (Input.mouseSensitivityPercent scene.Input)
+    | Refitting -> () // Die bebilderte, klickbare Werft liegt als HTML über der Szene.
+    | Victory
     | GameOver -> Hud.drawGameOver hud
+
+    if scene.ShowHelp && (scene.State = Playing || scene.State = Paused) then
+        Hud.drawHelp hud
 
 // -------------------------------------------------------------------------------------
 //  Schleife
@@ -1006,7 +2495,79 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
 
 let private scene: Scene option =
     try
-        Some(createScene ())
+        let scene = createScene ()
+        refreshSaveSlots scene
+        scene.Camera.Zoom <- System.Math.Max(0.6, System.Math.Min(2.2, loadSetting ZoomKey 1.0))
+        if loadSetting ShadowKey 1.0 < 0.5 && scene.Renderer.ShadowsOn then
+            Renderer.toggleShadows scene.Renderer |> ignore
+        let menu = document.getElementById "flight-menu"
+        setState scene States.menu
+        scene.Input.UiMode <- true
+        (document.getElementById "menu-launch").addEventListener ("click", fun _ -> scene.Input.Clicked <- true)
+        (document.getElementById "school-skip").addEventListener ("click", fun _ -> scene.Input.Pressed.[int GameAction.LeaveSchool] <- 1uy)
+        (document.getElementById "school-replay").addEventListener ("click", fun _ ->
+            if scene.State = Refitting && canTrain scene then
+                departShop scene
+                Input.reset scene.Input
+                beginSchool scene)
+        (document.getElementById "menu-combat").addEventListener ("click", fun _ -> scene.Input.Pressed.[int GameAction.StartCombat] <- 1uy)
+        (document.getElementById "menu-saves").addEventListener ("click", fun _ -> scene.Saves.Action <- "open")
+        // Mausempfindlichkeit schon im Hauptmenue: startet mit dem Wert des juengsten
+        // Spielstands; ein bewegter Regler gilt danach auch beim Fortsetzen.
+        let slider = document.getElementById "menu-sensitivity"
+        let sliderValue = document.getElementById "menu-sensitivity-value"
+        scene.ResumeJson |> Option.iter (fun json ->
+            match GameSave.decode json with
+            | Ok data -> scene.Input.MouseSensitivity <- data.Settings.Sensitivity
+            | Error _ -> ())
+        let showSensitivity () =
+            let percent = Input.mouseSensitivityPercent scene.Input
+            slider?value <- string percent
+            sliderValue.textContent <- string percent + " %"
+        showSensitivity ()
+        slider.addEventListener ("input", fun _ ->
+            Input.setMouseSensitivityPercent scene.Input (int (float (string slider?value)))
+            scene.SensitivityOverride <- true
+            showSensitivity ())
+        let audioPrefixes = [| "audio-"; "save-audio-" |]
+        let audioChannels = [| "master"; "sfx"; "radio"; "ambience" |]
+        let syncAudioUi () =
+            let vols = Sound.getVolumes scene.Sound
+            for prefix in audioPrefixes do
+                for i in 0 .. audioChannels.Length - 1 do
+                    let pct = int (round (vols.[i] * 100.0))
+                    let el = document.getElementById (prefix + audioChannels.[i])
+                    let outEl = document.getElementById (prefix + audioChannels.[i] + "-value")
+                    if not (isNull el) then el?value <- string pct
+                    if not (isNull outEl) then outEl.textContent <- string pct + " %"
+        syncAudioUi ()
+        for prefix in audioPrefixes do
+            for i in 0 .. audioChannels.Length - 1 do
+                let el = document.getElementById (prefix + audioChannels.[i])
+                if not (isNull el) then
+                    el.addEventListener ("input", fun _ ->
+                        let vols = Sound.getVolumes scene.Sound
+                        vols.[i] <- System.Math.Max(0.0, System.Math.Min(1.0, float (string el?value) / 100.0))
+                        Sound.setVolumes scene.Sound vols.[0] vols.[1] vols.[2] vols.[3]
+                        syncAudioUi ())
+            let testBtn = document.getElementById (prefix + "test")
+            if not (isNull testBtn) then
+                testBtn.addEventListener ("click", fun _ ->
+                    Sound.unlock scene.Sound
+                    Sound.tradeConfirm scene.Sound)
+        menu.addEventListener ("keydown", fun e ->
+            let key = unbox<KeyboardEvent> e
+            if key.code = "Enter" || key.code = "Space" then e.stopPropagation())
+        let flush () =
+            if scene.SaveRetryDelay <= 0.0 && (scene.FlightChanged || scene.SaveDirty) then saveFlight scene "auto"
+        window.addEventListener("pagehide", fun _ -> flush ())
+        document.addEventListener("visibilitychange", fun _ ->
+            if document?visibilityState = "hidden" then
+                DockContact.leave scene.Contact
+                flush ()
+            elif scene.State = Refitting && not scene.Saves.Visible then
+                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot)
+        Some scene
     with ex ->
         // Klartext statt schwarzem Bildschirm, falls WebGL2 fehlt oder ein Shader bricht.
         let box = document.getElementById "error"
@@ -1032,7 +2593,10 @@ let private updateStats (scene: Scene) (dt: float) =
     scene.FrameCounter <- scene.FrameCounter + 1
     scene.StatTimer <- scene.StatTimer + dt
 
-    if scene.StatTimer >= 0.25 then
+    if not scene.ShowStats then
+        scene.FrameCounter <- 0
+        scene.StatTimer <- 0.0
+    elif scene.StatTimer >= 0.25 then
         let renderer = scene.Renderer
         let fps = int (float scene.FrameCounter / scene.StatTimer + 0.5)
         scene.FrameCounter <- 0
@@ -1045,7 +2609,9 @@ let private updateStats (scene: Scene) (dt: float) =
              + string renderer.DrawCalls
              + " Draw-Calls   "
              + string renderer.InstancesDrawn
-             + " Instanzen")
+             + " Instanzen   "
+             + (if renderer.Post.Msaa then "MSAA " + string renderer.Post.MsaaSamples + "x" else "MSAA aus")
+             + (if renderer.ShadowsOn then "   Schatten an" else "   Schatten aus"))
 
 let private frame (timestamp: float) =
     match scene with
@@ -1068,48 +2634,234 @@ let private frame (timestamp: float) =
         // ---- 1. Eingabe-Flanken: gehoeren zum Frame, nicht zum Physikschritt ----
         let confirm = Input.wasPressed input GameAction.Confirm || input.Clicked
 
+        let saveUiHandled = processSaveUi scene
         match scene.State with
+        | _ when saveUiHandled -> ()
         | Menu ->
-            if confirm then
-                startGame scene
+            if Input.wasPressed input GameAction.StartCombat then handleSaveAction scene "newcombat" "" false
+            elif confirm then
+                match scene.ResumeJson with
+                | Some json -> loadFlight scene json
+                | None -> startGame scene true
         | Playing ->
-            if Input.wasPressed input GameAction.Pause then
+            if ship.Alive then
+                let wheel = Input.takeWheelThrottle input
+                if wheel <> 0.0 then
+                    ship.Controls.Throttle <- System.Math.Max(0.0, System.Math.Min(1.0, ship.Controls.Throttle + wheel))
+                let full = Input.wasPressed input GameAction.ThrottleFull
+                let zero = Input.wasPressed input GameAction.ThrottleZero
+                if full then ship.Controls.Throttle <- 1.0
+                if zero then ship.Controls.Throttle <- 0.0
+
+                // Tempo angleichen: Der Schub folgt dem erfassten Ziel, bis der Pilot
+                // selbst regelt oder das Ziel verschwindet.
+                let target = scene.Hud.Target
+                let hasTarget = target >= 0 && target < world.Enemies.Length && world.Enemies.[target].Alive
+                if Input.wasPressed input GameAction.MatchSpeed then
+                    if scene.MatchSpeed then
+                        scene.MatchSpeed <- false
+                        Sound.uiClick scene.Sound
+                        Hud.notify scene.Hud "TEMPO FREI" "Der Schub bleibt auf dem letzten Wert stehen." 2.0
+                    elif hasTarget then
+                        scene.MatchSpeed <- true
+                        Sound.uiClick scene.Sound
+                        Hud.notify scene.Hud "TEMPO ANGEGLICHEN" "Der Schub folgt dem erfassten Ziel. Jede eigene Schubeingabe löst die Kopplung." 3.0
+                    else
+                        Sound.uiError scene.Sound
+                        Hud.notify scene.Hud "KEIN ZIEL" "Tempo angleichen braucht ein erfasstes Ziel." 2.0
+                elif scene.MatchSpeed then
+                    let manual = wheel <> 0.0 || full || zero || Input.throttleChange input <> 0.0 || Input.isDown input GameAction.Brake
+                    if manual || not hasTarget then
+                        scene.MatchSpeed <- false
+                    else
+                        ship.Controls.Throttle <- System.Math.Min(1.0, Vec3.length world.Enemies.[target].Velocity / ship.CruiseSpeed)
+            else
+                scene.MatchSpeed <- false
+
+            // Esc gibt die Maus frei, Alt+Tab nimmt den Fokus: beides haelt den Flug an.
+            if Input.wasPressed input GameAction.Pause || input.FocusLost then
+                scene.SaveDirty <- true
+                Sound.uiClick scene.Sound
                 setState scene States.paused
+            elif scene.School.Step <> FlightSchool.Off && Input.wasPressed input GameAction.LeaveSchool then
+                endSchool scene
+                Hud.notify scene.Hud "KESTREL · FREIER FLUG" "Am Handelsdock kannst du die Flugschule erneut starten." 3.0
+            elif Input.wasPressed input GameAction.OpenShop && ship.Alive then
+                if scene.Sortie.Role <> 0 then
+                    recoverSortie scene (if scene.Blockade.Lifted then "Orlov hat die erste Lieferung quittiert. Der Verkehr nach Helios läuft wieder." else "Zurück in Helios. Der Bomber wird neu bestückt. Bereits getroffene Ziele bleiben beschädigt.")
+                else openShop scene
+            elif ship.Alive && Input.wasPressed input GameAction.GhostPulse && PilotSkills.pulse scene.Pilot then
+                scene.SaveDirty <- true
+                Sound.ecmJam scene.Sound
+                Hud.notify scene.Hud "GEISTER-PROTOKOLL" "Drohnenfeuer für 3 s gestört · Feindliche Schildregeneration für 8 s blockiert." 3.0
         | Paused ->
-            if Input.wasPressed input GameAction.Pause || Input.wasPressed input GameAction.Confirm then
+            let slower = Input.wasPressed input GameAction.MouseSlower
+            let faster = Input.wasPressed input GameAction.MouseFaster
+            if slower <> faster then
+                Input.adjustMouseSensitivity input faster
+                scene.SaveDirty <- true
+            Input.takeWheelThrottle input |> ignore
+            if Input.wasPressed input GameAction.Pause || Input.wasPressed input GameAction.Confirm || input.Clicked then
+                Sound.uiClick scene.Sound
                 setState scene States.playing
+        | Refitting ->
+            if scene.Shop.TabChanged then
+                scene.Shop.TabChanged <- false
+                Sound.uiClick scene.Sound
+            match scene.Shop.FreightDesk.Request with
+            | Some action ->
+                scene.Shop.FreightDesk.Request <- None
+                handleFreight scene action
+            | None -> ()
+            match scene.Shop.Shipyard.Request with
+            | Some order ->
+                scene.Shop.Shipyard.Request <- None
+                refitShip scene order
+            | None -> ()
+            match scene.Skills.Request with
+            | Some (branch, rank) ->
+                scene.Skills.Request <- None
+                learnSkill scene branch rank
+            | None -> ()
+            let purchase =
+                if Input.wasPressed input GameAction.BuyTurret then 0
+                elif Input.wasPressed input GameAction.UpgradeWeapon then 1
+                elif Input.wasPressed input GameAction.UpgradeShield then 2
+                elif Input.wasPressed input GameAction.UpgradeHull then 3
+                else scene.Shop.Purchase
+            scene.Shop.Purchase <- -1
+            if purchase >= 0 then buyEquipment scene purchase
+            let tradeAction = scene.Shop.TradeAction
+            scene.Shop.TradeAction <- -1
+            if tradeAction >= 0 then trade scene tradeAction
+            let travelAction = scene.Shop.TravelAction
+            scene.Shop.TravelAction <- -1
+            if scene.Yard.Request.IsSome then
+                let request = scene.Yard.Request.Value
+                scene.Yard.Request <- None
+                yardAction scene request
+            elif travelAction >= 0 then travel scene travelAction
+            elif scene.Shop.Advance then
+                scene.Shop.Advance <- false
+                advanceSector scene
+            elif scene.Shop.Depart || Input.wasPressed input GameAction.Confirm || Input.wasPressed input GameAction.OpenShop then
+                scene.Shop.Depart <- false
+                departShop scene
+        | Victory ->
+            if confirm && scene.StateTime > 1.0 then openSaves scene
         | GameOver ->
             // Kurze Sperre, damit ein noch gedrueckter Feuerknopf nicht sofort neu startet
             if confirm && scene.StateTime > 1.0 then
-                startGame scene
+                match (readSlot "auto").Json |> Option.orElse scene.ResumeJson with
+                | Some json -> loadFlight scene json
+                | None -> startGame scene scene.Trading
 
-        if Input.wasPressed input GameAction.ToggleCamera then
+        if not saveUiHandled && Input.wasPressed input GameAction.ToggleCamera then
             Camera.toggleMode scene.Camera
+            Sound.uiClick scene.Sound
+            scene.SaveDirty <- canSave scene
 
-        if Input.wasPressed input GameAction.InvertPitch then
+        if not saveUiHandled && (scene.State = Playing || scene.State = Paused) then
+            if Input.wasPressed input GameAction.ToggleMouseMode then
+                Input.toggleMouseMode input
+                Sound.uiClick scene.Sound
+                if scene.State = Playing then
+                    if input.HoldStick then
+                        Hud.notify scene.Hud "MAUS · HALTEN" "Der Stick bleibt stehen. Maus zur Mitte zurückführen oder X zum Zentrieren." 3.0
+                    else
+                        Hud.notify scene.Hud "MAUS · WISCHEN" "Der Stick federt nach jeder Bewegung zur Mitte zurück." 3.0
+            if Input.wasPressed input GameAction.ToggleStats then
+                scene.ShowStats <- not scene.ShowStats
+                if not scene.ShowStats then Hud.setStats scene.Hud ""
+            if Input.wasPressed input GameAction.ToggleHelp then
+                scene.ShowHelp <- not scene.ShowHelp
+            if Input.wasPressed input GameAction.ToggleShadows then
+                let on = Renderer.toggleShadows scene.Renderer
+                saveSetting ShadowKey (if on then 1.0 else 0.0)
+                if scene.State = Playing then
+                    Hud.notify scene.Hud (if on then "SCHATTEN AN" else "SCHATTEN AUS") "F4 schaltet die Sonnenschatten um." 2.0
+            // Kameraabstand der Verfolgerperspektive in Stufen
+            if Input.wasPressed input GameAction.ZoomIn then
+                scene.Camera.Zoom <- System.Math.Max(0.6, scene.Camera.Zoom - 0.2)
+                saveSetting ZoomKey scene.Camera.Zoom
+            if Input.wasPressed input GameAction.ZoomOut then
+                scene.Camera.Zoom <- System.Math.Min(2.2, scene.Camera.Zoom + 0.2)
+                saveSetting ZoomKey scene.Camera.Zoom
+
+        if not saveUiHandled && Input.wasPressed input GameAction.InvertPitch then
             input.InvertPitch <- not input.InvertPitch
+            scene.SaveDirty <- canSave scene
 
-        if Input.wasPressed input GameAction.ToggleMute then
+        if not saveUiHandled && Input.wasPressed input GameAction.ToggleMute then
             Sound.toggleMute scene.Sound
+            DockContact.onMuteChanged scene.Contact
             scene.Hud.Muted <- scene.Sound.Muted
+            scene.SaveDirty <- canSave scene
 
-        if Input.wasPressed input GameAction.CycleTarget then
+        if not saveUiHandled && Input.wasPressed input GameAction.CycleTarget then
             if Hud.cycleTarget scene.Hud world.Enemies then
                 Sound.targetLock scene.Sound
 
-        // Kontinuierlicher Triebwerksklang im aktiven Flug
+        // Kontinuierlicher Triebwerksklang, Sektor-Ambience & 3D-Hoerer im aktiven Flug
         let engineActive =
             match scene.State with
             | Playing -> ship.Alive
             | _ -> false
 
+        let curSector = currentSector scene
+        let mutable gateProx = 0.0
+        if engineActive && scene.School.Step = FlightSchool.Off then
+            for gate in curSector.Gates do
+                let d = Vec3.distance ship.Position gate.Position
+                let maxR = gate.TriggerRadius * 2.6
+                if d < maxR then
+                    gateProx <- max gateProx (1.0 - d / maxR)
+            if gateProx > 0.45 && scene.Phase = Salvaging && scene.JumpNotifiedSector <> sectorIndex scene then
+                scene.JumpNotifiedSector <- sectorIndex scene
+                Sound.jumpReady scene.Sound
+
+        if engineActive then
+            if not scene.PrevBoostLocked && scene.BoostLocked then Sound.boostEmpty scene.Sound
+            elif scene.PrevBoostLocked && not scene.BoostLocked then Sound.boostReady scene.Sound
+            scene.PrevBoostLocked <- scene.BoostLocked
+            if scene.PrevOverdrive <= 0.0 && ship.Overdrive > 0.0 then Sound.overdriveOn scene.Sound
+            scene.PrevOverdrive <- ship.Overdrive
+            let shieldUp = ship.Shield > 0.0
+            if scene.PrevShieldUp && not shieldUp then Sound.shieldBreak scene.Sound
+            if scene.PrevShieldDelay > 0.0 && ship.ShieldDelay <= 0.0 && ship.Shield < ship.MaxShield then
+                Sound.shieldRecharge scene.Sound
+            scene.PrevShieldUp <- shieldUp
+            scene.PrevShieldDelay <- ship.ShieldDelay
+            if scene.Trading && not scene.UpgradeNotified && not scene.Wallet.TurretOwned && scene.Wallet.Credits >= 350 && scene.School.Step = FlightSchool.Off then
+                scene.UpgradeNotified <- true
+                Sound.upgradeReady scene.Sound
+        else
+            scene.PrevBoostLocked <- scene.BoostLocked
+            scene.PrevOverdrive <- ship.Overdrive
+            scene.PrevShieldUp <- ship.Shield > 0.0
+            scene.PrevShieldDelay <- ship.ShieldDelay
+
+        let outpostKind =
+            match curSector.Outpost.Kind with
+            | MiningDepot -> 0 | Refinery -> 1 | OrbitalYard -> 2
+            | ResearchRelay -> 3 | FrontierBazaar -> 4 | FleetDock -> 5
+        Sound.setListener scene.Sound scene.Camera.Position scene.Camera.Rotation
+        Sound.setFlightContext scene.Sound scene.Fleet.Active scene.Fleet.Kit (sectorIndex scene) (scene.Camera.Mode = Cockpit) outpostKind gateProx (scene.World.Customs.IsSome)
+        let sceneMode =
+            match scene.State with
+            | Playing -> 1
+            | Paused -> 2
+            | Refitting -> 3
+            | Menu | Victory | GameOver -> 0
+        Sound.setSceneMode scene.Sound sceneMode
         let thrust = if ship.Controls.Brake then 0.0 else ship.Controls.Throttle
         Sound.updateEngine scene.Sound engineActive thrust ship.Boost
 
         // ---- 2. Simulation mit festem Zeitschritt (steht in der Pause) ----
         let simulate =
             match scene.State with
-            | Paused -> false
+            | _ when scene.Saves.Visible -> false
+            | Menu | Paused | Refitting | Victory -> false
             | _ -> true
 
         if simulate then
@@ -1119,14 +2871,27 @@ let private frame (timestamp: float) =
 
             while scene.Accumulator >= PhysicsStep && steps < MaxStepsPerFrame do
                 match scene.State with
-                | Menu -> applyMenuControls ship
                 | Playing ->
                     if ship.Alive then
-                        applyPlayerInput input ship PhysicsStep
+                        applyPlayerInput scene input ship PhysicsStep
                 | _ -> ()
 
-                AI.update world scene.Brains PhysicsStep
+                if FlightSchool.onRange scene.School.Step then
+                    FlightSchool.guideTarget scene.School.Step world.Time world.Enemies.[0]
+                else AI.update world scene.Brains PhysicsStep
+                if scene.State = Playing && not (FlightSchool.onRange scene.School.Step) then
+                    Turret.update world scene.Turret (scene.Wallet.TurretOwned && scene.Sortie.Role <> CapitalFlight.Bomber) PhysicsStep
                 Physics.step world PhysicsStep
+                if scene.State = Playing && scene.Sortie.Role <> CapitalFlight.Bomber then
+                    let radius = if PilotSkills.level scene.Pilot 0 >= 1 then 85.0 else Salvage.MagnetRadius
+                    let struct (ore,data) = Salvage.collect scene.Pickups ship scene.Cargo radius PhysicsStep
+                    if ore > 0 || data > 0 then
+                        let goods =
+                            [ if ore > 0 then yield "+" + string ore + " KRYO-ERZ"
+                              if data > 0 then yield "+" + string data + " NAV-DATEN" ]
+                        scene.Hud.RewardText <- String.concat " · " goods
+                        scene.Hud.RewardTime <- 2.5
+                        Sound.cargoPickup scene.Sound
                 scene.Accumulator <- scene.Accumulator - PhysicsStep
                 steps <- steps + 1
 
@@ -1136,7 +2901,34 @@ let private frame (timestamp: float) =
             // ---- 3. + 4. Ereignisse und Wave-System ----
             processEvents scene
             updateWaves scene dt
+            if scene.State = Playing then updateSortie scene dt
+            if scene.State = Playing && scene.School.Step <> FlightSchool.Off then
+                if ship.Alive then advanceSchool scene
+            elif scene.State = Playing then updateArchiveScan scene dt
+
+            if scene.State = Playing && ship.Alive && (scene.School.Step = FlightSchool.Off || scene.School.Step = FlightSchool.Dock) then
+                let outpost = (currentSector scene).Outpost
+                match Universe.evaluateDocking outpost ship.Position (dockBlocked scene) with
+                | Approaching _ -> Sound.stationComm scene.Sound outpost.Id 0
+                | ReadyToDock _ -> Sound.stationComm scene.Sound outpost.Id 1
+                | BlockedByCombat _ -> Sound.stationComm scene.Sound outpost.Id 2
+                | TooFar _ -> Sound.resetStationComm scene.Sound outpost.Id
             Hud.update scene.Hud dt
+            if canSave scene then scene.FlightChanged <- true
+
+        scene.SaveRetryDelay <- max 0.0 (scene.SaveRetryDelay - elapsed)
+        if scene.State = Refitting && not scene.Saves.Visible then
+            let before = DockContact.heard scene.Contact
+            DockContact.update scene.Contact
+            if before <> DockContact.heard scene.Contact then scene.SaveDirty <- true
+        if canSave scene then
+            scene.SaveTimer <- scene.SaveTimer + elapsed
+            if scene.SaveRetryDelay <= 0.0 && (scene.SaveDirty || (scene.SaveTimer >= 20.0 && scene.FlightChanged)) then
+                saveFlight scene "auto"
+
+        // Menüs bleiben animiert; Kampfzeit und Aufrüstungswahl bleiben eingefroren.
+        if not simulate then
+            scene.Hud.Time <- scene.Hud.Time + dt
 
         // ---- 5. Darstellung zwischen letztem und aktuellem Physikzustand interpolieren ----
         let alpha = scene.Accumulator / PhysicsStep
@@ -1144,7 +2936,21 @@ let private frame (timestamp: float) =
         let rotation = Quat.slerp ship.PrevRotation ship.Rotation alpha
 
         if simulate then
-            Camera.update scene.Camera position rotation ship.Boost dt
+            // Heckblick (H halten): Die Kamera dreht sich um die Hochachse des Schiffs.
+            let lookBack = scene.State = Playing && ship.Alive && Input.isDown input GameAction.LookBack
+            let behind = if lookBack then rotation * Quat.fromAxisAngle Vec3.unitY System.Math.PI else rotation
+            // Freies Umsehen (mittlere Maustaste): Blick um Hoch- und Querachse des Schiffs.
+            Input.relaxLook input dt
+            let viewRotation =
+                if input.LookX <> 0.0 || input.LookY <> 0.0 then
+                    behind * Quat.fromAxisAngle Vec3.unitY (-input.LookX) * Quat.fromAxisAngle Vec3.unitX (-input.LookY)
+                else
+                    behind
+            if lookBack <> scene.LookBack then
+                scene.LookBack <- lookBack
+                Camera.snap scene.Camera position viewRotation
+            Camera.update scene.Camera position viewRotation ship.Boost dt
+            if scene.Camera.Mode = Chase then keepCameraOutOfRock scene
 
             // Kamerawackeln: klingt exponentiell ab und haeuft sich nicht auf, weil
             // Camera.update die Position jeden Frame neu aus dem Ziel berechnet.
@@ -1164,8 +2970,25 @@ let private frame (timestamp: float) =
             else
                 scene.Shake <- 0.0
 
+        // Schutznetz: Bricht die Bildrate mit Kantenglaettung dauerhaft ein, laeuft die
+        // Sitzung ohne sie weiter. Einzelne lange Frames (Tab-Wechsel) und die 1-Hz-Drosselung
+        // verdeckter Fenster zaehlen nicht: Dort liegt es nicht an der Grafikkarte.
+        if scene.Renderer.Post.Msaa && scene.State = Playing then
+            scene.SlowFrames <-
+                if elapsed > 0.05 && elapsed < 0.5 then scene.SlowFrames + 1
+                elif elapsed >= 0.5 then scene.SlowFrames
+                else 0
+            if scene.SlowFrames >= 24 then
+                scene.SlowFrames <- 0
+                if scene.Renderer.ShadowsOn then
+                    Renderer.toggleShadows scene.Renderer |> ignore
+                    Browser.Dom.console.warn "Schatten abgeschaltet: Bildrate lag dauerhaft unter 20 FPS."
+                else
+                    Renderer.disableMsaa scene.Renderer
+                    Browser.Dom.console.warn "Kantenglaettung abgeschaltet: Bildrate lag dauerhaft unter 20 FPS."
+
         updateStats scene elapsed
-        render scene position rotation alpha
+        if scene.State <> Menu then render scene position rotation alpha
         Input.endFrame input
         window.requestAnimationFrame loop.Callback |> ignore
     | None -> ()

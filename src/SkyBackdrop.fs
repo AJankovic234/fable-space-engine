@@ -3,17 +3,25 @@ namespace SpaceEngine
 open Fable.Core
 open Browser.Types
 
-/// A deterministic environment asset baked once on the GPU. Flight only samples
-/// the panorama: no per-frame noise, ray marching, downloads or texture uploads.
+/// Hintergrund und sechs lokale Himmelsansichten werden einmalig auf der GPU erzeugt.
 type SkyBackdrop =
     { Program: WebGLProgram
       Texture: WebGLTexture
+      Bodies: WebGLTexture
+      SectorCells: int[]
       Vao: WebGLVertexArrayObject
       UView: WebGLUniformLocation
+      UHdr: WebGLUniformLocation
+      USector: WebGLUniformLocation
+      USun: WebGLUniformLocation
+      USunColor: WebGLUniformLocation
       ULens: WebGLUniformLocation }
 
 [<RequireQualifiedAccess>]
 module SkyBackdrop =
+    let private atlasSectors =
+        [| "outer-belt"; "slag-refinery"; "frontier-drift"; "kepler-yard"; "aether-relay"; "morgenlicht-bastion" |]
+
     let private vertex = """#version 300 es
 precision highp float;
 out vec2 vUv;
@@ -24,12 +32,11 @@ void main() {
 }
 """
 
-    let private bakeFragment = """#version 300 es
+    let private bakeHeader = """#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 const float PI = 3.14159265359;
-const vec3 SUN = vec3(0.8393, 0.4519, 0.3013);
 float hash(vec3 p) {
     p = fract(p * 0.1031);
     p += dot(p, p.yzx + 33.33);
@@ -58,19 +65,22 @@ float sphere(vec3 rd, vec3 center, float radius) {
     if (h < 0.0 || b < 0.0) return 1e5;
     return b - sqrt(h);
 }
-vec3 stars(vec3 d, float scale, float threshold) {
+vec3 stars(vec3 d, float scale, float threshold, float radius) {
     vec3 p = d * scale, cell = floor(p), f = fract(p) - 0.5;
     float seed = hash(cell);
-    float star = (1.0-smoothstep(0.0, 0.28, length(f))) * step(threshold, seed);
+    float star = (1.0-smoothstep(0.0, radius, length(f))) * step(threshold, seed);
     return mix(vec3(0.52,0.74,1.0), vec3(1.0,0.78,0.49), hash(cell+9.0)) * star;
 }
+"""
+    let private galaxyFragment = bakeHeader + """
 void main() {
     float lon = (vUv.x - 0.5) * 2.0 * PI;
     float lat = (vUv.y - 0.5) * PI;
     vec3 d = vec3(sin(lon)*cos(lat), sin(lat), -cos(lon)*cos(lat));
 
     float warp = fbm(d * 3.3 + vec3(1.0,4.0,7.0));
-    float band = exp(-pow((d.y + d.x * 0.38 - 0.12 + (warp - 0.5) * 0.34) * 3.4, 2.0));
+    float offset = (d.y + d.x * 0.38 - 0.12 + (warp - 0.5) * 0.34) * 3.4;
+    float band = exp(-offset * offset);
     float cloud = fbm(d * 8.0 + warp * 2.5);
     float wisps = fbm(d * 22.0 + cloud * 3.0);
     float dust = smoothstep(0.40, 0.68, fbm(d * 13.0 + vec3(3,7,1)));
@@ -79,8 +89,23 @@ void main() {
     color += nebula * band * (0.15 + cloud * cloud * 1.5) * (0.48 + wisps);
     color *= 1.0 - dust * band * 0.85;
     color += vec3(0.08,0.13,0.20) * pow(wisps, 4.0) * band;
-    color += stars(d, 570.0, 0.986) * 0.85 + stars(d, 240.0, 0.995) * 1.5;
+    color += stars(d, 480.0, 0.988, 0.36) * 0.55 + stars(d, 320.0, 0.985, 0.31) * 0.90 + stars(d, 190.0, 0.994, 0.27) * 1.55;
 
+    outColor = vec4(sqrt(clamp(color * 0.25, 0.0, 1.0)), 1.0);
+}
+"""
+    // Ein gemeinsamer Ausschnitt der vorderen Himmelshalbkugel. Außerhalb
+    // dieses Fensters zeigt der Renderer nur das nahtlose 360°-Sternenfeld.
+    let private windowShader = """
+const vec2 SKY_MIN = vec2(-1.24, -0.72);
+const vec2 SKY_SIZE = vec2(2.52, 1.70);
+"""
+    let private bodyFragment = bakeHeader + windowShader + """
+uniform vec3 uSuns[6];
+const vec3 SUN = vec3(0.8393, 0.4519, 0.3013);
+vec4 kestrel(vec3 d) {
+    vec3 color = vec3(0.0);
+    float coverage = 0.0;
     // Ray/sphere planet and ray/plane rings share depth, including the far side
     // of the rings and the planet's shadow. They stay fixed in world space.
     vec3 center = normalize(vec3(0.57, 0.24, -1.0)) * 12.0;
@@ -90,61 +115,217 @@ void main() {
     float halo = exp(-max(approach-radius,0.0)*22.0) * step(radius, approach) * step(0.0,dot(d,center));
     color += vec3(0.06,0.30,0.49) * halo * 0.7;
     if (planetT < 1e4) {
+        coverage = 1.0;
         vec3 n = normalize(d * planetT - center);
         float turbulence = fbm(n * 8.0);
         float bands = sin(n.y * 39.0 + turbulence * 3.2 + n.x * 0.7);
         vec3 surface = mix(vec3(0.20,0.29,0.32),vec3(0.51,0.63,0.61),smoothstep(-1.0,1.0,bands));
-        surface *= 0.85 + turbulence * 0.32 + sin(n.y*170.0+turbulence*6.0)*0.025;
+        surface *= 0.85 + turbulence * 0.32 + sin(n.y*48.0+turbulence*6.0)*0.025;
         surface = mix(surface,vec3(0.62,0.45,0.29),smoothstep(0.57,0.76,turbulence)*0.8);
         float daylight = max(dot(n,SUN),0.0);
         float limb = pow(1.0-max(dot(n,-d),0.0),3.0);
-        color = surface * (vec3(0.022,0.035,0.06) + vec3(1.0,0.88,0.73)*daylight*0.9);
-        color += vec3(0.07,0.34,0.52)*limb*(0.12+daylight*0.8);
+        vec3 termTint = mix(vec3(1.0,0.68,0.44), vec3(1.0,0.88,0.73), smoothstep(0.0, 0.35, daylight));
+        color = surface * (vec3(0.022,0.035,0.06) + termTint*daylight*0.95);
+        color += vec3(0.09,0.42,0.65)*limb*(0.14+daylight*0.85);
     }
     vec3 ringN = normalize(vec3(0.18,0.79,0.42));
     float denom = dot(d,ringN);
+    // Ring radius and its screen-space footprint are evaluated for every texel so
+    // the derivative below is defined; the edge-on line is masked by the test.
+    float t = dot(center,ringN)/(abs(denom) > 0.0001 ? denom : 0.0001);
+    vec3 p = d*t-center;
+    float r = length(p);
+    float fine = fwidth(r*31.0);
     if (abs(denom) > 0.0001) {
-        float t = dot(center,ringN)/denom;
-        vec3 p = d*t-center;
-        float r = length(p);
         if (t > 0.0 && t < planetT && r > 2.65 && r < 4.55) {
-            float stripes = 0.5+0.5*sin(r*54.0+noise(p*9.0)*0.18);
+            // Fine ringlets fade to their mean before they approach the texel
+            // grid; the broad bands stay and carry the ring at any distance.
+            float ringlets = sin(r*31.0+noise(p*9.0)*0.18) * (1.0-smoothstep(0.55,1.7,fine));
+            float bands = noise(vec3(r*5.3,1.7,4.1))-0.5;
+            float stripes = clamp(0.5+0.36*ringlets+0.75*bands,0.0,1.0);
             float density = smoothstep(2.65,2.82,r)*(1.0-smoothstep(4.25,4.55,r));
-            density *= (0.48+stripes*0.18)*(0.05+smoothstep(0.015,0.06,abs(r-3.50))*0.95);
+            // The gap never gets narrower than a few texels, so it stays a line.
+            float gap = max(0.06,fine*0.09);
+            density *= (0.30+stripes*0.52)*(0.05+smoothstep(0.25*gap,gap,abs(r-3.50))*0.95);
             float shadow = sphere(SUN,-p,radius) < 1e4 ? 0.12 : 1.0;
             vec3 ringColor = mix(vec3(0.37,0.39,0.37),vec3(0.67,0.59,0.45),stripes) * shadow;
             color = mix(color,ringColor,density);
+            coverage = mix(coverage,1.0,density);
         }
     }
 
     vec3 moonCenter = normalize(vec3(-0.57,0.36,-1.0))*16.0;
     float moonT = sphere(d,moonCenter,0.52);
     if (moonT < 1e4) {
+        coverage = 1.0;
         vec3 n = normalize(d*moonT-moonCenter);
         float rock = fbm(n*14.0);
         color = vec3(0.30,0.34,0.40)*(0.4+rock)*(0.035+max(dot(n,SUN),0.0));
     }
-    float sun = max(dot(d,SUN),0.0);
-    color += vec3(1.0,0.64,0.30) * (pow(sun,3400.0)*2.0 + pow(sun,120.0)*0.14);
-    color = color/(1.0+color*0.35);
-    outColor = vec4(pow(max(color,0.0),vec3(1.0/2.2)),1.0);
+    return vec4(color,coverage);
+}
+
+// Alle folgenden Oberflächen rechnen nur beim Erzeugen des kleinen Atlasses.
+vec4 world(vec3 d, vec3 center, float radius, vec3 sunDir, int kind) {
+    float miss = length(cross(d,center)) - radius;
+    vec3 air = kind==1 ? vec3(0.64,0.10,0.015) :
+               kind==2 ? vec3(0.07,0.47,0.56) : vec3(0.22,0.47,0.74);
+    if (kind==0) air=vec3(0.0);
+    float t = sphere(d,center,radius);
+    if (t>1e4) return vec4(air * exp(-max(miss,0.0)*24.0/radius)*0.42,0.0);
+    vec3 n=normalize(d*t-center);
+    float continents=fbm(n*3.7+vec3(8,1,4));
+    float detail=fbm(n*19.0+2.8*continents);
+    float daylight=dot(n,sunDir);
+    float facing=clamp(dot(n,-d),0.0,1.0);
+    float rim=pow(1.0-facing,3.0);
+    vec3 surface, emission=vec3(0.0);
+    if (kind==1) {
+        // Hot spreading ridges cut through cold, mottled basalt plates.
+        float fault=abs(fbm(n*5.2+continents*3.4)-0.49);
+        float bed=exp(-fault*40.0);
+        float lava=exp(-fault*190.0)*(0.35+0.65*smoothstep(0.24,0.61,detail));
+        surface=mix(vec3(0.10,0.066,0.074),vec3(0.47,0.24,0.14),detail);
+        emission=vec3(0.27,0.018,0.002)*bed+vec3(1.80,0.36,0.026)*lava;
+    } else if (kind==2) {
+        // Shallow continental shelves, green islands and broken spiral cloud bands.
+        float land=smoothstep(0.491,0.525,continents+0.018*detail);
+        vec3 sea=mix(vec3(0.018,0.09,0.18),vec3(0.05,0.58,0.58),smoothstep(0.36,0.50,continents));
+        surface=mix(sea,mix(vec3(0.18,0.37,0.19),vec3(0.57,0.58,0.34),detail),land);
+        float swirl=fbm(n*9.0+vec3(3.1*sin(n.y*5.0+continents*3.0),0,0));
+        float cloud=smoothstep(0.50,0.66,swirl+0.06*sin(n.y*23.0+detail*8.0));
+        surface=mix(surface,vec3(0.80,0.91,0.87),cloud*0.92);
+        emission=vec3(0.50,0.79,0.85)*pow(max(dot(reflect(-sunDir,n),-d),0.0),30.0)*(1.0-land)*(1.0-cloud)*0.48;
+    } else if (kind==3) {
+        // Pale ice plateaux with dark branching fractures and wind-scoured strata.
+        float rift=abs(fbm(n*3.4+vec3(detail*1.9,0.4,3.0))-0.48);
+        float seam=1.0-smoothstep(0.003,0.025,rift);
+        float strata=0.5+0.5*sin(19.0*n.y+continents*10.0+detail*3.0);
+        surface=mix(vec3(0.34,0.52,0.63),vec3(0.89,0.95,0.94),0.42*strata+0.53*detail);
+        surface=mix(surface,vec3(0.12,0.28,0.41),seam*0.82);
+        emission=vec3(0.027,0.050,0.084)*(0.5+detail);
+    } else {
+        surface=mix(vec3(0.15,0.13,0.15),vec3(0.54,0.48,0.41),detail);
+    }
+    vec3 termLight=mix(vec3(1.0,0.62,0.40), vec3(0.99,0.91,0.82), smoothstep(0.0, 0.32, daylight));
+    vec3 color=surface*(vec3(0.035,0.049,0.072)+max(daylight,0.0)*termLight);
+    color+=air*rim*(0.12+0.82*smoothstep(-0.25,0.65,daylight));
+    return vec4(color+emission,1.0);
+}
+
+vec4 pulsar(vec2 p) {
+    // A thin tilted accretion disk with a compact white core and bipolar jets.
+    vec2 q=p-vec2(-0.42,0.23);
+    q=mat2(0.900,-0.436,0.436,0.900)*q;
+    float r=length(q);
+    float disk=length(vec2(q.x,q.y*5.3));
+    float angle=atan(q.y*5.3,q.x);
+    float ripples=0.5+0.5*sin(114.0*disk-angle*2.0+1.8*noise(vec3(q*38.0,7.0)));
+    float ringOffset=(disk-0.164)/0.054;
+    float ribbon=exp(-ringOffset*ringOffset)*(0.42+0.58*ripples);
+    float axial=abs(q.y);
+    float jetOffset=q.x/(0.005+axial*0.065);
+    float jet=exp(-jetOffset*jetOffset)*exp(-axial*9.0);
+    jet*=1.0-smoothstep(0.33,0.46,axial);
+    vec3 color=vec3(0.32,0.16,0.68)*exp(-r*16.0);
+    color+=vec3(0.65,0.30,1.10)*ribbon+vec3(0.22,0.73,1.65)*jet;
+    color+=vec3(2.55,2.80,3.20)*exp(-r*r/0.00024);
+    return vec4(color,clamp(ribbon*0.4+jet*0.43+exp(-r*r/0.00018),0.0,1.0));
+}
+
+vec4 eclipse(vec2 p) {
+    vec2 q=p-vec2(0.43,0.19);
+    float r=length(q), a=atan(q.y,q.x);
+    float star=length(q-vec2(-0.027,0.017));
+    float stream=0.55+0.45*noise(vec3(cos(a)*11.0,sin(a)*11.0,5.0));
+    float corona=exp(-max(star-0.176,0.0)*(23.0-6.0*stream));
+    vec3 radiance=vec3(1.14,0.43,0.09)*corona*stream;
+    float photosphere=1.0-smoothstep(0.174,0.179,star);
+    radiance+=vec3(2.8,1.75,0.63)*photosphere;
+    float cover=1.0-smoothstep(0.186,0.190,r);
+    vec3 night=vec3(0.017,0.012,0.022)*(0.48+noise(vec3(q*26.0,3.3)));
+    night+=vec3(0.20,0.072,0.020)*smoothstep(0.156,0.189,r)*stream;
+    return vec4(mix(radiance,night,cover),max(cover,photosphere));
+}
+
+void main() {
+    vec2 grid=vUv*vec2(3,2);
+    ivec2 tile=ivec2(floor(grid));
+    int sector=tile.x+tile.y*3;
+    vec2 local=fract(grid), p=SKY_MIN+SKY_SIZE*local;
+    vec3 d=normalize(vec3(p,-1.0));
+    vec4 body;
+    if (sector==0) body=kestrel(d);
+    else if (sector==4) body=pulsar(p);
+    else if (sector==5) body=eclipse(p);
+    else {
+        vec3 dir=sector==1 ? vec3(-0.49,0.16,-1.0) :
+                 sector==2 ? vec3(0.54,0.22,-1.0) : vec3(-0.40,-0.17,-1.0);
+        float radius=sector==1 ? 2.42 : sector==2 ? 1.85 : 2.64;
+        body=world(d,normalize(dir)*10.0,radius,uSuns[sector],sector);
+        if (sector==2 || sector==3) {
+            vec3 moonDir=sector==2 ? vec3(0.21,0.43,-1) : vec3(-0.07,0.19,-1);
+            vec4 moon=world(d,normalize(moonDir)*15.0,sector==2 ? 0.45 : 0.34,uSuns[sector],0);
+            body=moon+body*(1.0-moon.a);
+            if (sector==2) {
+                moon=world(d,normalize(vec3(0.14,0.36,-1))*16.0,0.23,uSuns[2],0);
+                body=moon+body*(1.0-moon.a);
+            }
+        }
+    }
+    vec2 margin=min(local,1.0-local);
+    body*=smoothstep(0.002,0.025,min(margin.x,margin.y));
+    outColor=vec4(sqrt(clamp(body.rgb*0.25,0.0,1.0)),body.a);
 }
 """
 
-    let private displayFragment = """#version 300 es
+    let private displayFragment =
+        """#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uSky;
+uniform sampler2D uBodies;
 uniform mat4 uView;
 uniform vec2 uLens;
+uniform bool uHdr;
+uniform int uSector;
+uniform vec3 uSun;
+uniform vec3 uSunColor;
 out vec4 outColor;
+        """ + Shaders.displayTransform + windowShader + """
+// Longitude and colour of the shared galactic band, indexed by sector.
+const vec2 YAW[6]=vec2[6](vec2(1,0),vec2(0.362,0.932),vec2(-0.801,0.598),
+    vec2(-0.416,-0.909),vec2(0.697,-0.717),vec2(-0.942,-0.335));
+const vec3 TINT[6]=vec3[6](vec3(1),vec3(1.38,0.47,0.29),vec3(0.46,1.27,1.12),
+    vec3(0.67,0.85,1.36),vec3(0.94,0.56,1.57),vec3(1.43,0.42,0.49));
 void main() {
     vec2 xy = (vUv*2.0-1.0)*uLens;
     vec3 ray = normalize(transpose(mat3(uView))*vec3(xy,-1.0));
-    vec2 uv = vec2(atan(ray.x,-ray.z)/6.28318530718+0.5,asin(clamp(ray.y,-1.0,1.0))/3.14159265359+0.5);
-    vec3 color = texture(uSky,uv).rgb;
-    float vignette = 1.0 - 0.16 * dot(vUv-0.5,vUv-0.5);
-    outColor = vec4(color*vignette,1.0);
+    vec2 turn=YAW[uSector];
+    vec3 galaxy=ray;
+    galaxy.xz=mat2(turn.x,turn.y,-turn.y,turn.x)*ray.xz;
+    vec2 uv = vec2(atan(galaxy.x,-galaxy.z)/6.28318530718+0.5,asin(clamp(galaxy.y,-1.0,1.0))/3.14159265359+0.5);
+    vec3 encoded = texture(uSky,uv).rgb;
+    vec3 radiance=4.0*encoded*encoded;
+    if (uSector!=0) {
+        float luminance=dot(radiance,vec3(0.24,0.62,0.14));
+        float nebula=1.0-smoothstep(0.14,0.65,luminance);
+        radiance=mix(radiance,mix(radiance,vec3(luminance),0.62)*TINT[uSector],nebula);
+    }
+    float sun=max(dot(ray,uSun),0.0);
+    float sunPeak=max(uSunColor.r, max(uSunColor.g, uSunColor.b));
+    vec3 sunTint=mix(vec3(1.0,0.69,0.38), sunPeak > 0.01 ? uSunColor / sunPeak : vec3(1.0), 0.58);
+    radiance+=sunTint*(pow(sun,3400.0)*2.1+pow(sun,120.0)*0.15);
+    if (ray.z < -0.1) {
+        vec2 local=(ray.xy/-ray.z-SKY_MIN)/SKY_SIZE;
+        if (all(greaterThanEqual(local,vec2(0))) && all(lessThanEqual(local,vec2(1)))) {
+            vec2 cell=vec2(uSector%3,uSector/3);
+            vec2 atlasUv=(cell+local)/vec2(3,2);
+            vec4 body=texture(uBodies,atlasUv);
+            radiance=radiance*(1.0-body.a)+4.0*body.rgb*body.rgb;
+        }
+    }
+    outColor = vec4(uHdr ? radiance : displayColor(radiance), 1.0);
 }
 """
 
@@ -154,50 +335,77 @@ void main() {
     let create (renderer: Renderer) : SkyBackdrop =
         let gl = renderer.Gl
         let vao = gl.createVertexArray ()
-        let bake = Renderer.linkProgram gl vertex bakeFragment
         let program = Renderer.linkProgram gl vertex displayFragment
-        let texture = gl.createTexture ()
-        gl.bindTexture (gl.TEXTURE_2D, texture)
-        // 18 MiB at full quality, bounded by the device's actual texture limit.
-        let width = min 3072 (unbox<int> (gl.getParameter gl.MAX_TEXTURE_SIZE))
-        let height = width / 2
-        allocate gl width height
-        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
-        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
         let framebuffer = gl.createFramebuffer ()
         gl.bindFramebuffer (gl.FRAMEBUFFER, framebuffer)
-        gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0.0)
-        if gl.checkFramebufferStatus gl.FRAMEBUFFER <> gl.FRAMEBUFFER_COMPLETE then
-            failwith "Die Himmelstextur konnte nicht erstellt werden."
-        gl.viewport (0.0, 0.0, float width, float height)
         gl.disable gl.DEPTH_TEST
         gl.disable gl.CULL_FACE
-        gl.useProgram bake
+        gl.disable gl.BLEND
         gl.bindVertexArray vao
-        gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
+        let bake fragment width height wrap initialize =
+            let texture = gl.createTexture ()
+            gl.bindTexture (gl.TEXTURE_2D, texture)
+            allocate gl width height
+            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
+            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+            gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0.0)
+            if gl.checkFramebufferStatus gl.FRAMEBUFFER <> gl.FRAMEBUFFER_COMPLETE then
+                failwith "Die Himmelstextur konnte nicht erstellt werden."
+            let generator = Renderer.linkProgram gl vertex fragment
+            gl.useProgram generator
+            initialize generator
+            gl.viewport (0.0, 0.0, float width, float height)
+            gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
+            gl.deleteProgram generator
+            texture
+        let limit = unbox<int> (gl.getParameter gl.MAX_TEXTURE_SIZE)
+        let width = min 3072 limit
+        let texture = bake galaxyFragment width (width / 2) gl.REPEAT ignore
+        // Einmalig maximal 16 MiB für alle sechs Vordergrundansichten zusammen.
+        let tileWidth = min 1024 (limit / 3)
+        let tileHeight = tileWidth * 2 / 3
+        let bodies =
+            bake bodyFragment (tileWidth * 3) (tileHeight * 2) gl.CLAMP_TO_EDGE (fun shader ->
+                let directions = JS.Constructors.Float32Array.Create (3 * atlasSectors.Length)
+                atlasSectors |> Array.iteri (fun i id ->
+                    Universe.tryFindSector id |> Option.iter (fun sector -> Vec3.writeTo directions (3 * i) sector.Atmosphere.SunDir))
+                gl.uniform3fv (gl.getUniformLocation (shader, "uSuns[0]"), directions))
         gl.bindFramebuffer (gl.FRAMEBUFFER, unbox null)
         gl.deleteFramebuffer framebuffer
-        gl.deleteProgram bake
         gl.bindVertexArray (unbox null)
         gl.enable gl.DEPTH_TEST
         gl.enable gl.CULL_FACE
         gl.useProgram program
         gl.uniform1i (gl.getUniformLocation (program, "uSky"), 0.0)
+        gl.uniform1i (gl.getUniformLocation (program, "uBodies"), 1.0)
         { Program = program
           Texture = texture
+          Bodies = bodies
+          SectorCells = Universe.sectors |> Array.map (fun s -> atlasSectors |> Array.tryFindIndex ((=) s.Id) |> Option.defaultValue 0)
           Vao = vao
           UView = gl.getUniformLocation (program, "uView")
+          UHdr = gl.getUniformLocation (program, "uHdr")
+          USector = gl.getUniformLocation (program, "uSector")
+          USun = gl.getUniformLocation (program, "uSun")
+          USunColor = gl.getUniformLocation (program, "uSunColor")
           ULens = gl.getUniformLocation (program, "uLens") }
 
-    let draw (renderer: Renderer) (sky: SkyBackdrop) (camera: Camera) =
+    let draw (renderer: Renderer) (sky: SkyBackdrop) (camera: Camera) (sector: int) =
         let gl = renderer.Gl
         gl.disable gl.DEPTH_TEST
         gl.depthMask false
         gl.useProgram sky.Program
+        gl.uniform1i (sky.UHdr, if renderer.Post.Hdr then 1.0 else 0.0)
+        let cell = if sector >= 0 && sector < sky.SectorCells.Length then sky.SectorCells.[sector] else 0
+        gl.uniform1i (sky.USector, float cell)
+        gl.uniform3fv (sky.USun, renderer.Lights.SunDirection)
+        gl.uniform3fv (sky.USunColor, renderer.Lights.SunColor)
         gl.uniformMatrix4fv (sky.UView, false, camera.View.Data)
         gl.uniform2f (sky.ULens, 1.0 / float camera.Projection.Data.[0], 1.0 / float camera.Projection.Data.[5])
+        gl.activeTexture gl.TEXTURE1
+        gl.bindTexture (gl.TEXTURE_2D, sky.Bodies)
         gl.activeTexture gl.TEXTURE0
         gl.bindTexture (gl.TEXTURE_2D, sky.Texture)
         gl.bindVertexArray sky.Vao

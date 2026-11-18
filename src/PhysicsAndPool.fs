@@ -34,10 +34,16 @@ type Team =
 /// Ereignisse der Simulation fuer die Spiellogik (Punkte, HUD, Wellen, Sound).
 /// Main leert die Liste nach jedem Frame.
 type GameEvent =
-    | LaserFired of team: Team * position: Vec3
+    | LaserFired of team: Team * position: Vec3 * slot: int
     | AsteroidDestroyed of radius: float * byTeam: Team * position: Vec3
     | ShipHit of victim: Team * damage: float * shieldAbsorbed: bool
-    | ShipDestroyed of victim: Team * position: Vec3
+    | ShipDestroyed of victim: Team * position: Vec3 * slot: int
+    | MineralReleased of position: Vec3 * kind: int * count: int
+    | StackRescue
+    | TurretFired of position: Vec3
+    | CapitalGunFired of position: Vec3
+    | CapitalHit of position: Vec3 * part: int * destroyed: bool
+    | CollisionImpact of position: Vec3 * intensity: float * isPlayer: bool
 
 /// Steuerbefehle eines Schiffs. Der Spieler fuellt sie aus der Eingabe,
 /// die KI aus ihrer Zustandsmaschine - das Flugmodell kennt den Unterschied nicht.
@@ -70,23 +76,24 @@ type Ship =
       Controls: ShipControls
       Team: Team
       // --- Flugeigenschaften ---
-      CruiseSpeed: float
-      BoostSpeed: float
-      MaxPitchRate: float
-      MaxYawRate: float
-      MaxRollRate: float
+      mutable CruiseSpeed: float
+      mutable BoostSpeed: float
+      mutable MaxPitchRate: float
+      mutable MaxYawRate: float
+      mutable MaxRollRate: float
       // --- Kollision ---
       /// Radius der Huellkugel um Position (Broad Phase).
-      Radius: float
+      mutable Radius: float
       /// Mittelpunkt und halbe Kantenlaengen der OBB im Schiffssystem.
-      ObbCenter: Vec3
-      ObbHalf: Vec3
+      mutable ObbCenter: Vec3
+      mutable ObbHalf: Vec3
       // --- Bewaffnung ---
-      GunLeft: Vec3
-      GunRight: Vec3
-      FireInterval: float
+      mutable GunLeft: Vec3
+      mutable GunRight: Vec3
+      mutable FireInterval: float
       /// Schaden pro Bolt (veraenderlich: das Wave-System skaliert die Gegner).
       mutable LaserDamage: float
+      mutable BrakeAssist: float
       mutable FireCooldown: float
       // --- Zustand ---
       mutable MaxHull: float
@@ -95,6 +102,7 @@ type Ship =
       mutable Shield: float
       /// Zeit bis die Schildregeneration wieder einsetzt.
       mutable ShieldDelay: float
+      mutable ShieldRechargeDelay: float
       /// 1 direkt nach einem Treffer, klingt ab (Treffer-Aufblitzen beim Rendern).
       mutable HitFlash: float
       /// > 0 direkt nach einem Schildtreffer (steuert die 3D-Energieschild-Blase).
@@ -132,6 +140,12 @@ module Combat =
 [<RequireQualifiedAccess>]
 module Ship =
 
+    let cutterCruise = 60.0
+    let cutterBoost = 75.0
+    let cutterPitch = 1.12
+    let cutterYaw = 1.08
+    let cutterRoll = 1.65
+
     let private create
         (team: Team)
         (cruise: float)
@@ -162,7 +176,7 @@ module Ship =
             { Pitch = 0.0
               Yaw = 0.0
               Roll = 0.0
-              Throttle = 0.6
+              Throttle = if team = Team.Player then 0.0 else 0.6
               Boost = false
               Brake = false
               Fire = false }
@@ -179,12 +193,14 @@ module Ship =
           GunRight = gunRight
           FireInterval = fireInterval
           LaserDamage = laserDamage
+          BrakeAssist = 1.0
           FireCooldown = 0.0
           MaxHull = hull
           MaxShield = shield
           Hull = hull
           Shield = shield
           ShieldDelay = 0.0
+          ShieldRechargeDelay = Combat.ShieldRegenDelay
           HitFlash = 0.0
           ShieldFlash = 0.0
           Overdrive = 0.0
@@ -194,11 +210,11 @@ module Ship =
     let createPlayer () : Ship =
         create
             Team.Player
-            75.0
-            120.0
-            1.5
-            0.85
-            2.6
+            cutterCruise
+            cutterBoost
+            cutterPitch
+            cutterYaw
+            cutterRoll
             ShipHardpoints.playerRadius
             ShipHardpoints.playerObbCenter
             ShipHardpoints.playerObbHalf
@@ -234,7 +250,7 @@ module Ship =
         ship.Rotation <- rotation
         ship.PrevPosition <- position
         ship.PrevRotation <- rotation
-        ship.Velocity <- Quat.forward rotation * (ship.CruiseSpeed * 0.4)
+        ship.Velocity <- if ship.Team = Team.Player then Vec3.zero else Quat.forward rotation * (ship.CruiseSpeed * 0.4)
         ship.PitchRate <- 0.0
         ship.YawRate <- 0.0
         ship.RollRate <- 0.0
@@ -242,7 +258,7 @@ module Ship =
         ship.Controls.Pitch <- 0.0
         ship.Controls.Yaw <- 0.0
         ship.Controls.Roll <- 0.0
-        ship.Controls.Throttle <- 0.6
+        ship.Controls.Throttle <- if ship.Team = Team.Player then 0.0 else 0.6
         ship.Controls.Boost <- false
         ship.Controls.Brake <- false
         ship.Controls.Fire <- false
@@ -257,7 +273,7 @@ module Ship =
         ship.Alive <- true
 
 // -------------------------------------------------------------------------------------
-//  Flugmodell (fuer Spieler und Gegner identisch)
+//  Gemeinsames Flugmodell mit staerkerer Stabilisierung fuer den Spieler
 // -------------------------------------------------------------------------------------
 
 module Flight =
@@ -277,21 +293,31 @@ module Flight =
     [<Literal>]
     let BoostResponse = 4.0
 
+    /// Gehaltener Schubregler von Leerlauf bis Vollschub in rund 1,8 s.
+    let adjustThrottle current direction dt = max 0.0 (min 1.0 (current + direction * 0.55 * dt))
+
     /// Ein fester Physikschritt.
     let step (ship: Ship) (dt: float) =
         let c = ship.Controls
+        let assisted = ship.Team = Team.Player
         ship.PrevPosition <- ship.Position
         ship.PrevRotation <- ship.Rotation
+
+        if assisted && c.Brake then
+            // Die Bremse parkt den Schubhebel dauerhaft und entfernt gespeicherten Boost.
+            c.Throttle <- 0.0
+            ship.Boost <- 0.0
 
         let boostTarget = if c.Boost && not c.Brake then 1.0 else 0.0
         ship.Boost <- ship.Boost + (boostTarget - ship.Boost) * (1.0 - exp (-BoostResponse * dt))
 
         // Drehung: Die Drehraten laufen dem Steuerbefehl traege nach und werden
         // dann im LOKALEN System per Quaternion integriert (kein Gimbal Lock).
-        let blend = 1.0 - exp (-AngularResponse * dt)
-        ship.PitchRate <- ship.PitchRate + (c.Pitch * ship.MaxPitchRate - ship.PitchRate) * blend
-        ship.YawRate <- ship.YawRate + (c.Yaw * ship.MaxYawRate - ship.YawRate) * blend
-        ship.RollRate <- ship.RollRate + (c.Roll * ship.MaxRollRate - ship.RollRate) * blend
+        let activeBlend = 1.0 - exp (-(if assisted then 7.0 else AngularResponse) * dt)
+        let releaseBlend = if assisted then 1.0 - exp (-11.5 * dt) else activeBlend
+        ship.PitchRate <- ship.PitchRate + (c.Pitch * ship.MaxPitchRate - ship.PitchRate) * (if c.Pitch = 0.0 then releaseBlend else activeBlend)
+        ship.YawRate <- ship.YawRate + (c.Yaw * ship.MaxYawRate - ship.YawRate) * (if c.Yaw = 0.0 then releaseBlend else activeBlend)
+        ship.RollRate <- ship.RollRate + (c.Roll * ship.MaxRollRate - ship.RollRate) * (if c.Roll = 0.0 then releaseBlend else activeBlend)
         ship.Rotation <- Quat.integrateLocal ship.Rotation ship.PitchRate ship.YawRate ship.RollRate dt
 
         // Translation: Schub entlang der Nase, isotrope Daempfung. Der Schub ist so
@@ -304,10 +330,16 @@ module Flight =
             else
                 c.Throttle * ship.CruiseSpeed + ship.Boost * ship.BoostSpeed
 
-        let drag = if c.Brake then BrakeDrag else Drag
+        let drag =
+            if assisted then (if c.Brake then 6.25 * ship.BrakeAssist else 2.5)
+            else (if c.Brake then BrakeDrag else Drag)
         let forward = Quat.forward ship.Rotation
-        let accelerated = Vec3.mulAdd ship.Velocity forward (targetSpeed * drag * dt)
-        ship.Velocity <- accelerated * exp (-drag * dt)
+        let decay = exp (-drag * dt)
+        if assisted then
+            ship.Velocity <- Vec3.mulAdd (ship.Velocity * decay) forward (targetSpeed * (1.0 - decay))
+        else
+            let accelerated = Vec3.mulAdd ship.Velocity forward (targetSpeed * drag * dt)
+            ship.Velocity <- accelerated * decay
         ship.Position <- Vec3.mulAdd ship.Position ship.Velocity dt
 
 // -------------------------------------------------------------------------------------
@@ -318,6 +350,7 @@ module Flight =
 type LaserPool =
     { Data: JS.Float32Array
       Team: JS.Uint8Array
+      Piercing: JS.Uint8Array
       Capacity: int
       mutable Count: int }
 
@@ -330,6 +363,7 @@ module LaserPool =
     let create (capacity: int) : LaserPool =
         { Data = JS.Constructors.Float32Array.Create(capacity * Stride)
           Team = JS.Constructors.Uint8Array.Create capacity
+          Piercing = JS.Constructors.Uint8Array.Create capacity
           Capacity = capacity
           Count = 0 }
 
@@ -368,6 +402,7 @@ module LaserPool =
             d.[o + 10] <- float32 Combat.LaserLife
             d.[o + 11] <- float32 damage
             pool.Team.[pool.Count] <- byte team
+            pool.Piercing.[pool.Count] <- 0uy
             pool.Count <- pool.Count + 1
             true
 
@@ -384,6 +419,7 @@ module LaserPool =
                 d.[dst + k] <- d.[src + k]
 
             pool.Team.[index] <- pool.Team.[last]
+            pool.Piercing.[index] <- pool.Piercing.[last]
 
         pool.Count <- last
 
@@ -496,6 +532,8 @@ type AsteroidField =
     { Data: JS.Float32Array
       /// Mesh-Variante (0..Variants-1).
       Variant: JS.Uint8Array
+      /// Ungeborgenes Erz: 0 = leer, 1 = tuerkis, 2 = bernsteinfarben.
+      Ore: JS.Uint8Array
       Capacity: int
       mutable Count: int }
 
@@ -512,6 +550,7 @@ module AsteroidField =
     let create (capacity: int) : AsteroidField =
         { Data = JS.Constructors.Float32Array.Create(capacity * Stride)
           Variant = JS.Constructors.Uint8Array.Create capacity
+          Ore = JS.Constructors.Uint8Array.Create capacity
           Capacity = capacity
           Count = 0 }
 
@@ -557,6 +596,8 @@ module AsteroidField =
             d.[o + 14] <- float32 b
             d.[o + 15] <- float32 (radius * Combat.AsteroidHpPerRadius)
             field.Variant.[field.Count] <- byte variant
+            // Bruchstuecke und andere nachtraegliche Steine erzeugen kein neues Erz.
+            field.Ore.[field.Count] <- 0uy
             field.Count <- field.Count + 1
             true
 
@@ -572,6 +613,7 @@ module AsteroidField =
                 d.[dst + k] <- d.[src + k]
 
             field.Variant.[index] <- field.Variant.[last]
+            field.Ore.[index] <- field.Ore.[last]
 
         field.Count <- last
 
@@ -585,7 +627,9 @@ module AsteroidField =
 
             // Groesse: viele kleine Brocken, wenige Riesen (Riesen nur im Guertel)
             let radius =
-                if nearField then
+                if i < 3 then
+                    9.0 + float i * 1.5
+                elif nearField then
                     2.0 + 13.0 * Math.Pow(rng.NextFloat(), 2.0)
                 elif rng.NextFloat() < 0.04 then
                     rng.Range(50.0, 90.0)
@@ -593,7 +637,10 @@ module AsteroidField =
                     2.0 + 30.0 * Math.Pow(rng.NextFloat(), 2.5)
 
             let mutable position =
-                if nearField then
+                // Drei gut erreichbare Vorkommen erklaeren Bergbau direkt im Startgebiet.
+                if i < 3 then
+                    Vec3((float i - 1.0) * 34.0, float (i % 2) * 18.0 - 6.0, -130.0 - float i * 45.0)
+                elif nearField then
                     Vec3(0.0, 0.0, -240.0) + rng.UnitVector() * rng.Range(50.0, 300.0)
                 else
                     let angle = rng.Range(0.0, 2.0 * Math.PI)
@@ -611,26 +658,29 @@ module AsteroidField =
             let shade = rng.Range(0.36, 0.62)
             let bluish = rng.NextFloat() < 0.3
 
-            add
-                field
-                position.X
-                position.Y
-                position.Z
-                0.0
-                0.0
-                0.0
-                radius
-                axis.X
-                axis.Y
-                axis.Z
-                // Grosse Brocken drehen sich langsamer
-                (rng.Range(0.05, 0.5) * 6.0 / (4.0 + radius))
-                (rng.Range(0.0, 2.0 * Math.PI))
-                (if bluish then shade * 0.88 else shade)
-                (if bluish then shade * 0.94 else shade * 0.93)
-                (if bluish then shade else shade * 0.84)
-                (i % Variants)
-            |> ignore
+            let added =
+                add
+                    field
+                    position.X
+                    position.Y
+                    position.Z
+                    0.0
+                    0.0
+                    0.0
+                    radius
+                    axis.X
+                    axis.Y
+                    axis.Z
+                    // Grosse Brocken drehen sich langsamer
+                    (rng.Range(0.05, 0.5) * 6.0 / (4.0 + radius))
+                    (rng.Range(0.0, 2.0 * Math.PI))
+                    (if bluish then shade * 0.88 else shade)
+                    (if bluish then shade * 0.94 else shade * 0.93)
+                    (if bluish then shade else shade * 0.84)
+                    (i % Variants)
+
+            if added && (i < 3 || rng.NextFloat() < 0.25) then
+                field.Ore.[field.Count - 1] <- if i % 3 = 1 then 2uy else 1uy
 
     /// Bewegt driftende Asteroiden (Bruchstuecke); die Drift klingt langsam ab.
     let update (field: AsteroidField) (dt: float) =
@@ -739,6 +789,9 @@ module Flashes =
 
 type World =
     { Player: Ship
+      mutable Customs: CapitalFlightState option
+      mutable Pilot: PilotProgress
+      mutable SectorIndex: int
       /// Feste Anzahl Plaetze; unbenutzte haben Alive = false.
       Enemies: Ship[]
       Lasers: LaserPool
@@ -755,6 +808,9 @@ module World =
 
     let create (maxEnemies: int) : World =
         { Player = Ship.createPlayer ()
+          Customs = None
+          Pilot = PilotSkills.create ()
+          SectorIndex = 0
           Enemies = Array.init maxEnemies (fun _ -> Ship.createInterceptor ())
           Lasers = LaserPool.create 512
           Particles = ParticlePool.create 4096
@@ -768,6 +824,7 @@ module World =
     /// der Speicher bleibt), Gegner entfernen, neues Asteroidenfeld erzeugen.
     /// Der Zufallsgenerator laeuft weiter, jedes Spiel bekommt also ein anderes Feld.
     let reset (world: World) (asteroidCount: int) =
+        world.Customs <- None
         world.Lasers.Count <- 0
         world.Particles.Count <- 0
         world.Events.Clear()
@@ -1359,12 +1416,13 @@ module Effects =
 module Damage =
 
     /// Schaden an einem Schiff: erst der Schild, der Rest geht auf die Huelle.
-    let ship (world: World) (target: Ship) (amount: float) =
+    let hitShip (world: World) (target: Ship) (amount: float) (pierces: bool) =
         if target.Alive && amount > 0.0 then
-            let absorbed = Math.Min(target.Shield, amount)
+            let absorbed = Math.Min(target.Shield, if pierces then amount * 0.75 else amount)
+            let shieldWasUp = target.Shield > 0.0
             target.Shield <- target.Shield - absorbed
             target.Hull <- target.Hull - (amount - absorbed)
-            target.ShieldDelay <- Combat.ShieldRegenDelay
+            target.ShieldDelay <- target.ShieldRechargeDelay
             target.HitFlash <- 1.0
 
             if absorbed > 0.0 then
@@ -1372,7 +1430,18 @@ module Damage =
 
             world.Events.Add(ShipHit(target.Team, amount, absorbed > 0.0))
 
-            if target.Hull <= 0.0 then
+            let player = target.Team = Team.Player
+            let sleeve = if player then PilotSkills.level world.Pilot 2 else 0
+            if sleeve >= 2 && shieldWasUp && target.Shield <= 0.0 && world.Pilot.BypassCooldown <= 0.0 && target.Hull > 0.0 then
+                target.Overdrive <- max target.Overdrive 4.0
+                world.Pilot.BypassCooldown <- 25.0
+            if target.Hull <= 0.0 && sleeve = 3 && not (PilotSkills.contains world.Pilot.Rescues world.SectorIndex) then
+                world.Pilot.Rescues <- world.Pilot.Rescues ||| (1 <<< world.SectorIndex)
+                target.Hull <- target.MaxHull * 0.30
+                target.Shield <- target.MaxShield
+                target.Overdrive <- max target.Overdrive 3.0
+                world.Events.Add StackRescue
+            elif target.Hull <= 0.0 then
                 target.Hull <- 0.0
                 target.Alive <- false
                 target.ShieldFlash <- 0.0
@@ -1382,9 +1451,12 @@ module Damage =
                 let p = target.Position
                 let v = target.Velocity
                 Effects.shipExplosion world p.X p.Y p.Z (v.X * 0.5) (v.Y * 0.5) (v.Z * 0.5) (if target.Team = Team.Player then target.Radius * 0.8 else target.Radius)
-                world.Events.Add(ShipDestroyed(target.Team, p))
+                let slot = if player then -1 else world.Enemies |> Array.tryFindIndex (fun ship -> obj.ReferenceEquals(ship, target)) |> Option.defaultValue -1
+                world.Events.Add(ShipDestroyed(target.Team, p, slot))
                 // Das Wrack steht still (sonst zoege der Raumstaub weiter Streifen)
                 target.Velocity <- Vec3.zero
+
+    let ship world target amount = hitShip world target amount false
 
     /// Schaden an Asteroid `index`. Bei 0 Lebenspunkten zerplatzt er; grosse
     /// Brocken zerfallen dabei in 2-3 Bruchstuecke, die aus dem Pool kommen.
@@ -1458,12 +1530,77 @@ module Damage =
 // -------------------------------------------------------------------------------------
 
 [<RequireQualifiedAccess>]
+module CapitalCombat =
+    /// -1 = armour, 0/1 = exposed gun, 2 = friendly bomber.
+    let trace state friendly (start: Vec3) (finish: Vec3) =
+        let mutable nearest, part = 2.0, -1
+        let check t id =
+            if t >= 0.0 && t < nearest then
+                nearest <- t
+                part <- id
+        let sphere (p: Vec3) radius id =
+            check (Collision.segmentSphere start.X start.Y start.Z finish.X finish.Y finish.Z p.X p.Y p.Z radius) id
+        if friendly then
+            let a, b = start - CapitalFlight.position, finish - CapitalFlight.position
+            if Collision.segmentSphere a.X a.Y a.Z b.X b.Y b.Z 0.0 0.0 0.0 CapitalFlight.reach >= 0.0 then
+                for center,half in CapitalFlight.plates do
+                    let s,e = a-center,b-center
+                    check (Collision.segmentBox s.X s.Y s.Z e.X e.Y e.Z half.X half.Y half.Z) -1
+                for i in 0..1 do
+                    if state.Guns.[i] > 0.0 then sphere (CapitalFlight.position + CapitalFlight.gunOffsets.[i]) CapitalFlight.gunRadius i
+        elif state.Role = CapitalFlight.Escort then sphere (CapitalFlight.allyPosition state) 5.8 2
+        struct (nearest,part)
+
+    let hit world state part amount (point: Vec3) =
+        Effects.sparks world point.X point.Y point.Z 8 1.2 0.74 0.34
+        let mutable destroyed = false
+        if part = 2 then state.WingHull <- max 0.0 (state.WingHull - amount)
+        elif part >= 0 then
+            let prev = state.Guns.[part]
+            state.Guns.[part] <- max 0.0 (prev - amount)
+            if prev > 0.0 && state.Guns.[part] = 0.0 then
+                destroyed <- true
+                Effects.shipExplosion world point.X point.Y point.Z 0.0 0.0 0.0 4.0
+        world.Events.Add(CapitalHit(point, part, destroyed))
+
+    let defend (world: World) state dt =
+        state.Volley <- max 0.0 (state.Volley - dt)
+        if state.Volley <= 0.0 && Array.exists (fun hp -> hp > 0.0) state.Guns then
+            let i = if state.Guns.[state.NextGun] > 0.0 then state.NextGun else 1-state.NextGun
+            let gun = CapitalFlight.position + CapitalFlight.gunOffsets.[i]
+            let target = if state.Role = CapitalFlight.Escort then CapitalFlight.allyPosition state else world.Player.Position
+            if Vec3.distance gun target < 470.0 then
+                let direction = Vec3.normalize (target - gun)
+                let q = Quat.lookRotation direction Vec3.unitY
+                let p = gun + direction * CapitalFlight.muzzleReach
+                let v = direction * 385.0
+                if LaserPool.spawn world.Lasers p.X p.Y p.Z v.X v.Y v.Z q.X q.Y q.Z q.W 4.0 Team.Enemy then
+                    world.Events.Add(CapitalGunFired p)
+                state.NextGun <- 1-i
+                state.Volley <- if state.Guns.[1-i] > 0.0 then 2.6 else 4.2
+
+    let separate (ship: Ship) =
+        let offset = ship.Position - CapitalFlight.position
+        let reach = CapitalFlight.reach + ship.Radius
+        if Vec3.lengthSq offset < reach * reach then
+            for center,half in CapitalFlight.plates do
+                let local = ship.Position - CapitalFlight.position - center
+                let x,y,z = half.X + ship.Radius - abs local.X, half.Y + ship.Radius - abs local.Y, half.Z + ship.Radius - abs local.Z
+                if min x (min y z) > 0.0 then
+                    let side v = if v < 0.0 then -1.0 else 1.0
+                    let depth,normal =
+                        if x <= y && x <= z then x, Vec3(side local.X,0.0,0.0)
+                        elif y <= z then y, Vec3(0.0,side local.Y,0.0)
+                        else z, Vec3(0.0,0.0,side local.Z)
+                    ship.Position <- ship.Position + normal * depth
+                    ship.Velocity <- ship.Velocity - normal * min 0.0 (Vec3.dot ship.Velocity normal)
+
 module Physics =
 
     let private normal = JS.Constructors.Float32Array.Create 3
 
     /// Feuert aus beiden Kanonen je einen Bolt (aus dem Pool).
-    let private fire (world: World) (ship: Ship) =
+    let private fire (world: World) (ship: Ship) slot =
         let q = ship.Rotation
         let forward = Quat.forward q
         let vx = forward.X * Combat.LaserSpeed + ship.Velocity.X
@@ -1473,16 +1610,12 @@ module Physics =
         let right = ship.Position + Quat.rotateVec3 q ship.GunRight
         let dmg = if ship.Overdrive > 0.0 then ship.LaserDamage * 1.3 else ship.LaserDamage
 
-        LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-        |> ignore
-
-        LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-        |> ignore
-
-        world.Events.Add(LaserFired(ship.Team, ship.Position))
+        let leftFired = LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
+        let rightFired = LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
+        if leftFired || rightFired then world.Events.Add(LaserFired(ship.Team, ship.Position, slot))
 
     /// Flugmodell, Bewaffnung und Schildregeneration eines Schiffs.
-    let private stepShip (world: World) (ship: Ship) (dt: float) =
+    let private stepShip (world: World) (ship: Ship) slot (dt: float) =
         if ship.Alive then
             Flight.step ship dt
 
@@ -1492,7 +1625,7 @@ module Physics =
             ship.FireCooldown <- ship.FireCooldown - dt
 
             if ship.Controls.Fire && ship.FireCooldown <= 0.0 then
-                fire world ship
+                fire world ship slot
                 let interval = if ship.Overdrive > 0.0 then ship.FireInterval * 0.62 else ship.FireInterval
                 ship.FireCooldown <- interval
             elif ship.FireCooldown < 0.0 then
@@ -1500,7 +1633,7 @@ module Physics =
 
             if ship.ShieldDelay > 0.0 then
                 ship.ShieldDelay <- ship.ShieldDelay - dt
-            elif ship.Shield < ship.MaxShield then
+            elif ship.Shield < ship.MaxShield && (ship.Team = Team.Player || world.Pilot.PulseTime <= 0.0) then
                 ship.Shield <- Math.Min(ship.MaxShield, ship.Shield + Combat.ShieldRegenRate * dt)
 
             // Partikelspuren bei kritischer Huelle (Funken/Feuer) oder aktivem Boost
@@ -1609,13 +1742,48 @@ module Physics =
                     hitAsteroid <- -1
                     hitShip <- -1
 
+            let mutable capitalPart = -2
+            match world.Customs with
+            | Some state ->
+                let struct (t, part) = CapitalCombat.trace state (team = int Team.Player) (Vec3(x0,y0,z0)) (Vec3(x1,y1,z1))
+                if t < hitT then
+                    hitT <- t
+                    capitalPart <- part
+            | None -> ()
+
             if hitT <= 1.0 then
                 let hx = x0 + (x1 - x0) * hitT
                 let hy = y0 + (y1 - y0) * hitT
                 let hz = z0 + (z1 - z0) * hitT
 
-                if hitAsteroid >= 0 then
+                if capitalPart <> -2 then
+                    CapitalCombat.hit world world.Customs.Value capitalPart damage (Vec3(hx,hy,hz))
+                elif hitAsteroid >= 0 then
                     Effects.sparks world hx hy hz 5 1.2 0.8 0.4
+                    let ore = int field.Ore.[hitAsteroid]
+                    if team = int Team.Player && ore > 0 then
+                        // Vor Schaden/Swap entfernen: auch zwei gleichzeitige Bolts bergen
+                        // dieses Vorkommen nur einmal. Gegnerfeuer verbraucht das Erz nicht.
+                        field.Ore.[hitAsteroid] <- 0uy
+                        let ao = hitAsteroid * AsteroidField.Stride
+                        let center = Vec3(float a.[ao], float a.[ao + 1], float a.[ao + 2])
+                        let radius = float a.[ao + 6]
+                        let hit = Vec3(hx, hy, hz)
+                        let fromCenter = hit - center
+                        let toPlayer = world.Player.Position - hit
+                        let direction =
+                            if Vec3.lengthSq toPlayer > 1e-6 then Vec3.normalize toPlayer
+                            elif Vec3.lengthSq fromCenter > 1e-6 then Vec3.normalize fromCenter
+                            else Vec3.unitY
+                        // Vom echten Einschlag Richtung Spieler bis ausserhalb der
+                        // erweiterten Oberflaeche: Kristalle bleiben auch am Rand erreichbar.
+                        let reach = radius + 6.0
+                        let projection = Vec3.dot fromCenter direction
+                        let offset =
+                            -projection + sqrt (max 0.0 (projection * projection + reach * reach - Vec3.lengthSq fromCenter))
+                        let position = Vec3.mulAdd hit direction (max 0.0 offset)
+                        let count = max 2 (min 5 (int (radius / 4.0) + 1))
+                        world.Events.Add(MineralReleased(position, ore, count))
                     Damage.asteroid world hitAsteroid damage (enum<Team> team)
                 else
                     let target = if hitShip = -1 then world.Player else enemies.[hitShip]
@@ -1627,7 +1795,7 @@ module Physics =
                         Effects.sparks world hx hy hz 9 1.5 0.8 0.3
 
                     Effects.flash world hx hy hz 14.0 1.0 0.7 0.4 1.6
-                    Damage.ship world target damage
+                    Damage.hitShip world target damage (pool.Piercing.[i] <> 0uy)
 
                 LaserPool.kill pool i
             // i bleibt stehen: auf dem Platz liegt jetzt ein anderer Bolt
@@ -1693,6 +1861,7 @@ module Physics =
                             let impact = -vn
 
                             if impact > 6.0 then
+                                world.Events.Add(CollisionImpact(ship.Position, impact, ship.Team = Team.Player))
                                 Damage.ship world ship ((impact - 6.0) * 0.9)
                                 // Wer schnell genug rammt, zertruemmert kleine Brocken
                                 Damage.asteroid world k (impact * 0.5) ship.Team
@@ -1737,6 +1906,7 @@ module Physics =
                         let my = (a.Position.Y + b.Position.Y) * 0.5
                         let mz = (a.Position.Z + b.Position.Z) * 0.5
                         Effects.sparks world mx my mz 14 1.5 0.9 0.4
+                        world.Events.Add(CollisionImpact(Vec3(mx, my, mz), impact, a.Team = Team.Player || b.Team = Team.Player))
                         Damage.ship world a ((impact - 5.0) * 0.8)
                         Damage.ship world b ((impact - 5.0) * 0.8)
 
@@ -1744,17 +1914,23 @@ module Physics =
     /// vorher gesetzt sein (Spieler: Eingabe, Gegner: AI.update).
     let step (world: World) (dt: float) =
         world.Time <- world.Time + dt
+        PilotSkills.tick world.Pilot dt
         let enemies = world.Enemies
 
-        stepShip world world.Player dt
+        stepShip world world.Player -1 dt
 
         for i in 0 .. enemies.Length - 1 do
-            stepShip world enemies.[i] dt
+            stepShip world enemies.[i] i dt
 
         updateLasers world dt
         AsteroidField.update world.Asteroids dt
 
         collideShipAsteroids world world.Player
+        match world.Customs with
+        | Some state ->
+            CapitalCombat.separate world.Player
+            if state.Role <> 0 then CapitalCombat.defend world state dt
+        | None -> ()
 
         for i in 0 .. enemies.Length - 1 do
             collideShipAsteroids world enemies.[i]

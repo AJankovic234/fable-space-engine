@@ -29,6 +29,8 @@ type Camera =
       // --- Abstimmung ---
       /// Kameraposition relativ zum Schiff im Chase-Modus (lokal: hinten oben).
       mutable ChaseOffset: Vec3
+      /// Faktor auf den Verfolgerabstand (Bild auf/ab): 1 = Standard.
+      mutable Zoom: float
       /// Kameraposition relativ zum Schiff im Cockpit-Modus.
       mutable CockpitOffset: Vec3
       /// Wie schnell die Kamera der Schiffsdrehung folgt (1/s; kleiner = traeger).
@@ -46,6 +48,10 @@ type Camera =
 [<RequireQualifiedAccess>]
 module Camera =
 
+    // Look down across the cargo deck while keeping the thrusters above the radar.
+    let private chaseTilt = Quat.fromAxisAngle Vec3.unitX -0.12
+    let private inverseChaseTilt = Quat.conjugate chaseTilt
+
     let create () : Camera =
         let degrees = System.Math.PI / 180.0
 
@@ -56,7 +62,8 @@ module Camera =
           Fov = 60.0 * degrees
           View = Mat4.create ()
           Projection = Mat4.create ()
-          ChaseOffset = Vec3(0.0, 2.1, 9.5)
+          ChaseOffset = Vec3(0.0, 3.5, 10.0)
+          Zoom = 1.0
           CockpitOffset = Vec3(0.0, 0.52, -0.55)
           RotationStiffness = 7.0
           PositionStiffness = 10.0
@@ -78,10 +85,10 @@ module Camera =
     let snap (camera: Camera) (targetPosition: Vec3) (targetRotation: Quat) =
         let local =
             match camera.Mode with
-            | Chase -> camera.ChaseOffset
+            | Chase -> camera.ChaseOffset * camera.Zoom
             | Cockpit -> camera.CockpitOffset
 
-        camera.Rotation <- targetRotation
+        camera.Rotation <- if camera.Mode = Chase then targetRotation * chaseTilt else targetRotation
         camera.Offset <- Quat.rotateVec3 targetRotation local
         camera.Position <- targetPosition + camera.Offset
         camera.Fov <- camera.BaseFov
@@ -95,10 +102,10 @@ module Camera =
         match camera.Mode with
         | Chase ->
             camera.Rotation <-
-                Quat.slerp camera.Rotation targetRotation (1.0 - exp (-camera.RotationStiffness * dt))
+                Quat.slerp camera.Rotation (targetRotation * chaseTilt) (1.0 - exp (-camera.RotationStiffness * dt))
 
-            let pullback = 1.0 + camera.BoostPullback * boost
-            let desired = Quat.rotateVec3 camera.Rotation (camera.ChaseOffset * pullback)
+            let pullback = (1.0 + camera.BoostPullback * boost) * camera.Zoom
+            let desired = Quat.rotateVec3 (camera.Rotation * inverseChaseTilt) (camera.ChaseOffset * pullback)
             camera.Offset <- Vec3.lerp camera.Offset desired (1.0 - exp (-camera.PositionStiffness * dt))
             camera.Position <- targetPosition + camera.Offset
         | Cockpit ->

@@ -3,10 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fable Space Engine</title>
-    <meta name="description" content="Ein Schiff. Ein Asteroidenfeld. Kein sicherer Kurs. Ein 3D-Weltraumspiel mit Fable und WebGL2." />
+    <title>Space 2601AE</title>
+    <meta name="description" content="Berge Erz, handle zwischen sechs Raumstationen und baue dein Schiff aus. Wähle bezahlten Geleitschutz oder riskiere einen Eigenflug durch Piratengebiete." />
     <!-- Leeres Favicon: verhindert die 404-Anfrage nach /favicon.ico -->
     <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/hangar.css" />
     <style>
       html,
       body {
@@ -62,11 +63,237 @@
   </head>
   <body>
     <div id="stage">
-      <canvas id="gl-canvas" aria-label="Fable Space – 3D-Weltraumspiel. Enter startet den Flug; W/S steuern die Nase, A/D rollen, Q/E gieren, Pfeiltasten regeln den Schub, Leertaste feuert, Shift aktiviert Boost, X bremst, T wechselt das Ziel, C wechselt die Kamera, M schaltet den Ton und P pausiert."></canvas>
+      <canvas id="gl-canvas" aria-label="Fable Space. Enter startet den Handelsflug mit 200 Credits. F2 im Menü startet die Kampfmission. W/S steuern die Nase, A/D drehen links/rechts, Q/E rollen, Pfeiltasten regeln Schub, Leertaste feuert, Shift boostet, X stoppt und setzt Schub zurück, T wechselt Ziel, C Kamera, M Ton, P Pause. Mit B an nahen Stationen andocken. G scannt in einem Radius von 350 Metern um das Schiff nach Archiven, mit RT-9-Demodulator bis 700 Meter. Ein gelernter Störimpuls wird mit V aktiviert. Im Bereich Routen eine Nachbarstation wählen und mit Geleitschutz oder auf eigene Gefahr fliegen. Jeder Abschuss bringt 100 Credits. Asteroiden verraten ihren Inhalt erst beim Treffer."></canvas>
       <canvas id="hud-canvas" aria-hidden="true"></canvas>
+      <section id="flight-school" hidden aria-labelledby="school-title">
+        <header><span>KESTREL · FLUGSCHULE <b id="school-progress"></b></span>
+          <button id="school-skip" type="button">Überspringen <kbd>K</kbd></button></header>
+        <div aria-live="polite" aria-atomic="true"><h2 id="school-title"></h2><p id="school-instruction"></p></div>
+      </section>
+      <aside id="recovery-instrument" aria-labelledby="recovery-title" aria-live="polite" aria-atomic="true" hidden>
+        <strong id="recovery-title"></strong>
+        <span id="recovery-instruction"></span>
+        <span id="recovery-trace"></span>
+        <div class="recovery-meter" aria-hidden="true"><i></i></div>
+      </aside>
     </div>
     <div id="error" hidden></div>
+    <main id="flight-menu" hidden aria-labelledby="flight-title">
+      <div class="menu-art" aria-hidden="true"></div>
+      <div class="menu-console">
+        <h1 id="flight-title"><span>Space</span>2601<span class="menu-era">AE</span></h1>
+        <div id="menu-brief">
+          <p class="menu-location">Bergbau-Depot Kestrel</p>
+          <p>»Deine Kennung ist abgelaufen, ich weiß. Komm rein. Wenn der Turm nachfragt, gib ihm meinen Kanal.« – Voss</p>
+        </div>
+        <p id="menu-record">200 CR Startguthaben · 16 t Frachtraum</p>
+        <details id="menu-pilot">
+          <summary>
+            <img id="pilot-badge-img" src="/assets/emblems/emblem-kestrel.svg" alt="Piloten-Emblem" />
+            <div><strong id="pilot-badge-call">KESTREL-04</strong><span id="pilot-badge-meta">SIN: ABGELAUFEN · ROST-SLEEVE</span></div>
+            <span class="pilot-edit">IDENTITÄT ▾</span>
+          </summary>
+          <div class="pilot-editor">
+            <p class="pilot-label">VORSCHLÄGE</p>
+            <div id="pilot-presets" class="pilot-presets"></div>
+            <div class="pilot-fields">
+              <label>RUFZEICHEN <input id="pilot-callsign" type="text" maxlength="14" value="KESTREL-04" /></label>
+              <label>HERKUNFT <select id="pilot-origin"><option value="miner">Gürtel-Schürfer</option><option value="smuggler">Drift-Schmuggler</option><option value="analyst">Abtrünniger Analyst</option></select></label>
+            </div>
+            <p id="pilot-origin-hint" class="pilot-hint"></p>
+            <p class="pilot-label">EMBLEM &amp; TRANSPONDER-FARBE</p>
+            <div class="pilot-visuals">
+              <div id="pilot-emblems" class="pilot-emblems"></div>
+              <div id="pilot-colors" class="pilot-colors"></div>
+            </div>
+          </div>
+        </details>
+        <button id="menu-launch" class="menu-launch" type="button"><span id="menu-launch-label">Handelsflug starten</span><kbd>Enter ↵</kbd></button>
+        <div class="menu-actions">
+          <button id="menu-combat" type="button">Kampfmission <kbd>F2</kbd></button>
+          <button id="menu-saves" type="button">Spielstände <kbd>F8</kbd></button>
+        </div>
+        <label id="menu-mouse" for="menu-sensitivity">Mausempfindlichkeit
+          <input id="menu-sensitivity" type="range" min="25" max="250" step="25" value="100" />
+          <output id="menu-sensitivity-value" for="menu-sensitivity">100 %</output>
+        </label>
+        <details id="menu-audio">
+          <summary>Ton &amp; Mixer</summary>
+          <div class="audio-mixer">
+            <label for="audio-master">Gesamtlautstärke <input id="audio-master" type="range" min="0" max="100" step="5" value="100" /><output id="audio-master-value" for="audio-master">100 %</output></label>
+            <label for="audio-sfx">Effekte &amp; Waffen <input id="audio-sfx" type="range" min="0" max="100" step="5" value="100" /><output id="audio-sfx-value" for="audio-sfx">100 %</output></label>
+            <label for="audio-radio">Funk &amp; Stimmen <input id="audio-radio" type="range" min="0" max="100" step="5" value="100" /><output id="audio-radio-value" for="audio-radio">100 %</output></label>
+            <label for="audio-ambience">Triebwerk &amp; Raum <input id="audio-ambience" type="range" min="0" max="100" step="5" value="100" /><output id="audio-ambience-value" for="audio-ambience">100 %</output></label>
+            <div class="audio-actions"><button id="audio-test" type="button">Tonprobe</button></div>
+          </div>
+        </details>
+        <details id="menu-controls">
+          <summary>Flugsteuerung</summary>
+          <dl>
+            <dt>↑ / R · Mausrad</dt><dd>Beschleunigen. Der eingestellte Schub bleibt stehen.</dd>
+            <dt>↓ / F · X</dt><dd>Schub senken · mit X bis zum Stillstand bremsen</dd>
+            <dt>→ · ← · L</dt><dd>Vollschub · Nullschub · Tempo ans erfasste Ziel angleichen</dd>
+            <dt>W / S · A / D · Q / E</dt><dd>Nase senken/heben · drehen · rollen</dd>
+            <dt>Shift · Leertaste</dt><dd>Boost, solange der Vorrat reicht · feuern</dd>
+            <dt>Maus im Cockpit</dt><dd>Klicken zum Steuern, links feuern, rechts Ziel wechseln. Esc gibt die Maus frei und pausiert.</dd>
+            <dt>U</dt><dd>Mausmodus: Wischen (Stick federt zurück) oder Halten (Stick bleibt stehen)</dd>
+            <dt>H · Mitteltaste</dt><dd>Heckblick, solange gehalten · mit gehaltener mittlerer Maustaste frei umsehen</dd>
+            <dt>Bild ↑ / ↓</dt><dd>Verfolgerkamera näher · weiter</dd>
+            <dt>F1 · F3 · F4</dt><dd>Tastenübersicht im Flug · Bildraten-Anzeige · Sonnenschatten an/aus</dd>
+            <dt>B · G</dt><dd>Andocken · Archivscan auslösen (350 m, mit RT-9 bis 700 m)</dd>
+            <dt>J · B</dt><dd>Im Bombereinsatz Torpedo abfeuern · nach Helios zurückkehren</dd>
+            <dt>T / Tab · V</dt><dd>Ziel wechseln · gelernten Störimpuls senden</dd>
+            <dt>C · M · P</dt><dd>Kamera · Ton · Pause mit Einstellung für die Mausempfindlichkeit</dd>
+          </dl>
+        </details>
+        <p id="menu-notice" role="status"></p>
+      </div>
+    </main>
+    <button id="open-saves" type="button">F8 · SPIELSTÄNDE</button>
+    <section id="save-panel" hidden role="dialog" aria-modal="true" aria-labelledby="save-title">
+      <div class="save-shell">
+        <header class="save-header"><div><h1 id="save-title">Spielstände</h1><p>Im All bleibt der Flug nach dem Laden pausiert. Hast du am Dock gespeichert, öffnet sich wieder der Hangar.</p></div><button id="save-close" type="button">ZURÜCK</button></header>
+        <p id="save-notice" role="status" aria-live="polite"></p>
+        <div id="save-cards" class="save-grid"></div>
+        <div class="save-transfer"><div><h2>Unabhängige Sicherung</h2><p>Spielstände liegen in diesem Browser. Exportiere eine JSON-Datei für ein Backup oder einen anderen Rechner.</p></div><button id="save-export-current" type="button">AKTUELLEN FLUG EXPORTIEREN</button><label for="save-import-slot">Import nach <select id="save-import-slot"><option value="slot1">Speicherplatz 1</option><option value="slot2">Speicherplatz 2</option><option value="slot3">Speicherplatz 3</option></select></label><button id="save-import" type="button">DATEI IMPORTIEREN</button><input id="save-file" type="file" accept=".json,application/json" hidden /></div>
+        <details id="save-audio">
+          <summary>Ton &amp; Mixer</summary>
+          <div class="audio-mixer">
+            <label for="save-audio-master">Gesamtlautstärke <input id="save-audio-master" type="range" min="0" max="100" step="5" value="100" /><output id="save-audio-master-value" for="save-audio-master">100 %</output></label>
+            <label for="save-audio-sfx">Effekte &amp; Waffen <input id="save-audio-sfx" type="range" min="0" max="100" step="5" value="100" /><output id="save-audio-sfx-value" for="save-audio-sfx">100 %</output></label>
+            <label for="save-audio-radio">Funk &amp; Stimmen <input id="save-audio-radio" type="range" min="0" max="100" step="5" value="100" /><output id="save-audio-radio-value" for="save-audio-radio">100 %</output></label>
+            <label for="save-audio-ambience">Triebwerk &amp; Raum <input id="save-audio-ambience" type="range" min="0" max="100" step="5" value="100" /><output id="save-audio-ambience-value" for="save-audio-ambience">100 %</output></label>
+            <div class="audio-actions"><button id="save-audio-test" type="button">Tonprobe</button></div>
+          </div>
+        </details>
+        <footer class="save-footer"><span>Autosave alle 20 Sekunden und nach wichtigen Aktionen. Manuelle Slots bleiben erhalten.</span><button id="save-new-trade" type="button">NEUER HANDELSFLUG</button><button id="save-new-combat" type="button">NEUE KAMPFMISSION</button></footer>
+        <div id="save-confirm" hidden role="alertdialog" aria-modal="true" aria-labelledby="save-confirm-text"><div><p id="save-confirm-text"></p><button id="save-confirm-no" type="button">ABBRECHEN</button><button id="save-confirm-yes" type="button">BESTÄTIGEN</button></div></div>
+      </div>
+    </section>
+    <section id="hangar" hidden aria-label="Handelsstation und Ausrüstung">
+      <div class="hangar-shell">
+        <header class="hangar-header">
+          <div class="port-title"><p class="eyebrow">HANDELSSTATION</p><h1 id="shop-heading">Stationsmarkt</h1></div>
+          <div class="wallet"><span>GUTHABEN</span><strong id="shop-credits">0 CR</strong></div>
+        </header>
+        <section id="dock-contact" hidden aria-labelledby="contact-name">
+          <div class="contact-portrait" aria-hidden="true"></div>
+          <div class="contact-copy">
+            <p id="contact-channel"></p>
+            <h2 id="contact-name"></h2>
+            <div class="contact-lines">
+              <p id="contact-message" aria-hidden="true"></p>
+              <p id="contact-transcript"></p>
+            </div>
+          </div>
+          <div class="contact-controls">
+            <span id="contact-status" role="status"></span>
+            <button id="contact-action" type="button"></button>
+            <button id="contact-home" type="button" hidden>Zum Stationsfunk</button>
+          </div>
+        </section>
+        <section id="dock-letter" hidden aria-label="Aufzeichnungen am Dock">
+          <div id="letter-text"></div>
+        </section>
+        <nav class="station-tabs" aria-label="Stationsbereiche"><button id="tab-market" type="button" aria-pressed="true" aria-controls="market-panel">HANDELSMARKT</button><button id="tab-routes" type="button" aria-pressed="false" aria-controls="routes-panel">ROUTEN &amp; KURSE</button><button id="tab-ships" type="button" aria-pressed="false" aria-controls="ships-panel" hidden>SCHIFFE</button><button id="tab-blockade" type="button" aria-pressed="false" aria-controls="blockade-panel" hidden>WERFT &amp; AUFTRÄGE</button><button id="tab-equipment" type="button" aria-pressed="false" aria-controls="equipment-panel">AUSRÜSTUNG <span>1–4</span></button><button id="tab-skills" type="button" aria-pressed="false" aria-controls="skills-panel">PILOTEN-STACK <span id="skills-balance"></span></button></nav>
+        <section id="ships-panel" hidden aria-labelledby="hangar-hulls-heading">
+          <h2 id="hangar-hulls-heading">Schiffshangar</h2>
+          <p class="yard-caption">Ladung und Module ziehen mit um. Gekaufte Schiffe kannst du an Ausrüstungshäfen kostenlos wechseln.</p>
+          <div id="hull-cards"></div>
+          <h3 id="kit-heading">Spezialausrüstung</h3>
+          <p class="yard-caption">Ein Einbauplatz pro Schiff. Gekaufte Kits stehen deiner ganzen Flotte zur Verfügung.</p>
+          <div id="ship-kits"></div>
+        </section>
+        <section id="blockade-panel" hidden aria-label="Werft und Aufträge">
+          <article class="convoy-dispatch">
+            <p class="eyebrow" id="convoy-sender"></p>
+            <h2 id="convoy-title"></h2>
+            <p id="convoy-message"></p>
+            <p id="convoy-objective" role="status"></p>
+            <div class="convoy-actions">
+              <button type="button" id="convoy-clearance" hidden></button>
+              <button type="button" id="convoy-filters" hidden></button>
+              <button type="button" id="convoy-bomber" hidden>Bomber übernehmen</button>
+              <button type="button" id="convoy-escort" hidden>Bomber im eigenen Kutter begleiten</button>
+            </div>
+          </article>
+          <section class="convoy-yard" aria-labelledby="yard-heading">
+            <h2 id="yard-heading">Werftbuch Kepler-07</h2>
+            <p id="yard-status" role="status"></p>
+            <p id="yard-fleet"></p>
+            <div id="yard-blueprints"></div>
+          </section>
+        </section>
+        <section id="skills-panel" hidden aria-label="Piloten-Stack">
+          <header><h2 id="skill-points"></h2><p>Du startest mit einem Punkt. Jeder neu besuchte Sektor und jeder geborgene Fund bringt einen weiteren. Am Dock lernst du die Stufen eines Zweigs der Reihe nach.</p></header>
+          <div id="skill-branches"></div>
+          <details class="skill-archive"><summary id="archive-count">Fundarchiv</summary><div id="archive-entries"></div></details>
+        </section>
+        <div id="market-panel">
+          <button id="school-replay" type="button" hidden>Übungsflug ab Kestrel starten</button>
+          <button type="button" id="convoy-market-news" hidden></button>
+          <div class="cargo-summary"><div><p class="eyebrow">DEIN FRACHTRAUM</p><strong id="cargo-status">0 / 16 t</strong><progress id="cargo-meter" max="16" value="0" aria-label="Frachtraumbelegung"></progress></div><button id="cargo-upgrade" type="button">+8 t FRACHTRAUM · 110 CR</button><button id="sell-all" type="button">FRACHT VERKAUFEN</button></div>
+          <div class="market-scroll"><table class="market-table"><caption>Preise pro Einheit · Bestände verändern den Preis · Restfracht bleibt bei vollem Stationslager an Bord.</caption><thead><tr><th scope="col">WARE</th><th scope="col">STATION</th><th scope="col">AN BORD</th><th scope="col">KAUFEN <small>Du zahlst</small></th><th scope="col">VERKAUFEN <small>Du erhältst</small></th></tr></thead><tbody id="market-rows"></tbody></table></div>
+          <p id="route-hint" class="route-hint"></p>
+          <section id="freight-board" aria-labelledby="freight-heading" hidden>
+            <div class="freight-art"><img src="/assets/sealed-freight.webp" loading="lazy" alt="Transportkiste mit Frachtplombe"></div>
+            <div class="freight-desk">
+              <h2 id="freight-heading">Frachtbörse</h2><h3 id="freight-goods"></h3>
+              <div id="freight-offers">
+                <label for="freight-destination">Lieferhafen</label>
+                <select id="freight-destination"></select>
+                <p>Die Station stellt die Ladung. Geleitschutz zahlst du selbst.</p>
+                <div class="freight-buttons"><button id="freight-accept-8" type="button"></button><button id="freight-accept-24" type="button"></button></div>
+              </div>
+              <div id="freight-active" hidden>
+                <p id="freight-manifest"></p><p id="freight-instruction"></p>
+                <div class="freight-buttons"><button id="freight-deliver" type="button">Abliefern &amp; Honorar erhalten</button><button id="freight-route" type="button">Route anzeigen</button><button id="freight-return" type="button">Unbezahlt zurückgeben</button></div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div id="routes-panel" hidden>
+          <h2 class="routes-heading">Routen ab dieser Station</h2>
+          <p id="route-summary" class="route-hint"></p>
+          <div id="route-cards" class="route-grid"></div>
+          <p class="route-help">Geleitschutz hält Piraten auf dieser Überfahrt fern. Im Eigenflug kannst du noch andocken, solange die Patrouille der Station fernbleibt. Hüllenschäden bleiben beim Sprung erhalten.</p>
+        </div>
+        <div id="equipment-panel" class="equipment-grid" hidden>
+          <article class="equipment flagship">
+            <div class="card-top"><span class="pill">AUTONOME BEWAFFNUNG</span><kbd>1</kbd></div>
+            <div class="turret-art"><img src="/assets/auto-turret.png" alt="Drehbarer automatischer Laserturm mit zwei Rohren und türkisfarbenem Zielsensor" /><span class="art-caption">SENTINEL / AT-01</span></div>
+            <div class="equipment-copy"><h2>Auto-Turret</h2><p>Der Turm verfolgt den nächsten Gegner in Sichtweite. Verdeckt ein Asteroid die Schussbahn, hält er das Feuer.</p><div class="specs"><span><b>280 m</b> Reichweite</span><span><b>10</b> Schaden je Treffer</span><span><b>2</b> Rohre im Wechsel</span></div></div>
+            <button id="buy-0" class="buy-button" type="button" aria-label="Auto-Turret kaufen"><span>INSTALLIEREN</span><strong id="price-0">350 CR</strong><span aria-hidden="true">↗</span></button>
+          </article>
+          <div class="module-stack">
+            <article class="equipment module">
+              <img id="module-art-1" src="/assets/upgrades/laser-1.webp" width="420" height="300" alt="Laserverstärker, Stufe 1" />
+              <div><p class="eyebrow">OFFENSIVE <kbd>2</kbd></p><h2>Laserverstärker</h2>
+                <p class="module-performance" id="module-stats-1">Schaden je Treffer</p>
+                <button id="buy-1" class="buy-button" type="button" aria-label="Laserverstärker kaufen"><span>AUFRÜSTEN</span><strong id="price-1">120 CR</strong></button>
+              </div>
+            </article>
+            <article class="equipment module">
+              <img id="module-art-2" src="/assets/upgrades/shield-1.webp" width="420" height="300" alt="Schildkondensator, Stufe 1" />
+              <div><p class="eyebrow">VERTEIDIGUNG <kbd>3</kbd></p><h2>Schildkondensator</h2>
+                <p class="module-performance" id="module-stats-2">Schildkapazität</p>
+                <button id="buy-2" class="buy-button" type="button" aria-label="Schildkondensator kaufen"><span>AUFRÜSTEN</span><strong id="price-2">140 CR</strong></button>
+              </div>
+            </article>
+            <article class="equipment module">
+              <img id="module-art-3" src="/assets/upgrades/armour-1.webp" width="420" height="300" alt="Verstärkte Hülle, Stufe 1" />
+              <div><p class="eyebrow">PANZERUNG <kbd>4</kbd></p><h2>Verstärkte Hülle</h2>
+                <p class="module-performance" id="module-stats-3">Hüllenpunkte</p>
+                <button id="buy-3" class="buy-button" type="button" aria-label="Verstärkte Hülle kaufen"><span>AUFRÜSTEN</span><strong id="price-3">140 CR</strong></button>
+              </div>
+            </article>
+          </div>
+        </div>
+        <footer class="hangar-footer"><div><p id="shop-notice" role="status" aria-live="polite"></p><small>Welt und Beute-Timer pausieren am Dock. Fracht &amp; Ausrüstung bleiben bis zum Ende des Flugs.</small></div><div class="departure-actions"><button id="depart" type="button">ABDOCKEN <span>B ↗</span></button><button id="next-sector" type="button">NÄCHSTER SEKTOR →</button></div></footer>
+      </div>
+    </section>
     <!-- Fable kompiliert src/*.fs nach build/*.js; Vite buendelt von dort. -->
+    <script defer src="/pilot-profile.js"></script>
     <script type="module" src="/build/Main.js"></script>
   </body>
 </html>

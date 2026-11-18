@@ -11,15 +11,44 @@
   <!-- Kompilierreihenfolge = Abhaengigkeitsreihenfolge (F# ist reihenfolgesensitiv). -->
   <ItemGroup>
     <Compile Include="Math3D.fs" />
+    <Compile Include="PilotSkills.fs" />
+    <Compile Include="Universe.fs" />
+    <Compile Include="CapitalFlight.fs" />
+    <Compile Include="Recovery.fs" />
+    <Compile Include="TradeSystem.fs" />
     <Compile Include="WebGLRenderer.fs" />
+    <Compile Include="GlbLoader.fs" />
     <Compile Include="ProceduralMeshes.fs" />
+    <Compile Include="CapitalMeshes.fs" />
+    <Compile Include="UpgradeMeshes.fs" />
     <Compile Include="Input.fs" />
     <Compile Include="PhysicsAndPool.fs" />
+    <Compile Include="Salvage.fs" />
+    <Compile Include="EnemyProfiles.fs" />
+    <Compile Include="TradeRoutes.fs" />
+    <Compile Include="Freight.fs" />
+    <Compile Include="ShipCatalog.fs" />
+    <Compile Include="OutfitVisuals.fs" />
+    <Compile Include="Mission.fs" />
+    <Compile Include="Economy.fs" />
+    <Compile Include="Blockade.fs" />
+    <Compile Include="Turret.fs" />
     <Compile Include="AI.fs" />
+    <Compile Include="FlightSchool.fs" />
     <Compile Include="Camera.fs" />
     <Compile Include="SkyBackdrop.fs" />
     <Compile Include="Sound.fs" />
+    <Compile Include="StoryRadio.fs" />
+    <Compile Include="DockContact.fs" />
+    <Compile Include="GameSave.fs" />
+    <Compile Include="SaveStore.fs" />
+    <Compile Include="SaveUi.fs" />
     <Compile Include="HUD.fs" />
+    <Compile Include="ShipyardUi.fs" />
+    <Compile Include="FreightUi.fs" />
+    <Compile Include="Shop.fs" />
+    <Compile Include="SkillUi.fs" />
+    <Compile Include="BlockadeUi.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

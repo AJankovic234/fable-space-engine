@@ -20,6 +20,9 @@ open Fable.Core
 type Rng(seed: int) =
     let mutable state: uint32 = if seed = 0 then 0x9E3779B9u else uint32 seed
 
+    /// Spielstände setzen die Zufallsfolge ohne erneute Weltgenerierung fort.
+    member _.State with get() = state and set value = state <- value
+
     /// Gleichverteilt in [0, 1).
     member _.NextFloat() : float =
         let mutable x = state
@@ -200,8 +203,13 @@ type MeshBuilder() =
 module ShipHardpoints =
     let playerEngineLeft = Vec3(-0.62, 0.02, 2.0)
     let playerEngineRight = Vec3(0.62, 0.02, 2.0)
+    // Externe Schienen des Kepler-Bombers, in seiner tatsächlichen Modellgröße.
+    let bomberRails = [| Vec3(-1.53, 0.53, 0.10); Vec3(1.53, 0.53, 0.10) |]
     let playerGunLeft = Vec3(-1.25, -0.1, -0.95)
     let playerGunRight = Vec3(1.25, -0.1, -0.95)
+    /// Lokale Austrittsmitten des beweglichen Turret-Kopfes (vor Rueckstoss).
+    let turretGunLeft = Vec3(-0.30, 0.20, -1.60)
+    let turretGunRight = Vec3(0.30, 0.20, -1.60)
     /// Kameraposition der Cockpit-Perspektive (vor der Kanzel, Blick ueber die Nase).
     let playerCockpit = Vec3(0.0, 0.40, -1.3)
     /// Kollisionsbox (OBB) im Schiffssystem und Radius ihrer Huellkugel.
@@ -219,11 +227,61 @@ module ShipHardpoints =
     let interceptorObbHalf = Vec3(1.32 * interceptorScale, 0.42 * interceptorScale, 1.55 * interceptorScale)
     let interceptorRadius = 2.5 * interceptorScale
 
+/// Der Außenkorb zeigt eine nach belegtem Volumen gewichtete Auswahl aus dem Laderaum.
+module DeckCargo =
+    let bays = [| Vec3(-1.64,0.18,0.79); Vec3(-1.64,0.18,0.14); Vec3(-1.64,0.18,-0.51) |]
+    let sealedIndex = TradeSystem.commodities.Length
+    let haulerMounts = [| for z in [| 0.24; -0.59; -1.42 |] do for x in [| -1.0; 1.0 |] do yield Vec3(x,0.472,z) |]
+    let escortMounts = [| Vec3(-0.91,0.04,0.53); Vec3(0.91,0.04,0.53) |]
+
+    let iter (cargo: CargoHold) visit =
+        let used = TradeSystem.usedVolume cargo
+        let occupied = min bays.Length ((used * bays.Length + cargo.Capacity - 1) / cargo.Capacity)
+        let mutable commodity = 0
+        let volume i =
+            if i = sealedIndex then cargo.Freight.Value.Tonnes
+            else cargo.Quantities.[i] * TradeSystem.commodities.[i].UnitVolume
+        let mutable endVolume = volume 0
+        for bay in 0 .. occupied-1 do
+            let sample = (2 * bay + 1) * used / (2 * occupied)
+            while endVolume <= sample do
+                commodity <- commodity + 1
+                endVolume <- endVolume + volume commodity
+            let visible = if bay = occupied - 1 && cargo.Freight.IsSome then sealedIndex else commodity
+            visit bays.[bay] visible
+
 [<RequireQualifiedAccess>]
 module ProceduralMeshes =
 
+    /// Drei verwachsene Prismen. Die Instanzfarbe bestimmt die Erzqualität.
+    let mineralCrystal () : MeshData =
+        let b = MeshBuilder()
+        let shard (basePoint: Vec3) (axis: Vec3) radius phase =
+            let mid = basePoint + axis * 0.70
+            let tip = basePoint + axis
+            let vertex (center: Vec3) size i =
+                let angle = phase + float i * Math.PI / 3.0
+                center + Vec3(cos angle * size, 0.0, sin angle * size)
+            let inside = basePoint + axis * 0.45
+            for i in 0..5 do
+                let j = i + 1
+                let shade = [|0.39; 0.67; 0.86; 0.54; 0.73; 0.92|].[i]
+                let face = MeshColor.glow shade shade shade 0.31
+                let crown = MeshColor.glow (shade+0.12) (shade+0.12) (shade+0.12) 0.61
+                let low = vertex basePoint (radius*0.54) i
+                let nextLow = vertex basePoint (radius*0.54) j
+                let high = vertex mid radius i
+                let nextHigh = vertex mid radius j
+                b.PolygonOutward([|low; nextLow; nextHigh; high|], inside, face)
+                b.TriangleOutward(tip,high,nextHigh,inside,crown)
+                b.TriangleOutward(basePoint-Vec3(0.0,0.26,0.0),low,nextLow,inside,face)
+        shard (Vec3(0.0,-0.63,0.0)) (Vec3(0.18,2.24,0.06)) 0.41 0.12
+        shard (Vec3(-0.12,-0.72,0.09)) (Vec3(-0.85,1.38,0.22)) 0.32 0.56
+        shard (Vec3(0.19,-0.60,0.12)) (Vec3(0.58,0.96,0.40)) 0.29 0.83
+        b.Build()
+
     /// n-Eck in der XY-Ebene bei Tiefe z, Mittelpunkt (cx, cy), Halbachsen rx/ry.
-    let private ring (n: int, cx: float, cy: float, z: float, rx: float, ry: float) : Vec3[] =
+    let internal ring (n: int, cx: float, cy: float, z: float, rx: float, ry: float) : Vec3[] =
         Array.init n (fun i ->
             let angle = 2.0 * Math.PI * float i / float n
             Vec3(cx + cos angle * rx, cy + sin angle * ry, z))
@@ -234,7 +292,7 @@ module ProceduralMeshes =
 
     /// Aufgesetzte, gefaste Panzerplatte. Die dunkle Fase bleibt echte Geometrie,
     /// damit Plattenfugen auch ohne Textur im Streiflicht lesbar sind.
-    let private armorPanel (b: MeshBuilder) (outline: Vec3[]) (normal: Vec3) thickness color edge =
+    let internal armorPanel (b: MeshBuilder) (outline: Vec3[]) (normal: Vec3) thickness color edge =
         let center = outline |> Array.fold (+) Vec3.zero |> fun p -> p / float outline.Length
         let top = outline |> Array.map (fun p -> Vec3.lerp p center 0.045 + normal * thickness)
         let inside = center + normal * (thickness * 0.4)
@@ -246,13 +304,242 @@ module ProceduralMeshes =
             b.PolygonOutward([| outline.[i]; outline.[j]; top.[j]; top.[i] |], inside, edge)
 
     /// Vierkantstrebe zwischen beliebigen Punkten, etwa Kanzelrahmen oder Rippen.
-    let private beam (b: MeshBuilder) (start: Vec3) (finish: Vec3) width color =
+    let internal beam (b: MeshBuilder) (start: Vec3) (finish: Vec3) width color =
         let axis = Vec3.normalize (finish - start)
         let reference = if abs axis.Y > 0.9 then Vec3.unitX else Vec3.unitY
         let right = Vec3.normalize (Vec3.cross axis reference) * width
         let up = Vec3.normalize (Vec3.cross axis right) * width
         let corners p = [| p - right - up; p + right - up; p + right + up; p - right + up |]
         b.Loft([| corners start; corners finish |], true, true, color)
+
+    /// Free-floating approach buoy. The separate Fresnel lens takes the port's signal colour.
+    let approachBuoy () : MeshData * MeshData =
+        let frame = MeshBuilder()
+        let lamp = MeshBuilder()
+        let alloy = MeshColor.rgb 0.49 0.55 0.56
+        let rubber = MeshColor.rgb 0.045 0.063 0.078
+        let paint = MeshColor.rgb 0.88 0.50 0.09
+        let lens = MeshColor.glow 1.0 1.0 1.0 1.0
+        let collar y radius =
+            ring(8,0.0,0.0,0.0,radius,radius) |> Array.map (fun p -> Vec3(p.X,y,p.Y))
+        frame.Loft([|collar -1.85 0.38; collar -1.28 0.84; collar -0.58 0.84|],true,true,alloy)
+        frame.Loft([|collar -1.13 0.86; collar -0.83 0.86|],false,false,paint)
+        frame.Loft([|collar -0.58 0.61; collar 0.54 0.33; collar 0.79 0.81|],true,true,rubber)
+        frame.Loft([|collar 0.78 0.82; collar 0.99 0.82|],true,true,alloy)
+        frame.Loft([|collar 1.64 0.79; collar 1.88 0.46|],true,true,alloy)
+        for i in 0..3 do
+            let a = float i * Math.PI / 2.0
+            let upright y r = Vec3(cos a*r,y,sin a*r)
+            beam frame (upright 0.92 0.73) (upright 1.68 0.71) 0.07 rubber
+            let fin = [|upright -0.6 0.48; upright -0.98 1.15; upright -1.72 1.20; upright -1.43 0.36|]
+            frame.Slab(fin,[|0.07;0.055;0.055;0.07|],Vec3(-sin a,0.0,cos a),paint)
+        lamp.Loft([|collar 0.98 0.57;collar 1.17 0.70;collar 1.45 0.70;collar 1.65 0.54|],true,true,lens)
+        frame.Build(), lamp.Build()
+
+    /// Sechs geborgene Datenträger. Gehäuse und Statuslicht teilen sich ein Mesh.
+    let archiveRelic (kind: StationKind) (recorderOnBoard: bool) : MeshData =
+        let b = MeshBuilder()
+        let iron = MeshColor.rgb 0.17 0.23 0.26
+        let alloy = MeshColor.rgb 0.58 0.65 0.63
+        let ceramic = MeshColor.rgb 0.74 0.72 0.60
+        let oxide = MeshColor.rgb 0.52 0.23 0.10
+        let brass = MeshColor.rgb 0.66 0.47 0.20
+        let signal = MeshColor.glow 0.87 0.41 1.12 0.85
+        let box x y z hx hy hz c = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),c)
+        let bar p q w c = beam b p q w c
+        let rim (points: Vec3[]) w c =
+            for i in 0 .. points.Length-1 do bar points.[i] points.[(i+1)%points.Length] w c
+        match kind with
+        | MiningDepot ->
+            // Abgerissenes Bugsegment. Die schwarzen Bruchkanten legen den orangefarbenen Rekorder frei.
+            let nose = ring(6,-0.4,-0.1,-4.6,0.9,0.72)
+            let shoulder = ring(6,0.0,0.0,-1.4,3.35,1.95)
+            let torn = shoulder |> Array.mapi (fun i p -> Vec3(p.X,p.Y,[|2.4;0.4;1.65;3.3;1.05;2.0|].[i]))
+            b.Loft([|nose;shoulder|],true,false,ceramic)
+            for i in [0;2;3;4] do
+                let j = (i+1)%6
+                b.PolygonOutward([|shoulder.[i];shoulder.[j];torn.[j];torn.[i]|],Vec3.zero,alloy)
+                bar shoulder.[i] torn.[i] 0.12 iron
+            bar (Vec3(0.0,-1.2,-2.2)) (Vec3(3.95,-1.1,3.8)) 0.24 iron
+            if recorderOnBoard then
+                box 0.45 -0.15 1.25 1.12 0.66 1.16 oxide
+                box 0.45 -0.12 2.44 0.7 0.17 0.05 signal
+        | Refinery ->
+            // Genormter feuerfester Schichtlistenbehälter, in zwei Transportkufen verriegelt.
+            box 0.0 0.0 0.0 2.85 1.75 1.95 oxide
+            box 0.0 1.78 0.0 2.97 0.14 2.04 iron
+            for side in [-1.0;1.0] do
+                let x = side*1.86
+                box x 0.02 0.0 0.14 1.85 2.0 alloy
+                box x -1.9 0.0 0.31 0.2 2.44 iron
+                box x 1.12 2.05 0.3 0.4 0.13 brass
+            box 0.0 0.34 2.02 1.0 0.57 0.08 ceramic
+            box 0.0 0.07 2.13 0.62 0.08 0.03 signal
+        | FrontierBazaar ->
+            // Horchboje mit offener Parabolantenne, Dreibein und abgesetztem Empfänger.
+            let hub = Vec3(0.0,1.0,0.15)
+            let lip = ring(16,0.0,1.0,1.7,3.1,3.1)
+            let middle = ring(16,0.0,1.0,0.45,1.48,1.48)
+            rim lip 0.12 alloy
+            rim middle 0.07 iron
+            for i in 0..7 do
+                bar hub middle.[2*i] 0.09 brass
+                bar middle.[2*i] lip.[2*i] 0.09 brass
+            let receiver = Vec3(0.0,1.0,3.5)
+            for i in [0;5;11] do bar lip.[i] receiver 0.09 alloy
+            box receiver.X receiver.Y receiver.Z 0.27 0.27 0.32 signal
+            box 0.0 -0.8 -0.5 0.62 1.6 0.6 iron
+            for i in 0..2 do
+                let a = float i * 2.0*Math.PI/3.0
+                bar (Vec3(0.0,-1.6,-0.5)) (Vec3(2.25*cos a,-3.8,-0.5+2.25*sin a)) 0.13 alloy
+        | OrbitalYard ->
+            // Freie Spanten und ein Fundamentholm, ohne Außenhaut.
+            let frames =
+                [| for z,r in [ -5.7,2.15; -2.5,3.65; 1.0,3.85; 4.75,2.85 ] ->
+                    ring(8,0.0,0.0,z,r,r*0.8) |]
+            for f in frames do rim f 0.19 alloy
+            for i in [0;4;6] do bar frames.[0].[i] frames.[3].[i] 0.22 iron
+            for i in 0..2 do bar frames.[i].[5] frames.[i+1].[6] 0.16 oxide
+            box 0.0 -2.86 0.0 0.55 0.32 6.3 oxide
+            box 0.0 -2.84 5.95 0.35 0.18 0.39 signal
+        | ResearchRelay ->
+            // Gestaffelte Strahlenschutzplatten, dahinter ein Bandgerät mit zwei Spulen.
+            box 0.0 0.0 -0.15 2.0 1.6 2.65 iron
+            for z in [-2.75;-1.9;-1.05;-0.2;0.65;1.5] do
+                b.Loft([|ring(8,0.0,0.0,z,2.9,2.45);ring(8,0.0,0.0,z+0.4,2.9,2.45)|],true,true,ceramic)
+            box 0.0 0.0 2.52 2.12 1.45 0.27 alloy
+            for x in [-0.92;0.92] do
+                b.Loft([|ring(12,x,0.24,2.8,0.75,0.75);ring(12,x,0.24,2.95,0.75,0.75)|],true,true,iron)
+                box x 0.24 2.99 0.17 0.17 0.06 brass
+            box 0.0 -0.91 2.82 0.73 0.12 0.05 signal
+        | FleetDock ->
+            // Hermetische Bergungskapsel mit Kühlschlaufen und zwei langen Kollektoren.
+            let shell z r = ring(12,0.0,0.0,z,r,r*0.88)
+            b.Loft([|shell -4.0 0.65;shell -3.1 1.75;shell 2.6 1.75;shell 3.65 0.9|],true,true,alloy)
+            for z in [-2.4;1.9] do
+                b.Loft([|shell z 1.83;shell (z+0.3) 1.83|],false,false,brass)
+            for side in [-1.0;1.0] do
+                bar (Vec3(side,0.0,0.0)) (Vec3(side*6.85,0.0,0.0)) 0.15 brass
+                for i in 0..2 do
+                    let x = side*(3.1+float i*1.43)
+                    box x 0.02 0.0 0.70 0.10 1.8 brass
+                    box x 0.15 0.0 0.61 0.04 1.68 (MeshColor.rgb 0.09 0.24 0.38)
+            box 0.0 0.0 3.68 0.46 0.16 0.05 signal
+        b.Build()
+
+    /// Industrieller Handelsposten: Frachthub, offene Andockspange, Solarausleger.
+    let tradeOutpost (kind: StationKind) : MeshData =
+        let b = MeshBuilder()
+        let hull = MeshColor.rgb 0.62 0.68 0.67
+        let edge = MeshColor.rgb 0.10 0.17 0.23
+        let panels = MeshColor.rgb 0.07 0.20 0.34
+        let cargo = MeshColor.rgb 0.55 0.36 0.15
+        let cyan = MeshColor.glow 0.16 0.85 0.95 1.5
+        let amber = MeshColor.glow 1.0 0.53 0.12 0.9
+        let paint =
+            match kind with
+            | MiningDepot -> MeshColor.rgb 0.87 0.31 0.045
+            | Refinery -> MeshColor.rgb 0.61 0.16 0.085
+            | FrontierBazaar -> MeshColor.rgb 0.11 0.53 0.49
+            | OrbitalYard -> MeshColor.rgb 0.78 0.53 0.065
+            | ResearchRelay -> MeshColor.rgb 0.29 0.37 0.69
+            | FleetDock -> MeshColor.rgb 0.32 0.43 0.49
+        let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
+        // An octagonal shell with chamfered end caps and a segmented pressure collar.
+        let tank x y z radius length =
+            let section offset scale = ring(12,x,y,z+offset,radius*scale,radius*scale)
+            b.Loft([|section (-length) 0.68; section (2.0-length) 1.0; section (length-2.0) 1.0; section length 0.68|],true,true,hull)
+            for t in [|-0.62;0.62|] do
+                b.Loft([|section (length*t-0.65) 1.04;section (length*t+0.65) 1.04|],true,true,paint)
+            b.Loft([|section length 0.38;section (length+0.5) 0.36|],false,true,edge)
+        let crane side height =
+            let foot = Vec3(31.0*side,6.0,-17.0)
+            let knee = Vec3(31.0*side,height,-17.0)
+            let tip = Vec3(57.0*side,height+6.0,0.0)
+            beam b foot knee 1.7 paint
+            beam b knee tip 1.2 paint
+            beam b (foot + Vec3(0.0,8.0,0.0)) tip 0.62 hull
+            beam b tip (tip - Vec3(0.0,13.0,0.0)) 0.24 edge
+            b.Box(tip - Vec3(0.0,13.0,0.0),Vec3(2.5,1.0,1.0),paint)
+        b.Loft([| ring(8,0.0,0.0,-38.0,10.0,10.0); ring(8,0.0,0.0,-28.0,18.0,18.0); ring(8,0.0,0.0,6.0,18.0,18.0) |], true, true, hull)
+        b.Box(Vec3(0.0,0.0,6.5),Vec3(12.0,10.0,1.0),edge)
+        b.Box(Vec3(0.0,12.0,8.0),Vec3(12.0,0.7,1.0),cyan)
+        let hoop = ring(12,0.0,0.0,25.0,27.0,27.0)
+        let rear = ring(12,0.0,0.0,12.0,24.0,24.0)
+        for i in 0..11 do
+            let j = (i+1)%12
+            beam b hoop.[i] hoop.[j] 2.2 (if i%3=0 then paint else hull)
+            beam b rear.[i] rear.[j] 1.25 edge
+            beam b rear.[i] hoop.[i] 1.15 paint
+            beam b rear.[i] hoop.[j] 0.48 hull
+            let lightA = Vec3.lerp hoop.[i] hoop.[(i+1)%12] 0.2
+            let lightB = Vec3.lerp hoop.[i] hoop.[(i+1)%12] 0.8
+            beam b (lightA + Vec3(0.0,0.0,2.4)) (lightB + Vec3(0.0,0.0,2.4)) 0.5 cyan
+        for side in [| -1.0; 1.0 |] do
+            beam b (Vec3(side*14.0,0.0,-10.0)) (Vec3(side*52.0,0.0,-10.0)) 2.4 edge
+            beam b (Vec3(side*15.0,12.0,-22.0)) (Vec3(side*43.0,0.0,-10.0)) 0.8 hull
+            b.Box(Vec3(side*37.0,0.0,-10.0),Vec3(7.0,7.0,14.0),hull)
+            for y in [| -11.0; 11.0 |] do
+                b.Box(Vec3(side*34.0,y,-12.0),Vec3(9.0,3.0,9.0),cargo)
+                for z in -2..2 do
+                    b.Box(Vec3(side*34.0,y,-12.0+float z*3.6),Vec3(9.5,3.4,0.25),edge)
+            // Inclined photovoltaic wings expose the blue cells on the approach.
+            let panelPoint x z lift = Vec3(side*x, -(z+12.0)*0.42+lift,z)
+            let panel x z hx hz thick color =
+                let corners = [|panelPoint (x-hx) (z-hz) thick;panelPoint (x+hx) (z-hz) thick
+                                panelPoint (x+hx) (z+hz) thick;panelPoint (x-hx) (z+hz) thick|]
+                b.Slab(corners, Array.create 4 0.35, Vec3.unitY, color)
+            panel 60.0 -12.0 13.0 30.0 0.0 edge
+            for x in 0..3 do
+                for z in 0..5 do
+                    panel (50.5+float x*6.3) (-36.0+float z*9.5) 2.8 4.35 0.85 panels
+            beam b (Vec3(side*18.0,15.0,0.0)) (Vec3(side*22.0,15.0,24.0)) 1.2 hull
+            b.Box(Vec3(side*37.0,8.0,2.0),Vec3(5.0,0.8,1.0),amber)
+        beam b (Vec3(0.0,15.0,-25.0)) (Vec3(0.0,43.0,-25.0)) 0.9 hull
+        b.Box(Vec3(0.0,39.0,-25.0),Vec3(8.0,1.5,1.5),hull)
+        b.Box(Vec3(0.0,44.0,-25.0),Vec3(1.0,1.0,1.0),cyan)
+        // The bridge windows and airlock doors give the facade a human scale.
+        box 0.0 19.0 -9.0 10.0 3.7 8.0 hull
+        box 0.0 20.0 -0.8 9.1 1.4 0.35 edge
+        for bay in -4..4 do
+            box (float bay*1.9) 20.0 -0.35 0.68 0.56 0.18 cyan
+        for side in [-1.0;1.0] do
+            box (side*5.25) -0.7 8.0 5.0 7.5 0.8 paint
+            for stripe in -2..2 do
+                box (side*5.25) (float stripe*2.1) 8.95 4.3 0.22 0.13 edge
+            box (side*13.0) 0.0 8.0 0.6 7.0 0.8 amber
+        match kind with
+        | MiningDepot ->
+            crane -1.0 31.0
+            tank 32.0 17.0 -13.0 6.5 14.0
+        | Refinery ->
+            for x in [-35.0; 31.0; 42.0] do tank x 18.0 -12.0 6.4 23.0
+        | OrbitalYard ->
+            crane -1.0 32.0
+            crane 1.0 32.0
+        | FrontierBazaar ->
+            for side in [-1.0;1.0] do
+                for tier in 0..1 do
+                    for bay in 0..(2-tier) do
+                        let x = side*(26.0+float bay*8.0)
+                        let y = 17.0+float tier*7.0
+                        box x y -12.0 3.8 3.1 10.0 (if (tier+bay)%2=0 then paint else cargo)
+                        box x y -1.8 2.7 2.0 0.25 edge
+        | ResearchRelay ->
+            let hub = Vec3(-31.0,23.0,-10.0)
+            beam b (hub-Vec3(0.0,15.0,0.0)) hub 1.4 hull
+            let lip = ring(24,hub.X,hub.Y,hub.Z+6.0,14.0,14.0)
+            for i in 0..23 do
+                let j = (i+1)%24
+                b.TriangleOutward(hub,lip.[i],lip.[j],hub-Vec3.unitZ,hull)
+                b.TriangleOutward(hub,lip.[i],lip.[j],hub+Vec3.unitZ,edge)
+                if i%6=0 then beam b lip.[i] (hub+Vec3(0.0,0.0,15.0)) 0.35 paint
+            tank 32.0 18.0 -18.0 5.0 14.0
+        | FleetDock ->
+            for side in [-1.0;1.0] do
+                tank (side*35.0) 19.0 -16.0 7.2 24.0
+                box (side*35.0) 27.0 -20.0 4.0 1.8 14.0 paint
+        b.Build()
 
     /// Offene Duese mit Metallrand, dunkler Innenwand und tiefer liegendem Kern.
     /// Die sichtbare Austrittsflaeche bleibt genau am bestehenden Hardpoint.
@@ -274,190 +561,603 @@ module ProceduralMeshes =
 
         b.PolygonOutward(core, Vec3(x, y, z - depth), glow)
 
-    // ---------------------------------------------------------------------------------
-    //  Spielerschiff: Delta-Wing-Fighter (ca. 4.6 lang, 4.7 Spannweite)
-    // ---------------------------------------------------------------------------------
-
-    let playerShip () : MeshData =
+    /// Civilian line hauler, built around a keel with two rows of removable pods.
+    let freightHauler () : MeshData =
         let b = MeshBuilder()
-        let hull = MeshColor.rgb 0.68 0.76 0.79
-        let ceramic = MeshColor.rgb 0.86 0.88 0.82
-        let hullDark = MeshColor.rgb 0.045 0.068 0.086
-        let metal = MeshColor.rgb 0.23 0.31 0.34
-        let accent = MeshColor.rgb 0.95 0.42 0.055
-        let cyan = MeshColor.glow 0.035 0.72 0.95 0.75
-        let canopy = MeshColor.glow 0.018 0.11 0.17 0.12
-        let engineGlow = MeshColor.glow 0.24 0.76 1.0 1.0
+        let steel = MeshColor.rgb 0.23 0.29 0.32
+        let enamel = MeshColor.rgb 0.80 0.78 0.66
+        let recess = MeshColor.rgb 0.044 0.070 0.085
+        let ochre = MeshColor.rgb 0.88 0.37 0.055
+        let oxide = MeshColor.rgb 0.55 0.17 0.075
+        let ice = MeshColor.glow 0.30 0.78 0.94 0.68
+        let yellow = MeshColor.glow 1.0 0.58 0.10 0.9
+        let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
+        let crossSection x y z w h =
+            let c = min w h * 0.32
+            [| Vec3(x-w+c,y+h,z); Vec3(x+w-c,y+h,z); Vec3(x+w,y+h-c,z); Vec3(x+w,y-h+c,z)
+               Vec3(x+w-c,y-h,z); Vec3(x-w+c,y-h,z); Vec3(x-w,y-h+c,z); Vec3(x-w,y+h-c,z) |]
+        // High forward bridge, narrow load-bearing spine, and a broad engine house.
+        box 0.0 -0.6 0.0 1.45 1.24 12.0 steel
+        b.Loft([|crossSection 0.0 0.0 -15.5 2.25 1.5; crossSection 0.0 0.4 -13.3 3.65 2.5
+                 crossSection 0.0 0.4 -9.0 3.65 2.5; crossSection 0.0 0.0 -8.0 2.55 1.6|],true,true,enamel)
+        b.Loft([|crossSection 0.0 2.1 -14.3 2.1 0.46; crossSection 0.0 2.9 -11.8 3.05 0.94
+                 crossSection 0.0 2.9 -10.0 3.05 0.94|],true,true,steel)
+        for side in [-1.0;1.0] do
+            for window in 0..2 do
+                box (side*3.09) 2.92 (-11.68+0.66*float window) 0.06 0.40 0.22 ice
+            box (side*1.1) 2.15 -14.34 0.78 0.20 0.10 ice
+            // Exposed floor rails and six separate ribbed containers.
+            box (side*3.2) -1.55 0.0 1.46 0.44 9.6 steel
+            for bay in 0..2 do
+                let z = -5.8 + 5.8 * float bay
+                let x = side*3.05
+                let paint = if (bay = 0) = (side > 0.0) then oxide else ochre
+                let section dz w h = crossSection x 0.63 (z+dz) w h
+                b.Loft([|section -2.66 1.76 1.65; section -2.35 1.96 1.83
+                         section 2.35 1.96 1.83; section 2.66 1.76 1.65|],true,true,paint)
+                for strap in [-1.85;1.85] do
+                    b.Loft([|section (strap-0.13) 2.03 1.9;section (strap+0.13) 2.03 1.9|],false,false,steel)
+                for rib in -1..1 do
+                    box (side*5.03) 0.63 (z+float rib*0.65) 0.055 1.1 0.07 paint
+                box (side*5.11) 1.35 (z-0.6) 0.03 0.22 0.51 enamel
+            let x = side * 2.45
+            b.Loft([|crossSection x 0.34 8.66 2.1 1.9; crossSection x 0.40 10.3 2.56 2.4
+                     crossSection x 0.40 13.1 2.32 2.15|],true,true,enamel)
+            nozzle b x 0.38 14.8 1.65 2.0 steel recess ice
+            for fin in 0..3 do box x (2.7+float fin*0.29) 11.3 1.92 0.08 1.75 steel
+            box (side*4.95) 0.6 10.1 0.18 0.22 0.65 yellow
+        b.Build()
 
-        // Rumpf: sechseckiger Querschnitt, flacher Bauch und dunkles Traggeruest.
-        let nose = ring (6, 0.0, -0.02, -2.6, 0.01, 0.01)
-        let f1 = ring (6, 0.0, 0.0, -1.7, 0.20, 0.15)
-        let f2 = ring (6, 0.0, 0.02, -0.7, 0.40, 0.28)
-        let f3 = ring (6, 0.0, 0.02, 0.8, 0.48, 0.30)
-        let f4 = ring (6, 0.0, 0.04, 1.8, 0.36, 0.22)
-        b.Loft([| nose; f1 |], false, false, hull)
-        b.Loft([| f1; f2; f3; f4 |], false, true, hullDark)
+    /// Offene achtkantige Waffenmuendung nach -Z; keine Scheibe vor dem Lauf.
+    let internal turretBore (b: MeshBuilder) x y z radius depth metal dark cyan =
+        let back = ring (8, x, y, z + depth, radius * 1.06, radius * 1.06)
+        let outer = ring (8, x, y, z, radius, radius)
+        let inner = ring (8, x, y, z, radius * 0.72, radius * 0.72)
+        let core = ring (8, x, y, z + depth * 0.78, radius * 0.52, radius * 0.52)
+        b.Loft([| back; outer |], false, false, metal)
+        for i in 0 .. 7 do
+            let j = (i + 1) % 8
+            b.PolygonOutward([| outer.[i]; outer.[j]; inner.[j]; inner.[i] |], Vec3(x, y, z + depth), metal)
+            let wallInside =
+                Vec3((outer.[i].X + outer.[j].X) * 0.5, (outer.[i].Y + outer.[j].Y) * 0.5, z + depth * 0.4)
+            b.PolygonOutward([| inner.[i]; inner.[j]; core.[j]; core.[i] |], wallInside, dark)
+        b.PolygonOutward(core, Vec3(x, y, z + depth), cyan)
 
-        // Geteilte Bugpanzerung und zentraler, eingelassener Sensorstreifen.
-        for side in [| -1.0; 1.0 |] do
+    /// Fester, am Deck anliegender Drehkranz. Der Kopf wird separat geschwenkt.
+    let autoTurretBase () : MeshData =
+        let b = MeshBuilder()
+        let steel = MeshColor.rgb 0.18 0.25 0.31
+        let edge = MeshColor.rgb 0.36 0.44 0.49
+        let dark = MeshColor.rgb 0.035 0.052 0.068
+        let ivory = MeshColor.rgb 0.80 0.81 0.75
+        let cyan = MeshColor.glow 0.035 0.72 0.95 0.65
+        let amber = MeshColor.rgb 0.95 0.52 0.075
+        let horizontal y radius =
+            ring (16, 0.0, 0.0, 0.0, radius, radius)
+            |> Array.map (fun p -> Vec3(p.X, y, p.Y))
+
+        // Breiter Deckflansch, gefaste Trommel und dunkles Kugellager.
+        b.Loft([| horizontal -0.48 0.49; horizontal -0.435 0.55; horizontal -0.40 0.55 |], true, true, edge)
+        b.Loft([| horizontal -0.405 0.53; horizontal -0.29 0.51; horizontal -0.245 0.44 |], true, true, steel)
+        b.Loft([| horizontal -0.25 0.425; horizontal -0.12 0.425; horizontal -0.05 0.32 |], true, true, dark)
+        b.Loft([| horizontal -0.155 0.432; horizontal -0.137 0.432 |], false, false, cyan)
+        b.Loft([| horizontal -0.13 0.435; horizontal -0.085 0.385 |], false, false, edge)
+
+        for i in 0 .. 7 do
+            let angle = float i * Math.PI / 4.0
+            let radial = Vec3(cos angle, 0.0, sin angle)
+            let tangent = Vec3(-sin angle, 0.0, cos angle)
+            let point radius y side = radial * radius + tangent * side + Vec3(0.0, y, 0.0)
             armorPanel b
-                [| Vec3(0.018 * side, 0.035, -2.4); Vec3(0.15 * side, 0.10, -1.7)
-                   Vec3(0.30 * side, 0.19, -0.91); Vec3(0.025 * side, 0.22, -0.86) |]
-                Vec3.unitY 0.026 ceramic metal
-            armorPanel b
-                [| Vec3(0.24 * side, 0.16, -0.66); Vec3(0.41 * side, 0.15, -0.36)
-                   Vec3(0.43 * side, 0.18, 0.78); Vec3(0.25 * side, 0.26, 0.69) |]
-                Vec3.unitY 0.028 hull metal
+                [| point 0.535 -0.425 -0.068; point 0.535 -0.425 0.068
+                   point 0.475 -0.26 0.056; point 0.475 -0.26 -0.056 |]
+                radial 0.016 (if i % 2 = 0 then ivory else steel) edge
+            // Schraubenkopf und tragende Strebe bleiben aus jeder Richtung erkennbar.
+            let boltCenter = point 0.40 -0.23 0.0
+            let boltRing y =
+                ring (8, 0.0, 0.0, 0.0, 0.025, 0.025)
+                |> Array.map (fun p -> Vec3(boltCenter.X + p.X, y, boltCenter.Z + p.Y))
+            b.Loft([| boltRing -0.24; boltRing -0.215 |], true, true, dark)
+            beam b (point 0.41 -0.24 0.0) (point 0.34 -0.07 0.0) 0.022 steel
+            if i % 2 = 0 then
+                armorPanel b
+                    [| point 0.531 -0.38 -0.037; point 0.531 -0.38 -0.011
+                       point 0.503 -0.31 0.037; point 0.503 -0.31 0.011 |]
+                    radial 0.021 amber dark
+        b.Build()
 
-        b.Box(Vec3(0.0, 0.127, -1.64), Vec3(0.022, 0.015, 0.17), hullDark)
-        b.Box(Vec3(0.0, 0.145, -1.66), Vec3(0.010, 0.008, 0.095), cyan)
-
-        // Kanzel
+    /// Nur der bewegliche Kopf: zwei getrennte Laeufe, Gelenke und Serviceheck.
+    /// Proportionen und Materialaufteilung folgen dem vorhandenen Turret-Asset.
+    let autoTurret () : MeshData =
+        let b = MeshBuilder()
+        let blue = MeshColor.rgb 0.22 0.32 0.40
+        let steel = MeshColor.rgb 0.13 0.19 0.24
+        let edge = MeshColor.rgb 0.45 0.53 0.57
+        let ivory = MeshColor.rgb 0.83 0.84 0.77
+        let dark = MeshColor.rgb 0.028 0.043 0.058
+        let cyan = MeshColor.glow 0.035 0.78 1.02 0.78
+        let dimCyan = MeshColor.glow 0.045 0.40 0.50 0.35
+        let amber = MeshColor.rgb 0.98 0.52 0.055
+        let rotor y radius =
+            ring (16, 0.0, 0.0, 0.0, radius, radius)
+            |> Array.map (fun p -> Vec3(p.X, y, p.Y))
+        b.Loft([| rotor -0.055 0.30; rotor 0.025 0.32; rotor 0.065 0.27 |], true, true, steel)
         b.Loft(
-            [| ring (6, 0.0, 0.12, -1.45, 0.01, 0.01)
-               ring (6, 0.0, 0.20, -1.0, 0.17, 0.17)
-               ring (6, 0.0, 0.27, -0.35, 0.20, 0.20)
-               ring (6, 0.0, 0.26, 0.45, 0.01, 0.01) |],
-            false,
-            false,
-            canopy
-        )
-
-        // Sichtbare Rahmen und zwei getrennte Glasscheiben statt einer Farbblase.
-        for side in [| -1.0; 1.0 |] do
-            beam b (Vec3(0.0, 0.16, -1.40)) (Vec3(0.15 * side, 0.31, -0.91)) 0.016 metal
-            beam b (Vec3(0.15 * side, 0.31, -0.91)) (Vec3(0.18 * side, 0.39, -0.35)) 0.015 metal
-            beam b (Vec3(0.18 * side, 0.39, -0.35)) (Vec3(0.0, 0.29, 0.40)) 0.018 metal
-        beam b (Vec3(-0.18, 0.39, -0.35)) (Vec3(0.0, 0.46, -0.35)) 0.018 hullDark
-        beam b (Vec3(0.0, 0.46, -0.35)) (Vec3(0.18, 0.39, -0.35)) 0.018 hullDark
-
-        // Delta-Fluegel: an der Wurzel dick, zur Spitze duenn, leichte negative V-Stellung
-        let wing =
-            [| Vec3(0.38, 0.0, -0.8)
-               Vec3(2.2, -0.06, 1.15)
-               Vec3(2.2, -0.06, 1.7)
-               Vec3(0.38, 0.0, 1.55) |]
-
-        let wingThickness = [| 0.085; 0.025; 0.025; 0.085 |]
-        b.Slab(wing, wingThickness, Vec3.unitY, hullDark)
-        b.Slab(mirrorX wing, wingThickness, Vec3.unitY, hullDark)
-
-        let wingPlates =
-            [| [| Vec3(0.82, 0.075, -0.18); Vec3(1.37, 0.028, 0.41)
-                  Vec3(1.36, 0.028, 1.47); Vec3(0.84, 0.075, 1.43) |]
-               [| Vec3(1.42, 0.024, 0.47); Vec3(2.13, -0.026, 1.20)
-                  Vec3(2.13, -0.026, 1.64); Vec3(1.42, 0.024, 1.48) |] |]
-
-        for panel in wingPlates do
-            armorPanel b panel Vec3.unitY 0.028 ceramic metal
-            armorPanel b (mirrorX panel) Vec3.unitY 0.028 ceramic metal
-
-        // Fluegelspitzen als Farbakzent
-        let wingTip =
-            [| Vec3(2.2, -0.06, 0.95)
-               Vec3(2.34, -0.06, 1.1)
-               Vec3(2.34, -0.06, 1.85)
-               Vec3(2.2, -0.06, 1.85) |]
-
-        let tipThickness = [| 0.06; 0.06; 0.06; 0.06 |]
-        b.Slab(wingTip, tipThickness, Vec3.unitY, accent)
-        b.Slab(mirrorX wingTip, tipThickness, Vec3.unitY, accent)
-
-        // Maintenance-Stripes und Positionslichter liegen auf getrennten Platten.
-        for side in [| -1.0; 1.0 |] do
-            b.Box(Vec3(1.06 * side, 0.121, 0.66), Vec3(0.19, 0.009, 0.035), accent)
-            b.Box(Vec3(1.06 * side, 0.121, 0.78), Vec3(0.19, 0.009, 0.018), hullDark)
-            b.Box(Vec3(2.24 * side, 0.012, 1.47), Vec3(0.035, 0.015, 0.12), cyan)
-            // Ein dunkles Servicefeld mit vier erhabenen Kuehlrippen.
-            b.Box(Vec3(1.61 * side, 0.043, 1.26), Vec3(0.12, 0.022, 0.15), hullDark)
-            for i in 0 .. 3 do
-                b.Box(Vec3(1.61 * side, 0.069, 1.16 + float i * 0.065), Vec3(0.10, 0.010, 0.012), metal)
-
-        // Doppelleitwerk, nach aussen geneigt
-        let fin =
-            [| Vec3(0.5, 0.1, 0.6)
-               Vec3(0.8, 0.9, 1.4)
-               Vec3(0.84, 0.9, 1.8)
-               Vec3(0.5, 0.1, 1.7) |]
-
-        let finThickness = [| 0.04; 0.015; 0.015; 0.04 |]
-        let finNormal = Vec3.normalize (Vec3(0.8, -0.3, 0.0))
-        b.Slab(fin, finThickness, finNormal, hull)
-        b.Slab(mirrorX fin, finThickness, Vec3(-finNormal.X, finNormal.Y, 0.0), hull)
+            [| ring (8, 0.0, 0.205, -0.39, 0.35, 0.15)
+               ring (8, 0.0, 0.205, -0.16, 0.46, 0.20)
+               ring (8, 0.0, 0.205, 0.34, 0.43, 0.20)
+               ring (8, 0.0, 0.205, 0.46, 0.36, 0.15) |], true, true, dark)
 
         for side in [| -1.0; 1.0 |] do
-            beam b (Vec3(0.76 * side, 0.75, 1.33)) (Vec3(0.80 * side, 0.75, 1.69)) 0.019 accent
-            beam b (Vec3(0.80 * side, 0.87, 1.47)) (Vec3(0.83 * side, 0.87, 1.74)) 0.012 cyan
-
-        for side in [| -1.0; 1.0 |] do
-            // Triebwerksgondel mit leuchtender Duese
-            let x = 0.62 * side
-            b.Loft(
-                [| ring (8, x, 0.02, 0.1, 0.01, 0.01)
-                   ring (8, x, 0.02, 0.55, 0.20, 0.20)
-                   ring (8, x, 0.02, 1.65, 0.23, 0.23) |],
-                false,
-                false,
-                hullDark
-            )
-
-            // Separat sitzende Gehaeuseplatten und Kuehlringe.
+            let normal = Vec3(side, 0.0, 0.0)
+            // Die Schulterplatten verjuengen sich nach vorn; offene Fugen zeigen das Chassis.
             armorPanel b
-                [| Vec3(x - 0.15, 0.205, 0.58); Vec3(x + 0.15, 0.205, 0.58)
-                   Vec3(x + 0.17, 0.235, 1.30); Vec3(x - 0.17, 0.235, 1.30) |]
-                Vec3.unitY 0.035 hull metal
-            b.Box(Vec3(x, 0.277, 0.99), Vec3(0.025, 0.008, 0.22), accent)
+                [| Vec3(0.18 * side, 0.39, -0.32); Vec3(0.43 * side, 0.34, -0.34)
+                   Vec3(0.50 * side, 0.37, 0.25); Vec3(0.33 * side, 0.43, 0.39)
+                   Vec3(0.16 * side, 0.43, 0.28) |]
+                Vec3.unitY 0.035 ivory edge
+            armorPanel b
+                [| Vec3(0.455 * side, 0.10, -0.37); Vec3(0.515 * side, 0.12, -0.25)
+                   Vec3(0.535 * side, 0.31, 0.24); Vec3(0.485 * side, 0.36, 0.40)
+                   Vec3(0.445 * side, 0.08, 0.40) |]
+                normal 0.023 ivory blue
+            beam b (Vec3(0.39 * side, 0.045, 0.32)) (Vec3(0.43 * side, 0.11, -0.28)) 0.022 edge
 
+            // Seitliche Elevationsgelenke mit eingelassenem Leuchtring und vier Schrauben.
+            let hinge x radius =
+                ring (12, 0.0, 0.0, 0.0, radius, radius)
+                |> Array.map (fun p -> Vec3(x * side, 0.20 + p.X, 0.09 + p.Y))
+            b.Loft([| hinge 0.49 0.145; hinge 0.55 0.16; hinge 0.58 0.13 |], true, true, steel)
+            b.PolygonOutward(hinge 0.581 0.107, Vec3(0.5 * side, 0.20, 0.09), cyan)
+            b.PolygonOutward(hinge 0.584 0.085, Vec3(0.5 * side, 0.20, 0.09), blue)
             for i in 0 .. 3 do
-                let z = 1.39 + float i * 0.12
-                b.Loft([| ring (12, x, 0.02, z, 0.244, 0.244)
-                          ring (12, x, 0.02, z + 0.045, 0.244, 0.244) |], true, true, metal)
+                let angle = float i * Math.PI / 2.0 + Math.PI / 4.0
+                b.Box(Vec3(0.587 * side, 0.20 + cos angle * 0.108, 0.09 + sin angle * 0.108), Vec3(0.008, 0.012, 0.012), edge)
 
-            nozzle b x 0.02 2.0 0.207 0.22 metal hullDark engineGlow
+            let gun = if side < 0.0 then ShipHardpoints.turretGunLeft else ShipHardpoints.turretGunRight
+            let x = gun.X
+            let y = gun.Y
+            // Achtkantiger Verschluss, freier Lauf und vier getrennte Kuehlmanschetten.
+            b.Loft([| ring (8, x, y, 0.14, 0.155, 0.155)
+                      ring (8, x, y, -0.31, 0.17, 0.155)
+                      ring (8, x, y, -0.54, 0.125, 0.12) |], true, true, steel)
+            b.Loft([| ring (8, x, y, -0.45, 0.103, 0.103)
+                      ring (8, x, y, -0.77, 0.095, 0.095)
+                      ring (8, x, y, -1.44, 0.085, 0.085) |], true, false, dark)
+            for z in [| -0.59; -0.79; -0.99; -1.19 |] do
+                b.Loft([| ring (8, x, y, z, 0.117, 0.115)
+                          ring (8, x, y, z - 0.055, 0.117, 0.115) |], true, true, edge)
+            armorPanel b
+                [| Vec3(x - 0.10, y + 0.115, -0.56); Vec3(x + 0.10, y + 0.115, -0.56)
+                   Vec3(x + 0.077, y + 0.098, -1.40); Vec3(x - 0.077, y + 0.098, -1.40) |]
+                Vec3.unitY 0.024 ivory edge
+            armorPanel b
+                [| Vec3(x + side * 0.112, y - 0.065, -0.66); Vec3(x + side * 0.112, y + 0.045, -0.66)
+                   Vec3(x + side * 0.098, y + 0.035, -1.36); Vec3(x + side * 0.098, y - 0.065, -1.36) |]
+                normal 0.014 blue edge
+            beam b (Vec3(x, y + 0.15, -0.63)) (Vec3(x, y + 0.132, -1.32)) 0.014 steel
+            beam b (Vec3(x + side * 0.121, y - 0.027, -1.08)) (Vec3(x + side * 0.115, y - 0.027, -1.36)) 0.012 cyan
+            beam b (Vec3(x - side * 0.08, y - 0.105, 0.03)) (Vec3(x - side * 0.08, y - 0.105, -0.88)) 0.018 steel
+            for i in 0 .. 2 do
+                let z = -0.73 - float i * 0.09
+                armorPanel b
+                    [| Vec3(x + side * 0.128, y + 0.055, z); Vec3(x + side * 0.128, y + 0.055, z - 0.037)
+                       Vec3(x + side * 0.128, y - 0.002, z - 0.065); Vec3(x + side * 0.128, y - 0.002, z - 0.028) |]
+                    normal 0.004 amber dark
+            turretBore b x y gun.Z 0.13 0.17 edge dark cyan
 
-            // Acht radiale Laengsrippen geben der Duese eine klare Turbinensilhouette.
-            for i in 0 .. 7 do
-                let angle = float i * Math.PI / 4.0
-                let dx = cos angle * 0.214
-                let dy = sin angle * 0.214
-                beam b (Vec3(x + dx, 0.02 + dy, 1.73)) (Vec3(x + dx, 0.02 + dy, 1.96)) 0.012 hull
+            // Heckduesen sind kleine Waermetauscher; sie leuchten schwaecher als die Optik.
+            nozzle b (side * 0.28) 0.16 0.535 0.075 0.08 edge dark dimCyan
+            b.Box(Vec3(side * 0.28, 0.305, 0.493), Vec3(0.055, 0.012, 0.010), cyan)
 
-            // Waffenwiege, zylindrischer Lauf und Muendungsring am Laser-Hardpoint.
-            let gunX = 1.25 * side
-            b.Box(Vec3(gunX, -0.075, 0.20), Vec3(0.095, 0.070, 0.31), metal)
-            b.Loft([| ring (8, gunX, -0.10, -0.91, 0.045, 0.045)
-                      ring (8, gunX, -0.10, 0.30, 0.055, 0.055) |], true, true, hullDark)
-            for z in [| -0.77; -0.56; -0.35 |] do
-                b.Loft([| ring (8, gunX, -0.10, z, 0.065, 0.065)
-                          ring (8, gunX, -0.10, z + 0.045, 0.065, 0.065) |], true, true, metal)
-            b.Loft([| ring (8, gunX, -0.10, -0.95, 0.066, 0.066)
-                      ring (8, gunX, -0.10, -0.86, 0.066, 0.066) |], true, true, hull)
-            b.PolygonOutward(ring (8, gunX, -0.1, -0.952, 0.027, 0.027), Vec3(gunX, -0.1, 0.0), cyan)
-
-        // Heckbruecke, zentraler Rechnerblock und kleine, versenkte Statusanzeigen.
+        // Erhoehte, eigenstaendige Tracking-Optik zwischen den beiden Waffen.
+        b.Loft([| ring (8, 0.0, 0.425, 0.09, 0.125, 0.095)
+                  ring (8, 0.0, 0.425, -0.30, 0.145, 0.105)
+                  ring (8, 0.0, 0.425, -0.45, 0.11, 0.09) |], true, false, blue)
+        turretBore b 0.0 0.425 -0.485 0.086 0.075 ivory dark cyan
         armorPanel b
-            [| Vec3(-0.23, 0.29, 0.55); Vec3(0.23, 0.29, 0.55)
-               Vec3(0.28, 0.24, 1.48); Vec3(-0.28, 0.24, 1.48) |]
-            Vec3.unitY 0.032 hull metal
-        b.Box(Vec3(0.0, 0.324, 0.98), Vec3(0.13, 0.015, 0.22), hullDark)
-        for i in 0 .. 4 do
-            b.Box(Vec3(0.0, 0.344, 0.82 + float i * 0.075), Vec3(0.10, 0.008, 0.014), metal)
-        b.Box(Vec3(0.0, 0.306, 1.36), Vec3(0.06, 0.008, 0.018), cyan)
+            [| Vec3(-0.092, 0.516, -0.26); Vec3(0.092, 0.516, -0.26)
+               Vec3(0.080, 0.507, 0.075); Vec3(-0.080, 0.507, 0.075) |]
+            Vec3.unitY 0.018 blue edge
 
+        // Im Verfolgerblick lesbares Serviceheck mit Fase, dunklem Einsatz und Kuehlrippen.
+        armorPanel b
+            [| Vec3(-0.34, 0.07, 0.462); Vec3(0.34, 0.07, 0.462)
+               Vec3(0.37, 0.29, 0.462); Vec3(0.25, 0.365, 0.462)
+               Vec3(-0.25, 0.365, 0.462); Vec3(-0.37, 0.29, 0.462) |]
+            Vec3.unitZ 0.022 ivory edge
+        b.Box(Vec3(0.0, 0.215, 0.495), Vec3(0.19, 0.105, 0.012), dark)
+        for i in 0 .. 4 do
+            b.Box(Vec3(0.0, 0.145 + float i * 0.035, 0.515), Vec3(0.165, 0.008, 0.016), steel)
+        b.Box(Vec3(0.0, 0.339, 0.497), Vec3(0.085, 0.010, 0.009), amber)
         b.Build()
 
     // ---------------------------------------------------------------------------------
-    //  Gegner: Interceptor mit zwei nach vorn ragenden Klingen
+    //  Bergungskutter: Druckrumpf, zwei Arbeitsausleger und ein freies Achterdeck
     // ---------------------------------------------------------------------------------
 
+    /// Achtkantspant mit flachen Deckflächen für aufgesetzte Baugruppen.
+    let internal hullSection x z width bottom top =
+        let bevel = (top - bottom) * 0.23
+        [| Vec3(x - width * 0.74, top, z); Vec3(x + width * 0.74, top, z)
+           Vec3(x + width, top - bevel, z); Vec3(x + width, bottom + bevel, z)
+           Vec3(x + width * 0.74, bottom, z); Vec3(x - width * 0.74, bottom, z)
+           Vec3(x - width, bottom + bevel, z); Vec3(x - width, top - bevel, z) |]
+
+    let playerShip () : MeshData =
+        let b = MeshBuilder()
+        let ivory = MeshColor.rgb 0.86 0.84 0.73
+        let armor = MeshColor.rgb 0.46 0.56 0.59
+        let steel = MeshColor.rgb 0.21 0.28 0.31
+        let frame = MeshColor.rgb 0.052 0.084 0.102
+        let rubber = MeshColor.rgb 0.024 0.036 0.043
+        let ochre = MeshColor.rgb 0.93 0.41 0.055
+        let glass = MeshColor.glow 0.025 0.23 0.31 0.22
+        let lamp = MeshColor.glow 0.47 0.92 1.0 0.8
+        let core = MeshColor.glow 0.26 0.76 1.0 1.0
+
+        let section = hullSection
+
+        // Breiter Stoßbug mit abgesetzter Nase, verjüngtes Heck zwischen den Düsen.
+        b.Loft([| section 0.0 -2.48 0.28 -0.10 0.09; section 0.0 -2.23 0.48 -0.19 0.20
+                  section 0.0 -1.14 0.64 -0.27 0.25; section 0.0 0.80 0.64 -0.28 0.33
+                  section 0.0 1.76 0.27 -0.19 0.17 |], true, true, frame)
+        b.Loft([| section 0.0 -2.51 0.28 -0.06 0.10; section 0.0 -2.22 0.49 -0.12 0.225
+                  section 0.0 -1.70 0.53 -0.09 0.255 |], true, true, ivory)
+        b.Box(Vec3(0.0, 0.01, -2.52), Vec3(0.17, 0.031, 0.012), rubber)
+        b.Box(Vec3(0.0, 0.012, -2.537), Vec3(0.11, 0.009, 0.009), lamp)
+
+        // Vorverlegte, umlaufend verglaste Brücke. Die gerahmte Heckscheibe bleibt
+        // auch in Verfolgerperspektive sichtbar. Der Pilot sitzt bei Z = -1.30.
+        let sill = section 0.0 -1.92 0.39 0.15 0.27
+        let windscreen = section 0.0 -1.53 0.46 0.15 0.57
+        let cabinBack = section 0.0 -0.67 0.45 0.19 0.65
+        let rearWindow = section 0.0 -0.41 0.39 0.18 0.38
+        b.Loft([| sill; windscreen; cabinBack; rearWindow |], true, true, glass)
+        b.Loft([| section 0.0 -1.56 0.325 0.555 0.584
+                  section 0.0 -0.68 0.335 0.628 0.673 |], true, true, ivory)
+        for side in [| -1.0; 1.0 |] do
+            let p x y z = Vec3(side * x, y, z)
+            beam b (p 0.29 0.27 -1.92) (p 0.34 0.57 -1.53) 0.025 steel
+            beam b (p 0.34 0.57 -1.53) (p 0.33 0.65 -0.67) 0.023 steel
+            beam b (p 0.33 0.65 -0.67) (p 0.29 0.37 -0.41) 0.027 ivory
+            beam b (p 0.45 0.20 -1.03) (p 0.34 0.61 -1.03) 0.020 frame
+            armorPanel b
+                [| p 0.37 0.18 -1.81; p 0.53 0.11 -1.60; p 0.68 0.11 -0.42
+                   p 0.59 0.23 -0.19; p 0.44 0.29 -0.48 |] Vec3.unitY 0.045 ivory steel
+        beam b (Vec3(0.0, 0.38, -0.41)) (Vec3(0.0, 0.65, -0.67)) 0.018 steel
+
+        // Deckplatte unter dem optionalen Drehkranz. Dessen Flansch beginnt bei Y=0.37.
+        b.Loft([| section 0.0 -0.38 0.41 0.22 0.32; section 0.0 0.04 0.58 0.21 0.374
+                  section 0.0 1.19 0.54 0.21 0.374; section 0.0 1.47 0.33 0.16 0.27 |], true, true, armor)
+        let hatch = [| Vec3(-0.27, 0.377, 0.20); Vec3(0.27, 0.377, 0.20)
+                       Vec3(0.36, 0.377, 0.32); Vec3(0.36, 0.377, 0.95)
+                       Vec3(0.24, 0.377, 1.07); Vec3(-0.24, 0.377, 1.07)
+                       Vec3(-0.36, 0.377, 0.95); Vec3(-0.36, 0.377, 0.32) |]
+        armorPanel b hatch Vec3.unitY 0.008 frame steel
+        for x in [| -0.16; 0.16 |] do
+            b.Box(Vec3(x, 0.390, 0.64), Vec3(0.144, 0.006, 0.31), armor)
+        b.Box(Vec3(0.0, -0.015, 1.775), Vec3(0.181, 0.102, 0.017), rubber)
+        for y in [| -0.064; 0.005; 0.074 |] do
+            b.Box(Vec3(0.0, y, 1.804), Vec3(0.155, 0.012, 0.018), steel)
+
+        let sides =
+            [| -1.0, ShipHardpoints.playerEngineLeft, ShipHardpoints.playerGunLeft
+               1.0, ShipHardpoints.playerEngineRight, ShipHardpoints.playerGunRight |]
+        for side, engine, gun in sides do
+            let p x y z = Vec3(side * x, y, z)
+            // Zwei einzelne Querträger halten die außenliegenden Arbeitsmodule.
+            // Dazwischen bleibt ein echter Durchblick bis zum Hintergrund.
+            for z in [| -0.67; 0.68 |] do
+                beam b (p 0.44 0.01 (z - 0.12)) (p 1.63 -0.015 (z + 0.11)) 0.087 steel
+                beam b (p 0.56 0.10 (z - 0.12)) (p 1.54 0.075 (z + 0.08)) 0.035 ivory
+
+            // Die dunklen Motorblöcke liegen hinter abgeschrägten Wartungshauben.
+            // Der Bereich hinter dem letzten Ring bleibt für Flamme und Kern offen.
+            let motor z radius = ring (12, engine.X, engine.Y, z, radius, radius)
+            b.Loft([| motor -0.22 0.20; motor 0.13 0.32; motor 1.29 0.32; motor 1.76 0.275 |], true, true, frame)
+            b.Loft([| section engine.X -0.30 0.18 0.015 0.23; section engine.X 0.09 0.32 0.0 0.42
+                      section engine.X 1.12 0.30 0.015 0.43; section engine.X 1.37 0.225 0.04 0.28 |], true, true, ivory)
+            armorPanel b
+                [| p 0.59 0.429 0.14; p 0.73 0.429 0.14; p 0.73 0.432 1.08; p 0.59 0.432 1.08 |]
+                Vec3.unitY 0.012 ochre steel
+            for z in [| 1.44; 1.65 |] do
+                b.Loft([| motor z 0.333; motor (z + 0.033) 0.333; motor (z + 0.081) 0.295 |], true, false, steel)
+            nozzle b engine.X engine.Y engine.Z 0.30 0.25 armor rubber core
+
+            // Außengondeln: am Heck größere, nach oben versetzte Schultern.
+            let podX = 1.64 * side
+            b.Loft([| section podX -1.19 0.21 -0.16 0.10; section podX -0.76 0.38 -0.29 0.17
+                      section podX 1.12 0.43 -0.29 0.20; section podX 1.42 0.32 -0.21 0.15 |], true, true, steel)
+            // Prallbügel, innenliegende Waffenwiege und offene Mündung.
+            beam b (p 1.91 -0.12 -0.77) (p 2.025 -0.12 1.14) 0.047 rubber
+            b.Box(Vec3(gun.X, gun.Y, -0.12), Vec3(0.135, 0.105, 0.35), steel)
+            b.Loft([| ring (8, gun.X, gun.Y, gun.Z + 0.17, 0.078, 0.078)
+                      ring (8, gun.X, gun.Y, -0.31, 0.104, 0.104) |], false, true, frame)
+            turretBore b gun.X gun.Y gun.Z 0.095 0.18 armor rubber lamp
+
+            // Zweifarbiger Heckabschluss mit getrennten Positions- und Arbeitslichtern.
+            b.Box(p 1.64 0.010 1.437, Vec3(0.222, 0.059, 0.014), rubber)
+            let runningLight =
+                if side < 0.0 then MeshColor.glow 1.0 0.13 0.045 0.85
+                else MeshColor.glow 0.10 0.88 0.48 0.8
+            b.Box(p 1.79 0.018 1.457, Vec3(0.052, 0.022, 0.008), runningLight)
+            b.Box(p 1.58 0.018 1.457, Vec3(0.091, 0.012, 0.008), lamp)
+
+        // Ein offener Korb hält bis zu drei sichtbare Frachtstücke. Der Heckbügel
+        // bleibt niedrig, damit die Ladung aus der Verfolgerkamera erkennbar ist.
+        let cargo z width bottom top = section -1.64 z width bottom top
+        b.Loft([|cargo -0.86 0.33 0.06 0.18; cargo 1.16 0.34 0.06 0.18|],true,true,frame)
+        for x in [-2.005;-1.275] do
+            for z in [-0.86;0.44;1.16] do
+                beam b (Vec3(x,0.12,z)) (Vec3(x,0.41,z)) 0.047 steel
+            beam b (Vec3(x,0.37,-0.86)) (Vec3(x,0.37,1.16)) 0.039 ochre
+        for z in [-0.86;1.16] do
+            b.Box(Vec3(-1.64,0.24,z),Vec3(0.38,0.085,0.048),ochre)
+        for z in [-0.61;0.03;0.68] do
+            b.Box(Vec3(-1.64,0.184,z),Vec3(0.23,0.01,0.055),armor)
+
+        // Steuerbord: offenes Bergungsgestell mit gefaltetem Kranarm,
+        // Hydraulikstrebe und zwei nach vorn reichenden Greifbacken.
+        b.Loft([| section 1.64 -0.97 0.24 0.09 0.26; section 1.64 -0.66 0.34 0.08 0.32
+                  section 1.64 0.91 0.34 0.10 0.33; section 1.64 1.20 0.25 0.10 0.225 |], true, true, ivory)
+        b.Box(Vec3(1.64, 0.343, 0.07), Vec3(0.187, 0.022, 0.68), frame)
+        for x in [| 1.48; 1.80 |] do
+            beam b (Vec3(x, 0.33, 0.90)) (Vec3(x, 0.57, 0.57)) 0.049 steel
+            beam b (Vec3(x, 0.57, 0.57)) (Vec3(x, 0.47, -0.40)) 0.049 ochre
+            beam b (Vec3(x, 0.34, 0.23)) (Vec3(x, 0.52, 0.53)) 0.027 armor
+            beam b (Vec3(x, 0.44, -0.39)) (Vec3(x, 0.37, -0.68)) 0.031 steel
+        b.Box(Vec3(1.64, 0.57, 0.57), Vec3(0.226, 0.065, 0.078), frame)
+        b.Box(Vec3(1.64, 0.48, -0.40), Vec3(0.207, 0.065, 0.065), ochre)
+        b.Build()
+
+    /// Kurzer Arbeitslaser in einer seitlich am Rumpf verschraubten Wiege.
+    let private playerGunPod (b: MeshBuilder) (gun: Vec3) housing metal dark lamp =
+        let collar dz width = ring (8, gun.X, gun.Y, gun.Z + dz, width, width)
+        b.Loft([| collar 0.12 0.068; collar 0.35 0.073; collar 0.40 0.12; collar 0.75 0.12 |],
+               false, true, metal)
+        b.Box(Vec3(gun.X, gun.Y + 0.016, gun.Z + 0.65), Vec3(0.14, 0.11, 0.21), housing)
+        turretBore b gun.X gun.Y gun.Z 0.085 0.14 metal dark lamp
+
+    /// Lastkahn: zwei frei auslaufende Ladeholme mit sechs austauschbaren Frachtkassetten.
+    let playerHauler () : MeshData =
+        let b = MeshBuilder()
+        let petrol = MeshColor.rgb 0.055 0.31 0.34
+        let teal = MeshColor.rgb 0.10 0.51 0.51
+        let ochre = MeshColor.rgb 0.97 0.49 0.075
+        let sand = MeshColor.rgb 0.88 0.78 0.50
+        let steel = MeshColor.rgb 0.26 0.35 0.36
+        let iron = MeshColor.rgb 0.060 0.097 0.107
+        let glass = MeshColor.glow 0.036 0.24 0.32 0.23
+        let workLight = MeshColor.glow 1.00 0.84 0.44 0.78
+        let jet = MeshColor.glow 0.33 0.86 1.00 1.00
+        let keel = hullSection 0.0
+
+        // Druckkabine vorn, geschützte Mittelpier und breites Maschinenhaus achtern.
+        b.Loft([| keel -2.41 0.27 -0.23 0.12; keel -2.14 0.48 -0.29 0.23
+                  keel -0.90 0.48 -0.30 0.28; keel 0.06 0.75 -0.30 0.37
+                  keel 1.24 0.75 -0.27 0.37; keel 1.64 0.45 -0.19 0.21 |], true, true, petrol)
+        b.Loft([| keel -2.43 0.27 -0.14 0.13; keel -2.12 0.49 -0.10 0.26
+                  keel -1.96 0.48 -0.10 0.25 |], true, true, ochre)
+        b.Loft([| keel -2.06 0.42 0.19 0.27; keel -1.79 0.45 0.22 0.63
+                  keel -1.20 0.43 0.23 0.63; keel -0.98 0.39 0.23 0.36 |], true, true, glass)
+        b.Loft([| keel -1.82 0.38 0.60 0.65; keel -1.20 0.38 0.60 0.65 |], true, true, sand)
+        beam b (Vec3(0.0, 0.27, -2.064)) (Vec3(0.0, 0.64, -1.80)) 0.022 petrol
+        // Auf Y=0.37 sitzt der abnehmbare Geschützflansch, auch bei leerem Deck.
+        b.Box(Vec3(0.0, 0.353, 0.65), Vec3(0.53, 0.018, 0.53), steel)
+        for z in [| -1.70; -0.67; 0.49; 1.25 |] do
+            b.Box(Vec3(0.0, -0.255, z), Vec3(1.62, 0.055, 0.084), iron)
+
+        for side, engine, gun in
+            [| -1.0, ShipHardpoints.playerEngineLeft, ShipHardpoints.playerGunLeft
+               1.0, ShipHardpoints.playerEngineRight, ShipHardpoints.playerGunRight |] do
+            let p x y z = Vec3(side * x, y, z)
+            beam b (p 0.428 0.25 -1.51) (p 0.339 0.635 -1.51) 0.023 petrol
+            b.Box(p 0.31 0.02 -2.363, Vec3(0.066, 0.039, 0.041), workLight)
+
+            // Lange äußere Kufen mit abgesetzten Rammschuhen, Ober- und Untergurt.
+            let rail = hullSection (side * 1.62)
+            b.Loft([| rail -2.47 0.10 -0.20 -0.02; rail -2.16 0.17 -0.32 0.20
+                      rail 1.14 0.18 -0.32 0.20; rail 1.61 0.14 -0.23 0.10 |], true, true, petrol)
+            b.Loft([| rail -2.49 0.108 -0.21 0.005; rail -2.24 0.17 -0.32 0.15 |], true, true, ochre)
+            b.Box(p 1.62 0.194 -0.44, Vec3(0.114, 0.032, 1.59), teal)
+            for z in [| -1.83; -1.00; -0.17; 0.66 |] do
+                b.Box(p 1.62 0.09 z, Vec3(0.20, 0.15, 0.045), steel)
+            // Pressblechsicken und dunkle Spannbänder betonen die einzelnen Kassetten.
+            for bay in 0 .. 2 do
+                let z = -1.42 + 0.83 * float bay
+                let x = side * 1.00
+                let section dz width low high = hullSection x (z + dz) width low high
+                let paint = if (bay = 1) = (side < 0.0) then teal else ochre
+                b.Box(Vec3(x, -0.085, z), Vec3(0.17, 0.14, 0.37), iron)
+                b.Loft([| section -0.38 0.35 0.055 0.42; section -0.32 0.39 0.045 0.465
+                          section 0.32 0.39 0.045 0.465; section 0.38 0.35 0.055 0.42 |], true, true, paint)
+                for dz in [| -0.27; 0.27 |] do
+                    b.Loft([| section (dz - 0.024) 0.399 0.039 0.481
+                              section (dz + 0.024) 0.399 0.039 0.481 |], false, false, iron)
+                for dx in [| -0.18; 0.0; 0.18 |] do
+                    b.Box(Vec3(x + dx, 0.469, z), Vec3(0.025, 0.016, 0.205), paint)
+                b.Box(p 1.398 0.303 z, Vec3(0.008, 0.044, 0.102), sand)
+            playerGunPod b gun petrol steel iron workLight
+
+            // Seitliche Wartungstürme führen nach innen zu zwei großen Runddüsen.
+            let shoulder = hullSection (side * 1.27)
+            b.Loft([| shoulder 0.67 0.32 -0.24 0.20; shoulder 0.93 0.45 -0.33 0.47
+                      shoulder 1.36 0.43 -0.32 0.47; shoulder 1.64 0.38 -0.24 0.30 |], true, true, teal)
+            for z in [| 1.01; 1.14; 1.27 |] do
+                b.Box(p 1.27 0.48 z, Vec3(0.24, 0.025, 0.029), steel)
+            b.Box(p 1.27 0.09 1.648, Vec3(0.24, 0.069, 0.014), iron)
+            b.Box(p 1.27 0.09 1.667, Vec3(0.16, 0.030, 0.012), workLight)
+            let motor z radius = ring (12, engine.X, engine.Y, z, radius, radius)
+            b.Loft([| motor 0.80 0.29; motor 1.16 0.41; motor 1.59 0.41; motor 1.82 0.305 |],
+                   true, true, iron)
+            for z in [| 1.39; 1.56 |] do
+                b.Loft([| motor z 0.414; motor (z + 0.065) 0.416 |], false, false, sand)
+            nozzle b engine.X engine.Y engine.Z 0.335 0.24 steel iron jet
+        b.Build()
+
+    /// Sperber: gepfeilte Tragfläche mit geknickter Vorderkante und zwei flachen Schlitzdüsen.
+    let playerInterceptor () : MeshData =
+        let b = MeshBuilder()
+        let white = MeshColor.rgb 0.94 0.94 0.90
+        let silver = MeshColor.rgb 0.56 0.65 0.68
+        let red = MeshColor.rgb 0.87 0.065 0.055
+        let crimson = MeshColor.rgb 0.48 0.033 0.044
+        let graphite = MeshColor.rgb 0.10 0.14 0.17
+        let recess = MeshColor.rgb 0.035 0.053 0.074
+        let visor = MeshColor.glow 0.035 0.19 0.27 0.20
+        let ice = MeshColor.glow 0.40 0.82 1.00 0.84
+        let jet = MeshColor.glow 0.52 0.88 1.00 1.00
+        let keel = hullSection 0.0
+        b.Loft([| keel -2.48 0.043 -0.054 0.015; keel -1.79 0.24 -0.14 0.16
+                  keel -0.98 0.35 -0.19 0.27; keel 0.04 0.67 -0.23 0.37
+                  keel 1.25 0.69 -0.22 0.37; keel 1.74 0.34 -0.14 0.16 |], true, true, white)
+        b.Loft([| keel -2.50 0.038 -0.055 0.019; keel -2.17 0.145 -0.109 0.094 |], true, true, red)
+        b.Loft([| keel -1.78 0.15 0.11 0.17; keel -1.31 0.245 0.16 0.46
+                  keel -0.83 0.255 0.20 0.51; keel -0.40 0.245 0.25 0.32 |], true, true, visor)
+        beam b (Vec3(0.0, 0.509, -0.84)) (Vec3(0.0, 0.334, -0.40)) 0.028 red
+        // Deckfuge rund um die austauschbare Lafette.
+        b.Box(Vec3(0.0, 0.354, 0.65), Vec3(0.51, 0.017, 0.52), silver)
+
+        for side, engine, gun in
+            [| -1.0, ShipHardpoints.playerEngineLeft, ShipHardpoints.playerGunLeft
+               1.0, ShipHardpoints.playerEngineRight, ShipHardpoints.playerGunRight |] do
+            let p x y z = Vec3(side * x, y, z)
+            // Fünf Profile definieren Knick, Wölbung und eine tordierte Flügelspitze.
+            // An den gemeinsamen Profilen treffen die verschieden lackierten Bleche bündig aufeinander.
+            let wingSection x y front rear thickness =
+                let chord = rear - front
+                [| p x y front; p x (y + thickness) (front + chord * 0.26)
+                   p x (y + thickness * 0.55) (front + chord * 0.73); p x y rear
+                   p x (y - thickness * 0.78) (front + chord * 0.43) |]
+            let sections =
+                [| wingSection 0.29 -0.006 -1.43 1.43 0.15
+                   wingSection 0.99 -0.018 -0.68 1.46 0.11
+                   wingSection 1.60 -0.028 0.43 1.53 0.078
+                   wingSection 1.79 -0.011 0.67 1.50 0.059
+                   wingSection 2.10 0.044 1.05 1.41 0.030 |]
+            for span in 0 .. sections.Length - 2 do
+                let inner = sections.[span]
+                let outer = sections.[span + 1]
+                let inside = (Array.reduce (+) inner + Array.reduce (+) outer) / 10.0
+                for face in 0 .. inner.Length - 1 do
+                    let next = (face + 1) % inner.Length
+                    let paint =
+                        match span, face with
+                        | 2, _ -> red
+                        | _, 0 -> red
+                        | _, 2 | _, 3 | _, 4 -> silver
+                        | _ -> white
+                    b.PolygonOutward([| inner.[face]; inner.[next]; outer.[next]; outer.[face] |], inside, paint)
+                if span = sections.Length - 2 then b.PolygonOutward(outer, inside, crimson)
+            // Helle Kinnfläche und rote Außenkante reichen vom Bug bis zur Tragflächenwurzel.
+            armorPanel b
+                [| p 0.105 0.04 -2.12; p 0.28 0.085 -1.63; p 0.63 0.095 -0.83
+                   p 0.52 0.16 -0.79; p 0.245 0.18 -1.40 |] Vec3.unitY 0.014 red crimson
+            // Unter dem Flügel eingestrakte Waffenschienen, Mündungen vor der Nasenkante.
+            b.Loft([| hullSection gun.X -0.56 0.11 -0.18 -0.028; hullSection gun.X -0.18 0.153 -0.20 0.015
+                      hullSection gun.X 0.59 0.12 -0.13 0.06 |], true, true, white)
+            playerGunPod b gun silver graphite recess ice
+
+            // Gepanzerte Lufteinlässe laufen in breite, flache Schubkanäle aus.
+            let duct z width low high = hullSection engine.X z width low high
+            b.Loft([| duct -0.69 0.185 -0.16 0.11; duct -0.46 0.27 -0.23 0.18
+                      duct 1.29 0.32 -0.24 0.21; duct 1.78 0.31 -0.16 0.17 |], true, true, graphite)
+            b.Loft([| duct -0.63 0.19 0.035 0.12; duct -0.44 0.26 0.04 0.21
+                      duct 0.28 0.28 0.08 0.23 |], true, true, red)
+            let lip = duct engine.Z 0.31 -0.125 0.165
+            let opening = duct engine.Z 0.255 -0.084 0.124
+            let throat = duct (engine.Z - 0.095) 0.221 -0.050 0.090
+            let inside = Vec3(engine.X, engine.Y, engine.Z - 0.20)
+            b.Loft([| duct 1.72 0.33 -0.17 0.18; lip |], false, false, silver)
+            for i in 0 .. lip.Length - 1 do
+                let j = (i + 1) % lip.Length
+                b.PolygonOutward([| lip.[i]; lip.[j]; opening.[j]; opening.[i] |], inside, graphite)
+                let outside = (lip.[i] + lip.[j]) * 0.5 - Vec3.unitZ * 0.04
+                b.PolygonOutward([| opening.[i]; opening.[j]; throat.[j]; throat.[i] |], outside, recess)
+            b.PolygonOutward(throat, inside, jet)
+            for dx in [| -0.075; 0.075 |] do
+                b.Box(Vec3(engine.X + dx, 0.02, 1.93), Vec3(0.012, 0.07, 0.025), graphite)
+
+            // Ausgestellte Doppelflossen: rote Füße, breite helle Felder, schmale rote Flossenköpfe.
+            let finRootFront, finRootRear = p 0.97 0.056 0.22, p 0.99 0.06 1.51
+            let finTopFront, finTopRear = p 1.26 0.71 1.10, p 1.30 0.72 1.57
+            let finBand low high color =
+                let section t a c = Vec3.lerp a c t
+                b.Slab([| section low finRootFront finTopFront; section low finRootRear finTopRear
+                          section high finRootRear finTopRear; section high finRootFront finTopFront |],
+                       [| 0.034 - 0.017 * low; 0.034 - 0.017 * low
+                          0.034 - 0.017 * high; 0.034 - 0.017 * high |], Vec3.unitX, color)
+            finBand 0.0 0.34 red
+            finBand 0.34 0.82 white
+            finBand 0.82 1.0 red
+        b.Build()
+
+    // ---------------------------------------------------------------------------------
+    //  Gegnerflotte: alle Modelle nutzen die Waffen- und Motorpositionen der Physik.
+    // ---------------------------------------------------------------------------------
+
+    let private enemyEngine = ShipHardpoints.interceptorEngine / ShipHardpoints.interceptorScale
+    let private enemyMuzzles =
+        [| ShipHardpoints.interceptorGunLeft / ShipHardpoints.interceptorScale
+           ShipHardpoints.interceptorGunRight / ShipHardpoints.interceptorScale |]
+
+    // Die Profilfarbe der Instanz färbt Lack und Positionslichter pro Rolle.
+    let private enemyPlate = MeshColor.rgb 0.57 0.60 0.63
+    let private enemySteel = MeshColor.rgb 0.27 0.32 0.36
+    let private enemyFrame = MeshColor.rgb 0.063 0.079 0.099
+    let private enemyLight = MeshColor.glow 0.94 0.90 0.83 0.82
+    let private enemyCore = MeshColor.glow 1.0 0.60 0.26 1.0
+
+    let private enemyNozzle b radius =
+        nozzle b enemyEngine.X enemyEngine.Y enemyEngine.Z radius 0.22 enemySteel enemyFrame enemyCore
+
+    let private enemyBarrel (b: MeshBuilder) (gun: Vec3) radius rearZ =
+        let sleeve z r = ring (8, gun.X, gun.Y, z, r, r)
+        b.Loft([| sleeve (gun.Z + 0.13) (radius * 0.77); sleeve (rearZ - 0.16) radius
+                  sleeve rearZ (radius * 1.12) |], false, true, enemySteel)
+        turretBore b gun.X gun.Y gun.Z radius 0.14 enemyPlate enemyFrame enemyLight
+
+    // Achteckiger Panzerquerschnitt mit ebener Oberseite.
+    let private enemySection x z width bottom top =
+        let bevel = (top - bottom) * 0.24
+        [| Vec3(x - width * 0.72, top, z); Vec3(x + width * 0.72, top, z)
+           Vec3(x + width, top - bevel, z); Vec3(x + width, bottom + bevel, z)
+           Vec3(x + width * 0.72, bottom, z); Vec3(x - width * 0.72, bottom, z)
+           Vec3(x - width, bottom + bevel, z); Vec3(x - width, top - bevel, z) |]
+
+    /// Offener Dreipunkt-Rahmen mit kugeligem Sensorkern und zwei langen Tastarmen.
+    let sentryDrone () : MeshData =
+        let b = MeshBuilder()
+        let eye z radius = ring (12, 0.0, 0.0, z, radius, radius * 0.76)
+        b.Loft([| eye -0.77 0.22; eye -0.58 0.44; eye -0.28 0.53
+                  eye 0.01 0.45; eye 0.23 0.24 |], true, true, enemySteel)
+        b.Loft([| eye -0.785 0.19; eye -0.82 0.125 |], true, true, enemyLight)
+        b.Loft([| eye -0.33 0.535; eye -0.23 0.535 |], true, true, enemyFrame)
+        b.Loft([| eye 0.16 0.21; eye 0.62 0.14; eye 0.91 0.20 |], true, true, enemyFrame)
+        enemyNozzle b 0.176
+        for gun in enemyMuzzles do
+            let side = sign gun.X |> float
+            let p x y z = Vec3(side * x, y, z)
+            let hinge = p 1.14 0.0 -0.84
+            beam b (p 0.33 0.19 -0.34) (p 0.78 0.26 -0.19) 0.058 enemyPlate
+            beam b (p 0.78 0.26 -0.19) hinge 0.062 enemyPlate
+            beam b (p 0.27 -0.18 -0.34) hinge 0.040 enemySteel
+            beam b (p 0.10 0.0 0.61) (p 0.78 0.26 -0.19) 0.035 enemyFrame
+            b.Loft([| ring (8, gun.X, 0.0, -1.60, 0.075, 0.080)
+                      ring (8, gun.X, 0.0, -0.87, 0.118, 0.135)
+                      ring (8, gun.X, 0.0, -0.67, 0.070, 0.085) |], true, true, enemySteel)
+            enemyBarrel b gun 0.052 -1.48
+        b.Build()
+
+    /// Schneller Späher: schmaler Rumpf zwischen zwei senkrechten Sensorklingen.
     let interceptor () : MeshData =
         let b = MeshBuilder()
         let hull = MeshColor.rgb 0.12 0.16 0.20
         let hullDark = MeshColor.rgb 0.025 0.036 0.047
         let metal = MeshColor.rgb 0.29 0.33 0.35
-        let accent = MeshColor.rgb 0.60 0.045 0.018
-        let visor = MeshColor.glow 1.0 0.065 0.018 0.9
-        let engineGlow = MeshColor.glow 1.0 0.42 0.12 1.0
+        let accent = MeshColor.rgb 0.12 0.53 0.64
+        let visor = MeshColor.glow 0.47 0.92 0.97 0.9
 
         // Zentrale Kapsel mit gluehendem Hecktriebwerk
         let podEnd = ring (8, 0.0, 0.0, 0.91, 0.28, 0.20)
@@ -472,7 +1172,7 @@ module ProceduralMeshes =
             hullDark
         )
 
-        nozzle b 0.0 0.0 1.1 0.24 0.24 metal hullDark engineGlow
+        enemyNozzle b 0.24
 
         // Geschichtete Chitinpanzerung mit schmalen, voneinander getrennten Sensoren.
         for side in [| -1.0; 1.0 |] do
@@ -511,9 +1211,10 @@ module ProceduralMeshes =
         armorPanel b strutPlate Vec3.unitY 0.027 hull metal
         armorPanel b (mirrorX strutPlate) Vec3.unitY 0.027 hull metal
 
-        // Klingen: schmale rote Schneiden auf dunklem, rautenfoermigem Rueckgrat.
-        for side in [| -1.0; 1.0 |] do
-            let x = 1.2 * side
+        // Klingen mit heller Schneide auf dunklem, rautenförmigem Rückgrat.
+        for gun in enemyMuzzles do
+            let x = gun.X
+            let side = sign x |> float
             let b1 = ring (4, x, 0.0, -0.7, 0.09, 0.34)
             b.Loft([| ring (4, x, 0.0, -2.0, 0.005, 0.005); b1 |], false, false, hull)
 
@@ -540,13 +1241,13 @@ module ProceduralMeshes =
             b.Box(Vec3(x, 0.26, -0.91), Vec3(0.022, 0.016, 0.09), visor)
             b.Box(Vec3(x, -0.26, -0.91), Vec3(0.022, 0.016, 0.09), visor)
 
-            // Mechanische Streben, drei rote Verbindungsklemmen und ein freier Lauf.
+            // Mechanische Streben, drei Verbindungsklemmen und ein freier Lauf.
             beam b (Vec3(0.43 * side, -0.10, 0.44)) (Vec3(1.08 * side, -0.10, 0.14)) 0.028 metal
             for i in 0 .. 2 do
                 b.Box(Vec3((0.59 + float i * 0.17) * side, 0.11, 0.06 + float i * 0.04), Vec3(0.025, 0.021, 0.12), accent)
             b.Loft([| ring (6, x, 0.0, -1.98, 0.023, 0.023)
                       ring (6, x, 0.0, -1.16, 0.035, 0.035) |], true, true, metal)
-            b.PolygonOutward(ring (6, x, 0.0, -2.002, 0.014, 0.014), Vec3(x, 0.0, -1.0), visor)
+            b.PolygonOutward(ring (6, x, gun.Y, gun.Z, 0.014, 0.014), Vec3(x, 0.0, -1.0), visor)
 
             // Heckkuhler und leuchtende Risse an beiden Flanken.
             for i in 0 .. 3 do
@@ -562,7 +1263,218 @@ module ProceduralMeshes =
 
         b.Build()
 
+    /// Breite, niedrige Waffenplattform. Die beiden tief gestaffelten Kasematten
+    /// tragen eigene Rücklaufgehäuse und schließen seitlich an den Querträger an.
+    let gunship () : MeshData =
+        let b = MeshBuilder()
+        b.Loft([| enemySection 0.0 -1.30 0.54 -0.15 0.10
+                  enemySection 0.0 -0.90 0.84 -0.24 0.18
+                  enemySection 0.0 0.35 0.83 -0.24 0.18
+                  enemySection 0.0 0.88 0.36 -0.19 0.19 |], true, true, enemyFrame)
+        b.Loft([| enemySection 0.0 -1.32 0.52 -0.06 0.08; enemySection 0.0 -0.84 0.78 -0.04 0.22
+                  enemySection 0.0 0.14 0.72 -0.02 0.22; enemySection 0.0 0.57 0.48 0.0 0.17 |], true, true, enemyPlate)
+        b.Loft([| enemySection -0.25 -0.69 0.30 0.18 0.27; enemySection -0.25 -0.38 0.32 0.18 0.40
+                  enemySection -0.25 0.03 0.29 0.18 0.395 |], true, true, enemySteel)
+        b.Box(Vec3(-0.25, 0.253, -0.697), Vec3(0.208, 0.012, 0.009), enemyLight)
+        b.Box(Vec3(0.0, -0.058, -0.08), Vec3(1.18, 0.130, 0.39), enemySteel)
+        for gun in enemyMuzzles do
+            let side = sign gun.X |> float
+            let x = side * 1.007
+            b.Loft([| enemySection x -1.44 0.265 -0.22 0.16
+                      enemySection x -1.15 0.31 -0.29 0.265
+                      enemySection x 0.53 0.31 -0.28 0.265
+                      enemySection x 0.75 0.26 -0.20 0.18 |], true, true, enemySteel)
+            b.Loft([| enemySection x -1.32 0.237 0.07 0.22; enemySection x -1.08 0.268 0.09 0.30
+                      enemySection x -0.43 0.268 0.09 0.30 |], true, true, enemyPlate)
+            enemyBarrel b gun 0.106 -1.26
+            for z in [| -0.23; 0.04; 0.31 |] do
+                b.Box(Vec3(x, 0.273, z), Vec3(0.21, 0.018, 0.073), enemyFrame)
+        enemyNozzle b 0.226
+        b.Build()
+
+    /// Zwei bauchige Nutzlastkörper unter einem schmalen Sattel. Die tiefen
+    /// Stirnverschlüsse und der freie Kanal darunter prägen die Frontansicht.
+    let bomber () : MeshData =
+        let b = MeshBuilder()
+        b.Loft([| enemySection 0.0 -0.99 0.18 0.04 0.18; enemySection 0.0 -0.54 0.40 -0.09 0.35
+                  enemySection 0.0 0.37 0.36 -0.20 0.33; enemySection 0.0 0.88 0.23 -0.21 0.22 |], true, true, enemySteel)
+        b.Loft([| enemySection 0.0 -0.98 0.13 0.15 0.19; enemySection 0.0 -0.50 0.23 0.24 0.39
+                  enemySection 0.0 -0.10 0.20 0.25 0.39 |], true, true, enemyFrame)
+        b.Box(Vec3(0.0, 0.344, -0.53), Vec3(0.12, 0.017, 0.035), enemyLight)
+        for gun in enemyMuzzles do
+            let side = sign gun.X |> float
+            let x = side * 0.84
+            let pod z w h = ring (12, x, -0.06, z, w, h)
+            beam b (Vec3(0.11 * side, 0.23, -0.49)) (Vec3(x, 0.20, -0.49)) 0.09 enemyFrame
+            beam b (Vec3(0.13 * side, 0.20, 0.35)) (Vec3(x, 0.20, 0.35)) 0.09 enemyFrame
+            b.Loft([| pod -1.73 0.23 0.20; pod -1.49 0.40 0.31; pod -1.16 0.45 0.34
+                      pod 0.42 0.45 0.34; pod 0.77 0.36 0.29; pod 0.89 0.25 0.21 |], true, true, enemyPlate)
+            b.Loft([| pod -1.742 0.19 0.161; pod -1.756 0.16 0.136 |], true, true, enemyFrame)
+            for dx in [| -0.067; 0.067 |] do
+                b.PolygonOutward(ring (8, x + dx, -0.058, -1.759, 0.032, 0.032), Vec3(x, -0.06, -1.4), enemyLight)
+            for z in [| -0.87; 0.11 |] do
+                b.Loft([| pod z 0.46 0.350; pod (z + 0.128) 0.46 0.350 |], true, true, enemyFrame)
+            enemyBarrel b gun 0.065 -1.27
+        enemyNozzle b 0.212
+        b.Build()
+
+    /// Flaches Pfeildeck mit gestuftem Leitstand. Die langen Außenbatterien
+    /// sitzen in den Vorderkanten; das schmale Heck gibt die zentrale Düse frei.
+    let commandShip () : MeshData =
+        let b = MeshBuilder()
+        b.Loft([| enemySection 0.0 -1.98 0.12 -0.06 0.06; enemySection 0.0 -1.30 0.42 -0.16 0.13
+                  enemySection 0.0 0.18 0.64 -0.30 0.20; enemySection 0.0 0.89 0.30 -0.23 0.22 |], true, true, enemySteel)
+        for gun in enemyMuzzles do
+            let side = sign gun.X |> float
+            let p x y z = Vec3(side * x, y, z)
+            let wing =
+                [| p 0.15 0.012 -1.82; p 0.65 0.075 -1.08; p 1.30 0.048 -0.44
+                   p 1.31 0.065 0.88; p 0.63 0.10 0.59; p 0.23 0.13 0.38 |]
+            armorPanel b wing Vec3.unitY 0.082 enemyPlate enemyFrame
+            armorPanel b
+                [| p 0.38 0.175 -1.04; p 0.99 0.19 -0.25; p 1.14 0.158 0.58
+                   p 0.70 0.213 0.42 |] Vec3.unitY 0.025 enemySteel enemyFrame
+            b.Loft([| enemySection (1.20 * side) -1.56 0.095 -0.078 0.085
+                      enemySection (1.16 * side) -1.26 0.15 -0.13 0.145
+                      enemySection (1.10 * side) 0.29 0.18 -0.12 0.155 |], true, true, enemySteel)
+            enemyBarrel b gun 0.071 -1.45
+            beam b (p 0.52 0.200 -0.95) (p 1.00 0.229 -0.20) 0.017 enemyLight
+        b.Loft([| enemySection 0.0 -1.06 0.19 0.06 0.17; enemySection 0.0 -0.56 0.41 0.11 0.27
+                  enemySection 0.0 0.66 0.34 0.11 0.27 |], true, true, enemyPlate)
+        b.Loft([| enemySection 0.0 -0.53 0.18 0.23 0.31; enemySection 0.0 -0.18 0.28 0.22 0.395
+                  enemySection 0.0 0.36 0.245 0.22 0.395 |], true, true, enemyFrame)
+        for x in [| -0.122; 0.0; 0.122 |] do
+            b.Box(Vec3(x, 0.285, -0.536), Vec3(0.047, 0.014, 0.009), enemyLight)
+        b.Box(Vec3(0.0, 0.402, 0.08), Vec3(0.15, 0.009, 0.22), enemySteel)
+        enemyNozzle b 0.252
+        b.Build()
+
     // ---------------------------------------------------------------------------------
+    let sealedFreight () : MeshData =
+        let b = MeshBuilder()
+        let case = MeshColor.rgb 0.57 0.13 0.036
+        let lid = MeshColor.rgb 0.84 0.29 0.07
+        let strap = MeshColor.rgb 0.095 0.14 0.16
+        let label = MeshColor.rgb 0.90 0.85 0.62
+        let seal = MeshColor.glow 0.12 0.91 0.78 0.68
+        let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
+        b.Loft([| hullSection 0.0 -0.27 0.27 0.035 0.32; hullSection 0.0 0.27 0.27 0.035 0.32 |],true,true,case)
+        box 0.0 0.325 0.0 0.27 0.022 0.27 lid
+        for z in [-0.19;0.19] do
+            box 0.0 0.35 z 0.27 0.014 0.027 strap
+            for x in [-0.27;0.27] do box x 0.18 z 0.013 0.17 0.027 strap
+        for x in [-0.18;0.18] do box x 0.028 0.0 0.048 0.028 0.28 strap
+        box -0.055 0.35 0.0 0.111 0.006 0.069 label
+        for i in 0..4 do box (-0.14 + 0.028 * float i) 0.358 0.0 0.006 0.004 0.047 strap
+        box 0.14 0.287 0.277 0.065 0.024 0.012 seal
+        b.Build()
+
+    let deckPackage (kind: CommodityId) : MeshData =
+        let b = MeshBuilder()
+        let iron = MeshColor.rgb 0.18 0.24 0.25
+        let alloy = MeshColor.rgb 0.65 0.69 0.63
+        let cream = MeshColor.rgb 0.91 0.87 0.74
+        let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
+        match kind with
+        | CommodityId.TitaniumScrap ->
+            for tier in 0..2 do
+                let y = float tier * 0.103
+                let offset = if tier = 1 then -0.024 else 0.018
+                b.Loft([|hullSection offset -0.25 0.26 y (y+0.095);hullSection offset 0.25 0.24 y (y+0.095)|],true,true,alloy)
+            for x in [-0.15;0.15] do box x 0.31 0.0 0.023 0.016 0.25 iron
+        | CommodityId.CryoOre | CommodityId.FuelCells | CommodityId.PlasmaCores ->
+            let paint =
+                match kind with
+                | CommodityId.CryoOre -> MeshColor.rgb 0.18 0.61 0.77
+                | CommodityId.FuelCells -> MeshColor.rgb 0.94 0.51 0.08
+                | _ -> MeshColor.rgb 0.68 0.36 0.68
+            box 0.0 0.047 0.0 0.296 0.047 0.255 iron
+            for x in [-0.148;0.148] do
+                let collar y radius = ring(10,x,0.0,y,radius,radius) |> Array.map (fun v -> Vec3(v.X,v.Z,v.Y))
+                b.Loft([|collar 0.08 0.11;collar 0.12 0.14;collar 0.38 0.14;collar 0.43 0.087|],true,true,paint)
+                b.Loft([|collar 0.33 0.145;collar 0.36 0.145|],false,false,cream)
+                b.Loft([|collar 0.43 0.076;collar 0.47 0.064|],true,true,alloy)
+        | _ ->
+            let med = kind = CommodityId.MedSupplies
+            let seal = if med then MeshColor.rgb 0.08 0.55 0.39 else MeshColor.rgb 0.25 0.34 0.68
+            b.Loft([|hullSection 0.0 -0.255 0.272 0.0 0.33;hullSection 0.0 0.255 0.272 0.0 0.33|],true,true,cream)
+            box 0.0 0.33 0.0 0.29 0.030 0.258 seal
+            for x in [-0.18;0.18] do box x 0.17 0.0 0.025 0.169 0.262 seal
+            if med then box 0.0 0.373 0.0 0.09 0.011 0.15 cream
+            else
+                for z in [-0.12;0.12] do beam b (Vec3(-0.10,0.41,z)) (Vec3(0.10,0.41,z)) 0.025 iron
+        b.Build()
+
+    /// Keplers Arbeitsbomber. Die Doppeltriebwerke liegen an den Flug-Hardpoints.
+    let keplerBomber () : MeshData =
+        let b = MeshBuilder()
+        let frame = MeshColor.rgb 0.075 0.12 0.145
+        let alloy = MeshColor.rgb 0.32 0.42 0.44
+        let ceramic = MeshColor.rgb 0.87 0.85 0.73
+        let teal = MeshColor.rgb 0.055 0.47 0.45
+        let yellow = MeshColor.rgb 0.98 0.55 0.08
+        let glass = MeshColor.glow 0.055 0.31 0.40 0.22
+        let core = MeshColor.glow 0.38 0.89 1.0 0.88
+        let center = hullSection 0.0
+        b.Loft([| center -2.88 0.18 -0.10 0.13; center -2.21 0.46 -0.27 0.30
+                  center -0.74 0.59 -0.40 0.42; center 0.87 0.54 -0.34 0.39
+                  center 1.52 0.32 -0.21 0.24 |], true, true, ceramic)
+        b.Loft([| center -2.32 0.28 0.20 0.28; center -1.65 0.41 0.29 0.63
+                  center -0.91 0.38 0.35 0.69; center -0.43 0.28 0.34 0.41 |],true,true,glass)
+        b.Loft([| center -1.68 0.43 0.28 0.65; center -1.60 0.43 0.28 0.66 |],true,true,frame)
+        b.Loft([| center -0.95 0.40 0.32 0.70; center -0.85 0.38 0.33 0.69 |],true,true,teal)
+        // The hot exchanger is visible between the two nacelles from the chase camera.
+        b.Box(Vec3(0.0,0.42,0.25),Vec3(0.30,0.035,0.64),frame)
+        for i in 0..5 do
+            b.Box(Vec3(0.0,0.47,0.75-float i*0.20),Vec3(0.26,0.032,0.038),alloy)
+        for rail in ShipHardpoints.bomberRails do
+            let side = sign rail.X |> float
+            let p x y z = Vec3(side*x,y,z)
+            let plate outline thickness color =
+                b.Slab(outline,Array.create 4 thickness,Vec3.unitY,color)
+            // Swept main plane and the raised outboard tail leave daylight around the engine bells.
+            plate [|p 0.38 0.10 -1.90; p 2.39 0.04 0.05; p 2.54 0.05 1.23; p 0.41 0.10 0.57|] 0.11 frame
+            armorPanel b [|p 0.50 0.22 -1.58; p 2.32 0.17 0.14; p 2.40 0.18 0.87
+                           p 1.65 0.19 0.66; p 0.55 0.22 -0.26|] Vec3.unitY 0.045 teal alloy
+            armorPanel b [|p 1.99 0.24 -0.09; p 2.11 0.24 0.02; p 2.23 0.24 0.86; p 2.07 0.24 0.79|]
+                Vec3.unitY 0.014 ceramic frame
+            b.Slab([|p 1.97 0.16 0.42; p 2.18 0.77 0.98; p 2.23 0.88 1.52; p 2.03 0.12 1.25|],
+                   [|0.09;0.045;0.035;0.085|],Vec3.unitX,teal)
+            beam b (p 2.18 0.77 0.98) (p 2.23 0.88 1.52) 0.034 yellow
+            // Fixed launch cradle stays exposed when its torpedo leaves.
+            for x in [1.40;1.66] do
+                beam b (p x 0.27 -0.69) (p x 0.34 0.96) 0.045 alloy
+            for z in [-0.55;0.56] do b.Box(p 1.53 0.32 z,Vec3(0.20,0.042,0.064),yellow)
+            let motor = if side < 0.0 then ShipHardpoints.playerEngineLeft else ShipHardpoints.playerEngineRight
+            let pod = hullSection motor.X
+            b.Loft([| pod -0.96 0.21 -0.13 0.20; pod -0.38 0.39 -0.31 0.40
+                      pod 1.22 0.39 -0.33 0.43; pod 1.65 0.31 -0.29 0.30 |],true,true,ceramic)
+            b.Loft([| pod 0.56 0.405 -0.34 0.447; pod 0.79 0.405 -0.34 0.447 |],true,true,teal)
+            nozzle b motor.X motor.Y motor.Z 0.36 0.43 alloy frame core
+            let gun = if side < 0.0 then ShipHardpoints.playerGunLeft else ShipHardpoints.playerGunRight
+            b.Box(p 1.25 -0.10 -0.29,Vec3(0.12,0.10,0.51),alloy)
+            turretBore b gun.X gun.Y gun.Z 0.10 0.19 ceramic frame core
+        b.Build()
+
+    /// Dasselbe Modell sitzt auf den Außenschienen und fliegt nach dem Auslösen weiter.
+    let torpedo () : MeshData =
+        let b = MeshBuilder()
+        let steel = MeshColor.rgb 0.18 0.23 0.27
+        let ochre = MeshColor.rgb 0.96 0.50 0.09
+        let ceramic = MeshColor.rgb 0.85 0.84 0.75
+        let shell z r = ring(10,0.0,0.0,z,r,r)
+        b.Loft([|shell -1.34 0.045; shell -1.04 0.15; shell -0.73 0.215; shell 0.67 0.215;
+                 shell 0.99 0.16|],true,true,ceramic)
+        b.Loft([|shell -0.73 0.223; shell -0.53 0.223|],true,true,ochre)
+        for i in 0..3 do
+            let a = Math.PI * (0.25 + 0.5 * float i)
+            let radial = Vec3(cos a,sin a,0.0)
+            let p r z = radial*r + Vec3.unitZ*z
+            b.Slab([|p 0.14 0.27;p 0.33 0.73;p 0.33 0.99;p 0.14 0.88|],
+                   Array.create 4 0.026,Vec3(-sin a,cos a,0.0),steel)
+        nozzle b 0.0 0.0 1.08 0.153 0.18 steel steel (MeshColor.rgb 0.07 0.11 0.13)
+        b.Build()
+
     //  Asteroid: verformter Ikosaeder (Radius der Huellkugel = 1)
     // ---------------------------------------------------------------------------------
 
@@ -728,19 +1640,37 @@ module ProceduralMeshes =
 
         let colors = positions |> Array.map rockColor
 
+        // Geglaettete Normalen: flaechengewichtetes Mittel der angrenzenden Dreiecke.
+        // Gewoelbte Flaechen wirken dadurch rund statt facettiert; an Bruchkanten
+        // (Winkel zur Flaechennormale ueber ca. 50 Grad) bleibt die harte Kante.
+        let smooth = Array.create displaced.Length Vec3.zero
+
         for f in 0 .. triangles.Length / 3 - 1 do
             let ia = triangles.[f * 3]
             let ib = triangles.[f * 3 + 1]
             let ic = triangles.[f * 3 + 2]
+            let n = Vec3.cross (displaced.[ib] - displaced.[ia]) (displaced.[ic] - displaced.[ia])
+            smooth.[ia] <- smooth.[ia] + n
+            smooth.[ib] <- smooth.[ib] + n
+            smooth.[ic] <- smooth.[ic] + n
 
-            b.TriangleColors(
-                displaced.[ia] * scale,
-                displaced.[ib] * scale,
-                displaced.[ic] * scale,
-                colors.[ia],
-                colors.[ib],
-                colors.[ic]
-            )
+        for f in 0 .. triangles.Length / 3 - 1 do
+            let ia = triangles.[f * 3]
+            let ib = triangles.[f * 3 + 1]
+            let ic = triangles.[f * 3 + 2]
+            let face = Vec3.cross (displaced.[ib] - displaced.[ia]) (displaced.[ic] - displaced.[ia])
+
+            if Vec3.lengthSq face > 1e-14 then
+                let face = Vec3.normalize face
+
+                let corner (i: int) =
+                    let n = smooth.[i]
+                    let n = if Vec3.lengthSq n > 1e-14 then Vec3.normalize n else face
+                    b.Vertex(displaced.[i] * scale, (if Vec3.dot n face > 0.64 then n else face), colors.[i])
+
+                corner ia
+                corner ib
+                corner ic
 
         b.Build()
 

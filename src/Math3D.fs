@@ -710,3 +710,42 @@ module Mat4 =
     let clipW (m: Mat4) (p: Vec3) =
         let a = m.Data
         float a.[3] * p.X + float a.[7] * p.Y + float a.[11] * p.Z + float a.[15]
+
+/// Sechs nach innen gerichtete Ebenen in Weltkoordinaten, je vier Koeffizienten.
+type FrustumPlanes = JS.Float64Array
+
+[<RequireQualifiedAccess>]
+module Frustum =
+    let create () : FrustumPlanes = JS.Constructors.Float64Array.Create 24
+
+    /// Aus -w <= x,y,z <= w folgen die Ebenen Zeile 4 +/- Zeile 1, 2, 3.
+    /// Normierung macht den Abstand direkt mit dem Weltradius vergleichbar.
+    let update (planes: FrustumPlanes) (viewProjection: Mat4) =
+        let m = viewProjection.Data
+        for i in 0 .. 5 do
+            let row = i / 2
+            let sign = if i % 2 = 0 then 1.0 else -1.0
+            let nx = float m.[3] + sign * float m.[row]
+            let ny = float m.[7] + sign * float m.[row + 4]
+            let nz = float m.[11] + sign * float m.[row + 8]
+            let d = float m.[15] + sign * float m.[row + 12]
+            let length = sqrt (nx * nx + ny * ny + nz * nz)
+            // Bei unendlicher Sichtweite kann die hintere Ebene entfallen.
+            let inverse = if length > 0.0 then 1.0 / length else 0.0
+            let o = 4 * i
+            planes.[o] <- nx * inverse
+            planes.[o + 1] <- ny * inverse
+            planes.[o + 2] <- nz * inverse
+            planes.[o + 3] <- d * inverse
+
+    /// Kugeln verwerfen, die ganz vor einer Außenseite liegen. Berührungen
+    /// und Rundungsfehler beim Float32-Upload bleiben auf der sichtbaren Seite.
+    let intersectsSphere (planes: FrustumPlanes) (x: float) (y: float) (z: float) (radius: float) =
+        let threshold = -radius - 4e-7 * (abs x + abs y + abs z + radius + 1.0)
+        let mutable visible = true
+        let mutable o = 0
+        while visible && o < 24 do
+            let distance = planes.[o] * x + planes.[o + 1] * y + planes.[o + 2] * z + planes.[o + 3]
+            visible <- distance >= threshold
+            o <- o + 4
+        visible

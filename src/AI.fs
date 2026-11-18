@@ -8,7 +8,7 @@ namespace SpaceEngine
 //      Patrol --(Spieler entdeckt)--> Chase --(in Reichweite)--> Attack
 //         ^                             ^                           |
 //         |                             |          (zu nah / zu lange / beschossen)
-//         +---(Spieler verloren)--------+---(Ausweichen beendet)-- Evade
+//         +---(Spieler zerstoert)-------+---(Ausweichen beendet)-- Evade
 //
 //  Die KI erzeugt ausschliesslich Steuerbefehle (ShipControls). Geflogen wird mit
 //  demselben Flugmodell wie der Spieler - Gegner haben also dieselbe Traegheit
@@ -33,7 +33,8 @@ type AiState =
     | Evade
 
 type AiBrain =
-    { mutable State: AiState
+    { mutable Role: EnemyRole
+      mutable State: AiState
       /// Sekunden seit Eintritt in den aktuellen Zustand.
       mutable StateTime: float
       /// Zeit bis zur naechsten Entscheidung.
@@ -47,6 +48,9 @@ type AiBrain =
       mutable EvadeDuration: float
       /// Zuletzt berechneter Vorhaltepunkt in Weltkoordinaten (fuer HUD/Debug).
       mutable AimPoint: Vec3
+      /// Sichtbare Aufladung vor einer Salve (0..1); Main zeichnet die Warnleuchten.
+      mutable WeaponCharge: float
+      mutable FiringBurst: bool
       /// Individueller Phasenversatz, damit nicht alle Gegner synchron wackeln.
       Phase: float }
 
@@ -57,32 +61,10 @@ module AI =
     [<Literal>]
     let ThinkInterval = 0.03333333333333333
 
-    /// Ab dieser Entfernung bemerkt ein patrouillierender Gegner den Spieler.
-    [<Literal>]
-    let DetectRange = 420.0
-
-    /// Jenseits dieser Entfernung gibt ein Verfolger auf.
-    [<Literal>]
-    let LoseRange = 800.0
-
-    [<Literal>]
-    let AttackRange = 240.0
-
-    [<Literal>]
-    let FireRange = 300.0
-
-    /// Unterhalb dieser Entfernung wird der Angriff abgebrochen (Rammgefahr).
-    [<Literal>]
-    let BreakDistance = 42.0
-
     /// cos(1.5 Grad): gefeuert wird nur, wenn die Nase so genau auf dem Vorhaltepunkt liegt
     /// (in 200 Einheiten Entfernung sind das rund 5 Einheiten Abweichung).
     [<Literal>]
     let FireConeCos = 0.99966
-
-    /// Absichtliche Zielungenauigkeit als Anteil der Entfernung.
-    [<Literal>]
-    let AimError = 0.006
 
     // Fable erzeugt fuer jeden feldlosen DU-Fall bei jeder Verwendung ein neues
     // Objekt. Diese einmal angelegten Instanzen machen Zustandswechsel allokationsfrei.
@@ -94,7 +76,8 @@ module AI =
     let private threat = JS.Constructors.Float32Array.Create 3
 
     let createBrain (index: int) : AiBrain =
-        { State = patrol
+        { Role = EnemyRole.Drone
+          State = patrol
           StateTime = 0.0
           // Versetzte Entscheidungszeitpunkte verteilen die Last ueber die Frames
           ThinkTimer = float index * ThinkInterval * 0.37
@@ -105,6 +88,8 @@ module AI =
           AttackDuration = 6.0
           EvadeDuration = 2.5
           AimPoint = Vec3.zero
+          WeaponCharge = 0.0
+          FiringBurst = false
           Phase = float index * 1.618 }
 
     let private enter (brain: AiBrain) (ship: Ship) (state: AiState) =
@@ -112,12 +97,15 @@ module AI =
         brain.StateTime <- 0.0
         brain.HealthAtEntry <- ship.Hull + ship.Shield
 
-    /// Nach dem (Re-)Spawn: Patrouille um die Startposition.
+    /// Nach dem (Re-)Spawn sofort aufschliessen; die konfigurierte Rolle bleibt erhalten.
     let reset (brain: AiBrain) (ship: Ship) (home: Vec3) =
         brain.Home <- home
         brain.Waypoint <- home
         brain.AimPoint <- home
-        enter brain ship patrol
+        brain.WeaponCharge <- 0.0
+        brain.FiringBurst <- false
+        brain.ThinkTimer <- (brain.Phase % 1.0) * ThinkInterval
+        enter brain ship chase
 
     let private clampUnit (v: float) : float =
         if v > 1.0 then 1.0
@@ -170,7 +158,9 @@ module AI =
                 + away * 0.3
             )
 
-        brain.EvadeDuration <- rng.Range(2.0, 3.4)
+        brain.EvadeDuration <-
+            if brain.Role = EnemyRole.Scout then rng.Range(1.6, 2.3)
+            else rng.Range(1.4, 2.0)
         enter brain ship evade
 
     /// Eine Entscheidung: Zustandswechsel pruefen, dann Steuerbefehle setzen.
@@ -181,11 +171,13 @@ module AI =
         let toPlayer = player.Position - ship.Position
         let distance = Vec3.length toPlayer
         let playerAlive = player.Alive
+        let profile = EnemyProfiles.profile brain.Role
 
         // ---- 1. Zustandswechsel ----
         match brain.State with
         | Patrol ->
-            if playerAlive && distance < DetectRange then
+            // Missionsgegner geben auch einen weit entfernten Spieler nicht auf.
+            if playerAlive then
                 enter brain ship chase
             elif
                 Vec3.distanceSq ship.Position brain.Waypoint < 1600.0
@@ -203,23 +195,28 @@ module AI =
 
                 brain.StateTime <- 0.0
         | Chase ->
-            if not playerAlive || distance > LoseRange then
+            if not playerAlive then
                 enter brain ship patrol
-            elif distance < AttackRange then
-                brain.AttackDuration <- rng.Range(5.0, 9.0)
+            elif distance < profile.AttackRange then
+                brain.AttackDuration <-
+                    match brain.Role with
+                    | EnemyRole.Scout -> rng.Range(5.0, 7.0)
+                    | EnemyRole.Drone -> rng.Range(8.0, 11.0)
+                    | _ -> rng.Range(18.0, 25.0)
                 enter brain ship attack
         | Attack ->
             let damageTaken = brain.HealthAtEntry - (ship.Hull + ship.Shield)
 
             if not playerAlive then
                 enter brain ship patrol
-            elif distance < BreakDistance || brain.StateTime > brain.AttackDuration || damageTaken > 30.0 then
+            elif distance < profile.BreakDistance || brain.StateTime > brain.AttackDuration
+                 || (brain.Role = EnemyRole.Scout && damageTaken > 22.0) then
                 startEvade world brain ship toPlayer distance
-            elif distance > AttackRange * 1.5 then
+            elif distance > profile.AttackRange * 1.25 then
                 enter brain ship chase
         | Evade ->
             if brain.StateTime > brain.EvadeDuration then
-                if playerAlive && distance < LoseRange then
+                if playerAlive then
                     enter brain ship chase
                 else
                     enter brain ship patrol
@@ -228,22 +225,29 @@ module AI =
         c.Fire <- false
         c.Boost <- false
         c.Brake <- false
+        brain.WeaponCharge <- 0.0
+        brain.FiringBurst <- false
         let mutable desired = Quat.forward ship.Rotation
         let mutable aimGain = 1.0
 
         match brain.State with
         | Patrol ->
             desired <- brain.Waypoint - ship.Position
-            // Weit entfernte Wegpunkte im Eiltempo anfliegen, am Ziel gemaechlich kreisen
-            let transit = Vec3.lengthSq desired > 160000.0
-            c.Throttle <- (if transit then 1.0 else 0.55)
-            c.Boost <- transit
+            c.Throttle <- 0.45
         | Chase ->
             // Auf die vorausberechnete Spielerposition zuhalten statt hinterherzufliegen
-            let lookTime = Math.Min(distance / (ship.CruiseSpeed + ship.BoostSpeed), 2.0)
+            let lookTime = Math.Min(distance / ship.CruiseSpeed, 1.0)
             desired <- Vec3.mulAdd toPlayer player.Velocity lookTime
+            if profile.FlankOffset > 0.0 then
+                let side = if sin brain.Phase >= 0.0 then 1.0 else -1.0
+                desired <-
+                    desired
+                    + Quat.right player.Rotation * (profile.FlankOffset * side)
+                    + Quat.up player.Rotation * (sin brain.Phase * 30.0)
             c.Throttle <- 1.0
-            c.Boost <- distance > 320.0
+            // Nur Spaeherschiffe sprinten kurz; auch ihr Sprint bleibt langsamer als der Spieler.
+            c.Boost <- brain.Role = EnemyRole.Scout && distance > 340.0
+                       && (world.Time + brain.Phase) % 12.0 < 0.65
         | Attack ->
             // Lead-Target-Prediction: Wo ist der Spieler, wenn der Bolt ankommt?
             // Bolts erben die Geschwindigkeit des Schuetzen, deshalb zaehlt die
@@ -269,8 +273,8 @@ module AI =
             brain.AimPoint <- ship.Position + lead
 
             // Kleine, langsam wandernde Zielabweichung - sonst waere jeder Schuss ein Treffer
-            let wobble = distance * AimError
-            let w = world.Time * 1.7 + brain.Phase
+            let wobble = distance * profile.AimError
+            let w = world.Time * 0.85 + brain.Phase
 
             let aim =
                 Vec3(
@@ -280,30 +284,78 @@ module AI =
                 )
 
             desired <- aim
-            aimGain <- 2.0
+            aimGain <- 1.5
 
             // Abstand halten: aufschliessen, wenn weit weg; Schub raus, wenn nah
             c.Throttle <-
-                if distance > 140.0 then 1.0
-                elif distance < 80.0 then 0.3
-                else 0.65
+                if distance > profile.PreferredRange * 1.3 then 0.85
+                elif distance > profile.PreferredRange then 0.35
+                elif brain.Role = EnemyRole.Scout then 0.55
+                else 0.0
+
+            // Jede Salve beginnt mit einer echten, sichtbaren Vorwarnung. Zwischen
+            // den Salven entsteht Zeit zum Gegenangriff oder zum Positionswechsel.
+            let cycle = profile.ChargeTime + profile.BurstTime + profile.RestTime
+            let cycleTime = brain.StateTime % cycle
+            if cycleTime < profile.ChargeTime then
+                brain.WeaponCharge <- cycleTime / profile.ChargeTime
+            elif cycleTime < profile.ChargeTime + profile.BurstTime then
+                brain.FiringBurst <- true
 
             let aimLength = Vec3.length aim
 
-            if distance < FireRange && aimLength > 1e-3 then
+            if brain.FiringBurst && distance < profile.AttackRange * 1.1 && aimLength > 1e-3 then
                 let cosAngle = Vec3.dot (Quat.forward ship.Rotation) aim / aimLength
                 c.Fire <- cosAngle > FireConeCos
         | Evade ->
             // Ausweichrichtung mit ueberlagertem Zickzack
-            let w = world.Time * 3.1 + brain.Phase
+            let w = world.Time * 1.6 + brain.Phase
 
             desired <-
                 brain.EvadeDirection
-                + Quat.up ship.Rotation * (sin w * 0.5)
-                + Quat.right ship.Rotation * (cos (w * 0.8) * 0.5)
+                + Quat.up ship.Rotation * (sin w * 0.2)
+                + Quat.right ship.Rotation * (cos (w * 0.8) * 0.25)
 
             c.Throttle <- 1.0
-            c.Boost <- true
+            c.Boost <- false
+
+        // Nachbarn frueh seitlich umfliegen. Skalare Akkumulatoren vermeiden pro
+        // Nachbar neue Vektoren und halten auch groessere Gegnergruppen bezahlbar.
+        let intended = Vec3.normalize desired
+        let mutable separationX = 0.0
+        let mutable separationY = 0.0
+        let mutable separationZ = 0.0
+        let mutable crowding = 0.0
+        for other in world.Enemies do
+            if other.Alive && not (obj.ReferenceEquals(ship, other)) then
+                let dx = ship.Position.X - other.Position.X
+                let dy = ship.Position.Y - other.Position.Y
+                let dz = ship.Position.Z - other.Position.Z
+                let distanceSq = dx * dx + dy * dy + dz * dz
+                let space = ship.Radius + other.Radius + 26.0
+                if distanceSq < space * space then
+                    let gap = sqrt distanceSq
+                    let pressure = 1.0 - gap / space
+                    crowding <- max crowding pressure
+                    if gap > 0.01 then
+                        let weight = pressure * pressure / gap
+                        separationX <- separationX + dx * weight
+                        separationY <- separationY + dy * weight
+                        separationZ <- separationZ + dz * weight
+                    else
+                        separationX <- separationX + sin brain.Phase
+                        separationY <- separationY + cos brain.Phase
+
+        let direction =
+            Vec3.normalize (intended + Vec3(separationX, separationY, separationZ) * 2.8)
+
+        if crowding > 0.15 then
+            c.Throttle <- max c.Throttle 0.3
+        if crowding > 0.45 then
+            c.Throttle <- min c.Throttle 0.4
+            c.Boost <- false
+        if Vec3.dot intended direction < 0.995 then
+            c.Fire <- false
 
         // ---- 3. Hindernisvermeidung (hat Vorrang vor allem anderen) ----
         let speed = Vec3.length ship.Velocity
@@ -327,8 +379,6 @@ module AI =
                 (ship.Radius + 6.0)
                 threat
 
-        let direction = Vec3.normalize desired
-
         if urgency > 0.0 then
             let away = Vec3(float threat.[0], float threat.[1], float threat.[2])
             let weight = Math.Min(1.0, urgency * 2.5)
@@ -337,6 +387,8 @@ module AI =
 
             if urgency > 0.5 then
                 c.Fire <- false
+                c.Boost <- false
+                c.Throttle <- min c.Throttle 0.3
         else
             steerTowards ship direction aimGain
 
@@ -348,7 +400,13 @@ module AI =
         for i in 0 .. enemies.Length - 1 do
             let ship = enemies.[i]
 
-            if ship.Alive then
+            if ship.Alive && world.Pilot.PulseTime > 5.0 && brains.[i].Role = EnemyRole.Drone then
+                ship.Controls.Fire <- false
+                brains.[i].FiringBurst <- false
+                brains.[i].WeaponCharge <- 0.0
+                brains.[i].State <- AiState.Patrol
+                brains.[i].ThinkTimer <- 0.0
+            elif ship.Alive then
                 let brain = brains.[i]
                 brain.StateTime <- brain.StateTime + dt
                 brain.ThinkTimer <- brain.ThinkTimer - dt
