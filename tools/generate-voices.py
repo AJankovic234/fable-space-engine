@@ -1,157 +1,140 @@
-"""Batch-generate German neural voiceovers for Space 2601AE via edge-tts.
+"""Batch-generate natural German MP3 voiceovers for Space 2601AE via edge-tts.
 
-Generates:
-  - 5 cinematic intro trailer voiceovers (public/assets/sfx/intro_vo_*.mp3)
-  - 12 story beats 18..29 (public/assets/sfx/story_*.mp3)
-  - 28 faction radio chatter clips (public/assets/sfx/faction_00..27.mp3)
+1. Pulls the exact rewritten natural German story & faction scripts from
+   tools/generate-voices-gemini.py (single source of truth) and renders MP3s
+   for any clip that doesn't already have a Gemini 3.8 Flash TTS .wav file.
+2. With --comms (or --all), also renders all 22 station-approach/event comms
+   (comm_*.mp3) and 16 ambient harbor VHF chatter clips (chatter_0..15.mp3)
+   in terse, natural spoken German using native German/Austrian/Swiss voices
+   strictly at +0Hz pitch (zero phase-vocoder artifacts).
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
-import sys
+import importlib.util
 from pathlib import Path
 import edge_tts
 
-OUT_DIR = Path(__file__).resolve().parent.parent / "public" / "assets" / "sfx"
+ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "public" / "assets" / "sfx"
+GEMINI_SCRIPT = ROOT / "tools" / "generate-voices-gemini.py"
 
-# (filename, voice, pitch, rate, text)
-CLIPS = [
-    # --- Intro-Film Trailer Voiceover (deep, punchy cinema narrator) ---
-    ("intro_vo_01_2034.mp3", "de-DE-ChristophNeural", "-14Hz", "+10%",
-     "14. März 2034 – ein einziger Lizenzfehler, und zwei Menschen verschwinden im Sturm."),
-    ("intro_vo_02_2601.mp3", "de-DE-ChristophNeural", "-14Hz", "+12%",
-     "567 Jahre später gehört AETHER der ganze Gürtel. Keine SIN – kein Sauerstoff."),
-    ("intro_vo_03_action.mp3", "de-DE-ChristophNeural", "-13Hz", "+14%",
-     "Neun Sektoren, fünf Schiffe. Berge Erz, brich die Blockade – und lass dich nicht löschen!"),
-    ("intro_vo_04_threat.mp3", "de-DE-ChristophNeural", "-16Hz", "+4%",
-     "AETHER Grace Period. Sie nennen es Ordnung – wir nennen es Krieg."),
-    ("intro_vo_05_finale.mp3", "de-DE-ChristophNeural", "-14Hz", "+8%",
-     "Space 2601 AE – keine Lizenz, kein Backup. Flieg, solange es rauscht."),
+# Native German voice mapping by Gemini voice persona (strictly +0Hz pitch).
+VOICE_MAP = {
+    "Algenib": ("de-CH-JanNeural", "-4%"),        # Voss (older weathered dispatcher)
+    "Umbriel": ("de-DE-ChristophNeural", "-5%"),  # Orlov / Karst / Hauler (tired, gruff)
+    "Puck":    ("de-AT-JonasNeural", "+4%"),      # Kipper / Pirates (quick, casual)
+    "Aoede":   ("de-DE-TanjaNeural", "+1%"),      # Mara Lind / Grey Watch (clear, focused)
+    "Charon":  ("de-DE-ChristophNeural", "-1%"),  # Vance / AETHER Dispatch (calm, authoritative)
+    "Orus":    ("de-CH-JanNeural", "+1%"),        # AETHER patrol male (dry, matter-of-fact)
+    "Fenrir":  ("de-AT-JonasNeural", "+0%"),      # AETHER officer casual
+    "Kore":    ("de-AT-IngridNeural", "+1%"),     # AETHER officer female (cool, crisp)
+    "Leda":    ("de-CH-LeniNeural", "+2%"),       # Tamm / Raureif (blunt, practical)
+    "Schedar": ("de-CH-JanNeural", "-1%"),        # Aders / Halden / Grey Watch
+    "Zephyr":  ("de-CH-LeniNeural", "-2%"),       # Sera / Theta Relay (quiet, clear)
+}
 
-    # --- Story Beats 18..29 (1:1 from src/StoryRadio.fs) ---
-    ("story_act2_kestrel_voss.mp3", "de-DE-ChristophNeural", "-11Hz", "-4%",
-     "Vance hat heute Nacht vier Kennungen aus dem Dockregister gestrichen. Die Leute stehen noch an ihren Greifern. Laut Liste war die Schicht nie besetzt."),
-    ("story_act2_helios_orlov.mp3", "de-CH-JanNeural", "-12Hz", "-6%",
-     "Sie haben Schacht 9 neu ausgeschrieben. 38 Stellen. Vorbesitzer unbekannt. Bring mir keine Blumen. Bring Filter."),
-    ("story_act2_drift_kipper.mp3", "de-AT-JonasNeural", "+4Hz", "+8%",
-     "Schlechte Nachricht, Lizenzleiche. Deine Kennung hat vor einer Stunde bei Kepler getankt. Du warst nicht dabei. Wenn dir das Ding begegnet: zuerst schießen, dann rechnen."),
-    ("story_act2_kepler_voss.mp3", "de-DE-ChristophNeural", "-11Hz", "-4%",
-     "Im Trockendock B liegt ein Kolonieschiff, das seit sechshundert Jahren auf Startfreigabe wartet. Die Werft zählt seitdem ihre eigenen Jahre. Hier draußen wartet jeder auf eine Bodenstation, die nicht mehr antwortet."),
-    ("story_act2_theta_lind.mp3", "de-DE-TanjaNeural", "-2Hz", "+2%",
-     "Ich habe deinen Bordfunk gegen das Band von 2034 gelegt. Deine Stimme rauscht. Die von Frachter Neun nicht mehr. Vertrau keiner Stimme ohne Rauschen. Rauschen heißt, da atmet noch jemand."),
-    ("story_act2_bastion_vance.mp3", "de-AT-JonasNeural", "-6Hz", "-2%",
-     "Du schon wieder. Weißt du, warum niemand nach Frachter Neun sucht? Mein Puffer funkt höflicher als ein erstickender Schürfer. Du wirst ein hervorragender Puffer."),
-    ("story_kaltstrom_tamm.mp3", "de-AT-IngridNeural", "-4Hz", "+2%",
-     "Raureif, Kühlkreis. Tamm am Rohr. Wir brennen Kälte für Morgenlicht. Die Pufferbänke laufen heiß, wenn so viele Tote weitersenden. Zahl in Zellen. Credits frieren hier nicht."),
-    ("story_wracksaum_karst.mp3", "de-CH-JanNeural", "-9Hz", "-3%",
-     "Karst, Schlepper Vierundvierzig. Jedes Wrack hier funkt noch. Wir kappen den Sender, bevor wir die Presse bergen. Sera nennt das Löschen. Ich nenn es Feierabend."),
-    ("story_schleierpass_aders.mp3", "de-DE-ChristophNeural", "-4Hz", "-1%",
-     "Graue Wacht, Aders. Wir haben die Spur durch den Nebel vermessen und verschenkt. Seit gestern verkauft sie jemand als Geleitschutz. Unter unserer Kennung."),
-    ("story_act3_kestrel_voss.mp3", "de-DE-ChristophNeural", "-11Hz", "-3%",
-     "Vance hat meine Schlepperkennung gestrichen. Laut Register gibt es mich seit heute früh nicht mehr. Gut. Dann sieht mich auch keiner kommen, Partner."),
-    ("story_act3_theta_lind.mp3", "de-DE-TanjaNeural", "-1Hz", "+4%",
-     "Ich speise das Band von 2034 auf deinen Transponder. Zwei Körper, eine Kennung. Sein Schild kann das nicht auseinanderhalten. Flieg, solange es rauscht."),
-    ("story_act3_bastion_vance.mp3", "de-AT-JonasNeural", "-5Hz", "+4%",
-     "Wer hat euch Analogsäcken die RT-9-Schlüssel gegeben? Ich halte diesen ganzen verdammten Sektor zusammen. Sleeve Nummer sieben wird sich an dich erinnern. Nummer acht auch."),
+# Terse, realistic German VHF station-approach, cockpit & ambient harbor clips (strictly +0Hz pitch).
+COMM_AND_CHATTER_CLIPS = [
+    # Station approach & docking clearances
+    ("comm_kestrel",          "de-CH-JanNeural",       "-2%", "Kestrel Kontrolle. Hab dich auf dem Schirm, Bucht zwei ist frei."),
+    ("comm_helios",           "de-DE-ChristophNeural", "-3%", "Helios Vier, Anflug erfasst. Tempo rausnehmen und Abstand zum Tor halten."),
+    ("comm_bazaar",           "de-AT-JonasNeural",     "+2%", "Drift-9 hier. Such dir eine freie Klammer, kein Zollscan heute."),
+    ("comm_kepler",           "de-AT-IngridNeural",    "+0%", "Werftkontrolle Kepler. Transponder erkannt, Einflugkorridor freigegeben."),
+    ("comm_aether",           "de-DE-TanjaNeural",     "+0%", "Relais Theta, wir hören dich. Halte dich aus dem Antennenkegel raus."),
+    ("comm_bastion",          "de-DE-ChristophNeural", "-4%", "Sperrzone Morgenlicht. Anflug ohne Platin-Freigabe wird als Verstoß gewertet. Drehen Sie ab."),
+    ("comm_ready",            "de-CH-JanNeural",       "+0%", "Klammern bereit. Kannst andocken."),
+    ("comm_blocked",          "de-CH-JanNeural",       "+1%", "Dock bleibt zu, solange draußen geschossen wird."),
 
-    # --- Faction Radio Chatter 00..27 (1:1 from RadioChatter.exchanges in src/StoryRadio.fs) ---
-    # AETHER two-ship derogatory dialogues (distinct alternating voices for L/R stereo)
-    ("faction_00.mp3", "de-AT-JonasNeural", "-4Hz", "+4%",
-     "Schon wieder ein Schürfer mit geflicktem Transponder. Riecht bis hierher nach billigem Kühlmittel."),
-    ("faction_01.mp3", "de-AT-IngridNeural", "-2Hz", "+3%",
-     "Lass den Kutter durch. Wenn sein Stack reißt, spart das wenigstens die Hafensteuer."),
+    # Flight & combat status callouts (calm, grounded, zero game-show announcer drama)
+    ("comm_pirate_ambush",    "de-CH-LeniNeural",      "+2%", "Achtung, zwei Kontakte ohne Kennung direkt im Anflug."),
+    ("comm_sector_clear",     "de-CH-LeniNeural",      "+0%", "Radar wieder sauber."),
+    ("comm_shield_down",      "de-DE-TanjaNeural",     "+2%", "Schild ist runter."),
+    ("comm_hull_critical",    "de-DE-TanjaNeural",     "+4%", "Hülle im roten Bereich, sofort aus dem Feuer."),
+    ("comm_wave_start",       "de-CH-JanNeural",       "+1%", "Neue Signale am Sektorrand."),
+    ("comm_wave_clear",       "de-CH-JanNeural",       "+0%", "Alle Kontakte weg."),
+    ("comm_upgrade_ready",    "de-AT-JonasNeural",     "+0%", "Einbau abgeschlossen, Systeme stehen."),
+    ("comm_trade_profit",     "de-CH-LeniNeural",      "+0%", "Fracht ist verbucht."),
+    ("comm_jump_ready",       "de-AT-IngridNeural",    "+0%", "Sprungtor offen."),
+    ("comm_auto_turret",      "de-AT-JonasNeural",     "+0%", "Geschützturm läuft."),
+    ("comm_capital_inbound",  "de-DE-TanjaNeural",     "+1%", "Schweres Signal am Tor. Ein AETHER-Kreuzer kommt rein."),
+    ("comm_shipyard_bay",     "de-AT-IngridNeural",    "+0%", "Werftbucht meldet Fertigstellung. Schiff liegt am Dock."),
+    ("comm_sovereign_arrive", "de-DE-ChristophNeural", "-5%", "Hier AETHER Grace Period. Korridor sofort räumen. Schiffe ohne Freigabe werden aufgebracht."),
+    ("comm_macro_salvo",      "de-DE-TanjaNeural",     "+3%", "Achtung, schwere Batterien aufgeschaltet. Ausweichen."),
 
-    ("faction_02.mp3", "de-DE-TanjaNeural", "-3Hz", "+2%",
-     "Schichtwechsel auf Helios. Dreiundzwanzig unversicherte Lungen mehr auf der Liste."),
-    ("faction_03.mp3", "de-DE-ChristophNeural", "-5Hz", "+3%",
-     "Solange der Schmelzofen brennt, zahlt die Konzernkasse keinen einzigen Filter."),
-
-    ("faction_04.mp3", "de-AT-IngridNeural", "-3Hz", "+4%",
-     "Die Graue Wacht markiert wieder Nebelspuren für umsonst. Unzertifizierte Amateure."),
-    ("faction_05.mp3", "de-AT-JonasNeural", "-5Hz", "+2%",
-     "Ab morgen verkaufen wir dieselbe Spur als Platin-Geleitschutz. Mit Stempel."),
-
-    ("faction_06.mp3", "de-AT-JonasNeural", "+0Hz", "+0%",
-     "Mein letzter Sleeve hatte einen Kratzer am Handgelenk. Hab ihn auf Morgenlicht tauschen lassen."),
-    ("faction_07.mp3", "de-DE-TanjaNeural", "-2Hz", "+2%",
-     "Dekadent. Meine Police deckt erst ab Totalverlust – oder Gürtelkontakt."),
-
-    ("faction_08.mp3", "de-DE-ChristophNeural", "-3Hz", "+6%",
-     "Kapper auf Sektorband. Sollen die Drohnen eingreifen?"),
-    ("faction_09.mp3", "de-AT-IngridNeural", "-4Hz", "+1%",
-     "Negativ. Solange sie nur Gürtelfrachter plündern, sind das unbezahlte Marktregulatoren."),
-
-    ("faction_10.mp3", "de-AT-JonasNeural", "+2Hz", "+8%",
-     "Leitstand, die gestrichene Kestrel-Kennung funkt schon wieder auf dem Nebenband."),
-    ("faction_11.mp3", "de-DE-ChristophNeural", "-7Hz", "+2%",
-     "Ignorieren. Und erwähnen Sie das Analogband nicht noch einmal – die Direktion hört mit."),
-
-    ("faction_12.mp3", "de-DE-ChristophNeural", "-6Hz", "+0%",
-     "Schlepper ohne Platin-Bürgschaft halten fünfzig Meter Abstand zur Sperrlinie."),
-    ("faction_13.mp3", "de-DE-TanjaNeural", "-3Hz", "+5%",
-     "Verstanden. Wer die Linie kratzt, wird als Schrottgebühr verbucht."),
-
-    # Civilian, Belt, Grey Watch & Kapper radio
-    ("faction_14.mp3", "de-CH-JanNeural", "-7Hz", "+1%",
-     "AETHER Tariff sieben steht wieder quer vor dem Tor. Für jeden Scan verlierst du zwei Stunden Sauerstoff."),
-    ("faction_15.mp3", "de-DE-ChristophNeural", "-8Hz", "+2%",
-     "Auf Drift-9 löten sie dir eine neue SIN aus Altmetall. Hält genau bis zur ersten Drohne."),
-    ("faction_16.mp3", "de-AT-IngridNeural", "-4Hz", "+3%",
-     "Zahlen in Zellen, nicht in Credits. Auf Raureif taut dir kein Konzernscheck den Verdampfer auf."),
-    ("faction_17.mp3", "de-CH-JanNeural", "-9Hz", "-2%",
-     "Wenn dir im Wracksaum ein Notruf zu sauber klingt, kapp die Leitung. Tote atmen nicht so ruhig."),
-    ("faction_18.mp3", "de-CH-LeniNeural", "-2Hz", "+2%",
-     "Baken sind gesetzt. Lasst euch am Schleierpass kein AETHER-Geleit aufschwatzen – die Spur ist unsere."),
-    ("faction_19.mp3", "de-DE-ChristophNeural", "-4Hz", "+4%",
-     "Achtung im Nebel: Zwei Drohnen ohne Transponder patrouillieren abseits der Baken."),
-    ("faction_20.mp3", "de-AT-JonasNeural", "+3Hz", "+9%",
-     "Kein AETHER-Stern in Reichweite. Der Erzfrachter da drüben gehört schon zur Hälfte uns."),
-    ("faction_21.mp3", "de-CH-JanNeural", "-4Hz", "+7%",
-     "Wirf die Ladung ab, Lizenzleiche, dann lassen wir dir genug Treibstoff bis Kestrel."),
-    ("faction_22.mp3", "de-DE-TanjaNeural", "-1Hz", "+3%",
-     "Analogband RT-9 meldet zwei identische Kennungen im selben Sektor. Prüft eure Transponder."),
-
-    # Extra AETHER scorn dialogues & cruiser hail
-    ("faction_23.mp3", "de-AT-IngridNeural", "-2Hz", "+3%",
-     "Warum riecht jeder Schlepper aus dem Wracksaum nach verbranntem Isolierband?"),
-    ("faction_24.mp3", "de-AT-JonasNeural", "-5Hz", "+3%",
-     "Weil ihre SIN-Lizenzen genauso geflickt sind wie ihre Hüllen."),
-
-    ("faction_25.mp3", "de-DE-TanjaNeural", "-3Hz", "+3%",
-     "Kepler hat wieder einen Erzfrachter ohne Platin-Stempel abgewiesen."),
-    ("faction_26.mp3", "de-DE-ChristophNeural", "-5Hz", "+2%",
-     "Gut so. Sollen sie ihr Altmetall draußen im Gürtel rosten lassen."),
-
-    ("faction_27.mp3", "de-DE-ChristophNeural", "-8Hz", "-1%",
-     "Unzertifizierte Einheiten räumen den Anflugkorridor. Schäden an Lackierungen werden in Rechnung gestellt."),
+    # Ambient VHF harbor & belt background chatter (chatter_0..15)
+    ("chatter_0",  "de-CH-JanNeural",       "+0%", "Schlepper vier, bin an Bake zwei vorbei."),
+    ("chatter_1",  "de-DE-TanjaNeural",     "+0%", "Verstanden, Bucht drei wird gleich frei."),
+    ("chatter_2",  "de-DE-ChristophNeural", "-2%", "Frachter zwölf, wir brauchen noch zehn Minuten zum Entladen."),
+    ("chatter_3",  "de-AT-JonasNeural",     "+1%", "Kein Problem, ich dreh noch eine Runde."),
+    ("chatter_4",  "de-CH-LeniNeural",      "+1%", "Hat jemand Druckabfall auf Leitung B gemeldet?"),
+    ("chatter_5",  "de-CH-JanNeural",       "-1%", "Negativ, hier läuft alles normal."),
+    ("chatter_6",  "de-AT-IngridNeural",    "+0%", "Zollkontrolle Helios, bitte Kennung noch einmal durchgeben."),
+    ("chatter_7",  "de-DE-ChristophNeural", "-1%", "Kutter sieben, Anflug verzögert sich, viel Verkehr am Tor."),
+    ("chatter_8",  "de-AT-JonasNeural",     "+2%", "Eisbrocken auf Sektorbahn Ost, bisschen aufpassen."),
+    ("chatter_9",  "de-DE-TanjaNeural",     "+0%", "Danke für die Info, geh zwanzig Meter höher."),
+    ("chatter_10", "de-CH-JanNeural",       "+0%", "Leitstand, wer hat gerade das Licht an Dock vier ausgemacht?"),
+    ("chatter_11", "de-CH-LeniNeural",      "+1%", "War nur die Umschaltung auf Reserve, kommt gleich wieder."),
+    ("chatter_12", "de-DE-ChristophNeural", "-1%", "Kipper, bist du noch in der Werkstatt?"),
+    ("chatter_13", "de-AT-JonasNeural",     "+3%", "Ja, aber mach schnell, ich mach gleich zu."),
+    ("chatter_14", "de-AT-IngridNeural",    "+0%", "Schichtwechsel in zwanzig Minuten, dann übernimmt Gruppe zwei."),
+    ("chatter_15", "de-DE-TanjaNeural",     "+0%", "Alles klar, wir lassen den Kanal offen."),
 ]
 
 
-async def synth_one(sem: asyncio.Semaphore, filename: str, voice: str, pitch: str, rate: str, text: str):
-    async with sem:
-        out_path = OUT_DIR / filename
-        comm = edge_tts.Communicate(text, voice=voice, pitch=pitch, rate=rate)
-        last_end = 0.0
-        with out_path.open("wb") as f:
-            async for chunk in comm.stream():
-                if chunk["type"] == "audio":
-                    f.write(chunk["data"])
-                elif chunk["type"] == "WordBoundary":
-                    end_sec = (chunk["offset"] + chunk["duration"]) / 1e7
-                    if end_sec > last_end:
-                        last_end = end_sec
-        return filename, out_path.stat().st_size, last_end
+def _load_gemini_clips() -> list[tuple[str, str, str, str]]:
+    spec = importlib.util.spec_from_file_location("gen_voices_gemini", GEMINI_SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+    return list(mod.CLIPS)
 
 
-async def main():
+async def generate_one(stem: str, voice: str, rate: str, text: str) -> None:
+    out_path = OUT_DIR / f"{stem}.mp3"
+    comm = edge_tts.Communicate(text=text, voice=voice, pitch="+0Hz", rate=rate)
+    await comm.save(str(out_path))
+    kb = out_path.stat().st_size / 1024.0
+    print(f"OK   {out_path.name:32s} [{voice:22s}] {kb:5.1f} KB")
+
+
+async def run(render_all: bool, comms_only: bool, include_comms: bool) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    prefixes = sys.argv[1:]
-    selected = [r for r in CLIPS if not prefixes or any(r[0].startswith(p) for p in prefixes)]
+    todo: list[tuple[str, str, str, str]] = []
+
+    if not comms_only:
+        clips = _load_gemini_clips()
+        for stem, gemini_voice, _style, text in clips:
+            if not render_all and (OUT_DIR / f"{stem}.wav").exists():
+                print(f"SKIP {stem}.mp3 (Gemini TTS .wav already present)")
+                continue
+            edge_voice, rate = VOICE_MAP.get(gemini_voice, ("de-DE-ChristophNeural", "+0%"))
+            todo.append((stem, edge_voice, rate, text))
+
+    if comms_only or include_comms or render_all:
+        todo.extend(COMM_AND_CHATTER_CLIPS)
+
+    print(f"Generating {len(todo)} natural German MP3 clips via edge-tts...")
     sem = asyncio.Semaphore(4)
-    results = await asyncio.gather(*(synth_one(sem, *row) for row in selected))
-    for name, size, _ in results:
-        print(f"{name:34s} {size:7d} B  ~{size / 6000:4.2f}s")
-    print(f"Generated {len(results)} clips in {OUT_DIR}")
+
+    async def bounded(item):
+        async with sem:
+            await generate_one(*item)
+
+    await asyncio.gather(*(bounded(item) for item in todo))
+    print(f"Done ({len(todo)} clips written).")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Generate natural German MP3 voiceovers via edge-tts.")
+    ap.add_argument("--all", action="store_true", help="Regenerate all story, faction, comm and chatter MP3s.")
+    ap.add_argument("--comms", action="store_true", help="Regenerate only the 38 station/cockpit comm & chatter MP3s.")
+    ap.add_argument("--with-comms", action="store_true", help="Include the 38 comm & chatter MP3s alongside story/faction.")
+    args = ap.parse_args()
+    asyncio.run(run(args.all, args.comms, args.with_comms))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

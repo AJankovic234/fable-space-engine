@@ -94,15 +94,36 @@ module StarMap =
             ctx.lineTo(float x1*10., float y1*10.)
             ctx.stroke ()
 
-    let show origin (cargo: CargoHold) (markets: StationMarket[]) terms (blockade: BlockadeState) target via onCourse onClose =
+    let show origin (cargo: CargoHold) (markets: StationMarket[]) terms (blockade: BlockadeState) (watch: Attendance.Watch) target via onCourse (poiLog: SectorPoi.Log) onPin onClose =
         let root = dialog ()
         let canvas = get "star-map-links" :?> HTMLCanvasElement
         let graph = get "star-map-nodes"
+        let here,_,_ = nodes.[watch.Sector]
+        let next,_,_ = nodes.[watch.Next]
+        (get "star-map-watch").textContent <- sprintf "Dienstfunk Doppel-A · Über %s · Nächster Halt %s" here next
         graph.innerHTML <- ""
         let mutable course = target
         let mutable courseVia = via
         let mutable selectedVia = via
         let mutable selected = target |> Option.bind tryPort |> Option.defaultValue origin
+        let mutable pinned = poiLog.Pinned
+        let poiList = get "star-map-pois"
+        poiList.textContent <- ""
+        let poiButtons =
+            SectorPoi.bySector.[selected] |> Array.map (fun _ ->
+                let button = document.createElement "button" :?> HTMLButtonElement
+                button.className <- "poi-button"
+                button.setAttribute("type","button")
+                let part tag =
+                    let child = document.createElement tag
+                    button.appendChild child |> ignore
+                    child
+                let name = part "strong"
+                let info = part "small"
+                let action = part "span"
+                action.className <- "poi-action"
+                poiList.appendChild button |> ignore
+                button,name,info,action)
         let buttons =
             nodes |> Array.mapi (fun i (label,x,y) ->
                 let button = document.createElement "button" :?> HTMLButtonElement
@@ -110,6 +131,7 @@ module StarMap =
                 button.className <- "star-map-node"
                 let sector = sectors.[i]
                 button.setAttribute("data-port", sector.Id)
+                if i = watch.Sector then button.setAttribute("data-watch","")
                 button.setAttribute("data-danger", string (max 1 (min 4 sector.DangerLevel)))
                 let part tag cls text =
                     let node = document.createElement tag
@@ -162,6 +184,20 @@ module StarMap =
             let sector = sectors.[selected]
             (get "star-map-title").textContent <- sector.Name
             (get "star-map-station").textContent <- sector.Outpost.Name
+            let pois = SectorPoi.bySector.[selected]
+            let count = pois |> Array.filter (SectorPoi.doneAt poiLog) |> Array.length
+            (get "star-map-poi-title").textContent <- sprintf "Erkundungsziele · %d/%d" count pois.Length
+            for j in 0 .. pois.Length-1 do
+                let poi = pois.[j]
+                let button,name,info,action = poiButtons.[j]
+                let marked = pinned = Some poi.Id
+                let km = (Vec3.distance sector.Outpost.Position poi.Position / 1000.).ToString("0.0").Replace(".",",")
+                name.textContent <- poi.Name
+                info.textContent <-
+                    if SectorPoi.doneAt poiLog poi then "Abgeschlossen · " + poi.Report
+                    else sprintf "%s · %s km ab Hafen · %d CR" (SectorPoi.category poi.Kind) km poi.Fee
+                action.textContent <- if marked then "Peilung aufheben" elif selected = origin then "Im Cockpit peilen" else "Kurs setzen und peilen"
+                button.setAttribute("aria-pressed",if marked then "true" else "false")
             let lore = get "star-map-lore"
             if not (isNull lore) then lore.textContent <- sector.Subtitle
             (get "star-map-portrait").setAttribute("data-port", sector.Id)
@@ -217,6 +253,13 @@ module StarMap =
             update ()
         set?onclick <- fun () -> change (Some sectors.[selected].Id) selectedVia
         clear?onclick <- fun () -> change None None
+        poiButtons |> Array.iteri (fun j (button,_,_,_) ->
+            button.onclick <- fun _ ->
+                let poi = SectorPoi.bySector.[selected].[j]
+                pinned <- if pinned = Some poi.Id then None else Some poi.Id
+                onPin pinned
+                if pinned.IsSome && selected <> origin then change (Some sectors.[selected].Id) selectedVia
+                else update ())
         root?onkeydown <- fun (event: Event) ->
             event.stopPropagation()
             if (unbox<KeyboardEvent> event).code = "F7" then

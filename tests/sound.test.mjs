@@ -6,10 +6,17 @@ import {
   Sound_toggleMute as toggleMute,
   Sound_setVolumes as setVolumes,
   Sound_getVolumes as getVolumes,
+  Sound_autoRadioVoice as autoRadioVoice,
+  Sound_setAutoRadioVoice as setAutoRadioVoice,
+  Sound_playFactionRadio as playFactionRadio,
+  Sound_stationComm as stationComm,
+  Sound_tryContactBeat as tryContactBeat,
+  Sound_clearRadio as clearRadio,
   Sound_setListener as setListener,
   Sound_setFlightContext as setFlightContext,
   Sound_setSceneMode as setSceneMode,
   Sound_setMusicCombat as setMusicCombat,
+  Sound_setMusicAether as setMusicAether,
   Sound_updateEngine as updateEngine,
   Sound_laserAt as laserAt,
   Sound_explosionAt as explosionAt,
@@ -34,6 +41,7 @@ function createAudioHarness() {
   const gains = [];
   const filters = [];
   const panners = [];
+  const requests = [];
 
   class FakeParam {
     constructor(v = 0) {
@@ -90,8 +98,9 @@ function createAudioHarness() {
       this.connections.push(dest);
       return dest;
     }
-    start(when = 0) {
+    start(when = 0, offset = 0, duration) {
       this.startedAt = when;
+      this.duration = duration;
     }
     stop() {}
   }
@@ -135,10 +144,40 @@ function createAudioHarness() {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
   };
-  globalThis.fetch = () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+  globalThis.fetch = (url) => {
+    requests.push(url);
+    return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+  };
 
-  return { storage, sources, gains, filters, panners };
+  return { storage, sources, gains, filters, panners, requests };
 }
+
+test('radio defaults to a short keyed signal, with full clips on request or by preference', async () => {
+  const { sources, requests } = createAudioHarness();
+  const s = createSound();
+  unlockSound(s);
+  await new Promise(setImmediate);
+  assert.equal(autoRadioVoice(s), false);
+  assert.equal(playFactionRadio(s, 'faction_00', -0.4, true), 0); // HUD uses the text's reading time.
+  assert.equal(sources.at(-1).duration, 0.095);
+  clearRadio(s);
+  stationComm(s, 'station-kestrel', 0);
+  assert.equal(sources.at(-1).duration, 0.19);
+  assert.ok(!requests.some(url => /\/(?:faction_|comm_)/.test(url)));
+
+  clearRadio(s);
+  assert.equal(tryContactBeat(s, 0), 0); // Explicit playback at the dock still loads the recording.
+  await new Promise(setImmediate);
+  assert.ok(tryContactBeat(s, 0) > 0.4);
+  setAutoRadioVoice(s, true);
+  assert.equal(autoRadioVoice(createSound()), true);
+  assert.equal(playFactionRadio(s, 'faction_00', -0.4, true), -1);
+  await new Promise(setImmediate);
+  assert.ok(playFactionRadio(s, 'faction_00', -0.4, true) > 0.4);
+  assert.ok(requests.includes('/assets/sfx/faction_00.mp3'));
+  setAutoRadioVoice(s, false);
+  assert.equal(autoRadioVoice(createSound()), false);
+});
 
 test('mixer volumes clamp, persist to localStorage and update audio busses', async () => {
   const { storage, gains } = createAudioHarness();
@@ -269,11 +308,28 @@ test('scene mode separates menu silence, paused space ambience and hangar audio,
   assert.ok(hangarGain.gain.value > 0.0, `Expected refit hangarGain > 0, got ${hangarGain.gain.value}`);
 
   setMusicCombat(s, false);
+  setMusicAether(s, false);
   setSceneMode(s, 1);
   updateEngine(s, true, 0.4, 0.0);
+  const musicAetherGain = gains[gains.length - 1];
+  const musicCombatGain = gains[gains.length - 2];
+  const musicCalmGain = gains[gains.length - 3];
+  assert.ok(musicCalmGain.gain.value > 0.0, 'Expected calm music active in peaceful space');
+  assert.equal(musicAetherGain.gain.value, 0.0);
+
+  // AETHER presence crossfades cleanly into the cold D-minor corporate march
+  setMusicAether(s, true);
+  updateEngine(s, true, 0.4, 0.0);
+  assert.ok(musicAetherGain.gain.value > 0.0, 'Expected AETHER march gain > 0 when AETHER is in sector');
+  assert.equal(musicCalmGain.gain.value, 0.0);
+
+  // Active combat takes priority over the AETHER march
   setMusicCombat(s, true);
   updateEngine(s, true, 0.6, 0.5);
+  assert.ok(musicCombatGain.gain.value > 0.0, 'Expected combat music gain > 0 during battle');
+  assert.equal(musicAetherGain.gain.value, 0.0);
   setMusicCombat(s, false);
+  setMusicAether(s, false);
 
   shieldRecharge(s);
   laserAt(s, true, new Vec3(0, 0, -10), false, 0, 0, 0);

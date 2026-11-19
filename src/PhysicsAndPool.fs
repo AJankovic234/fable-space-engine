@@ -39,6 +39,8 @@ type GameEvent =
     | ShipHit of victim: Team * damage: float * shieldAbsorbed: bool
     | ShipDestroyed of victim: Team * position: Vec3 * slot: int
     | MineralReleased of position: Vec3 * kind: int * count: int
+    /// Spielertreffer auf eine Erzkruste, die noch hält; `remaining` = Restanteil 0..1.
+    | OreCrustHit of position: Vec3 * remaining: float
     | StackRescue
     | TurretFired of position: Vec3
     | CapitalGunFired of position: Vec3
@@ -140,6 +142,10 @@ module Combat =
     /// Lebenspunkte eines Asteroiden pro Einheit Radius.
     [<Literal>]
     let AsteroidHpPerRadius = 2.6
+
+    /// Zusätzliche Trefferpunkte der Erzkruste (Erzbrocken der Sektorlandschaften). Der
+    /// Laser braucht je nach Größe etwa 1,5 bis 3 s Dauerfeuer, bis die Kristalle freiliegen.
+    let oreCrust (radius: float) = 110.0 + radius * 7.0
 
     /// Ab diesem Radius zerbricht ein Asteroid in Bruchstuecke statt zu verschwinden.
     [<Literal>]
@@ -675,6 +681,7 @@ module AsteroidField =
         let archive = RelicArchive.position outpost.Position sectorIndex
         let works = outpost.Position + StationMeshes.worksCenter
         let worksRadius = StationMeshes.worksRadius outpost.Kind
+        let serviceSite = PortWork.center sectorIndex
         let wrecks = WreckFields.forSector sectorIndex
         let mutable i = 0
         while i < field.Count do
@@ -692,7 +699,7 @@ module AsteroidField =
                 sector.Gates |> Array.exists (fun gate -> Vec3.distance point gate.Position < gate.TriggerRadius + radius + 24.0)
             let inStation = Vec3.distance point works < worksRadius + radius + 6.0 || Vec3.distance point outpost.Position < outpost.DockRadius + radius + 25.0
             let nearWreck = wrecks |> Array.exists (fun wreck -> Vec3.distance point wreck.Position < WreckFields.SalvageRange + radius + 18.0)
-            if inArrivalLane || inCustomsLane || nearGate || inStation || nearWreck || Vec3.distance point archive < radius + 60.0 then
+            if inArrivalLane || inCustomsLane || nearGate || inStation || nearWreck || Vec3.distance point archive < radius + 60.0 || Vec3.distance point serviceSite < radius + 100.0 then
                 remove field i
             else i <- i + 1
 
@@ -2199,13 +2206,19 @@ module Physics =
                 elif hitAsteroid >= 0 then
                     Effects.sparks world hx hy hz 5 1.2 0.8 0.4
                     let ore = int field.Ore.[hitAsteroid]
-                    if team = int Team.Player && ore > 0 then
+                    let ao = hitAsteroid * AsteroidField.Stride
+                    let radius = float a.[ao + 6]
+                    // Erz liegt unter einer Kruste (Combat.oreCrust): Erst wenn ein Treffer die
+                    // Trefferpunkte unter den Grundwert des Felsens drückt, bricht die Ader auf.
+                    let crust = float a.[ao + 15] - damage - radius * Combat.AsteroidHpPerRadius
+                    if team = int Team.Player && ore > 0 && crust > 0.0 then
+                        Effects.sparks world hx hy hz 6 1.0 0.55 0.15
+                        world.Events.Add(OreCrustHit(Vec3(hx, hy, hz), min 1.0 (crust / Combat.oreCrust radius)))
+                    elif team = int Team.Player && ore > 0 then
                         // Vor Schaden/Swap entfernen: auch zwei gleichzeitige Bolts bergen
                         // dieses Vorkommen nur einmal. Gegnerfeuer verbraucht das Erz nicht.
                         field.Ore.[hitAsteroid] <- 0uy
-                        let ao = hitAsteroid * AsteroidField.Stride
                         let center = Vec3(float a.[ao], float a.[ao + 1], float a.[ao + 2])
-                        let radius = float a.[ao + 6]
                         let hit = Vec3(hx, hy, hz)
                         let fromCenter = hit - center
                         let toPlayer = world.Player.Position - hit
@@ -2220,7 +2233,7 @@ module Physics =
                         let offset =
                             -projection + sqrt (max 0.0 (projection * projection + reach * reach - Vec3.lengthSq fromCenter))
                         let position = Vec3.mulAdd hit direction (max 0.0 offset)
-                        let count = max 2 (min 5 (int (radius / 4.0) + 1))
+                        let count = max 1 (min 4 (int (radius / 6.0) + 1))
                         world.Events.Add(MineralReleased(position, ore, count))
                     Damage.asteroid world hitAsteroid damage (enum<Team> team)
                 else

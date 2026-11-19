@@ -93,10 +93,22 @@ module StationCollision =
             let wreckBodies = wrecks |> Array.map (fun wreck ->
                 let q = wreck.Rotation
                 Box(wreck.Position - port.Position, WreckFields.solidHalf wreck.Kind, Quat.right q, Quat.up q, -Quat.forward q))
-            { Bodies = Array.append (bodies port.Kind) wreckBodies
+            let site = PortWork.sites.[index]
+            let outworks =
+                [| for m in site.Modules do
+                       yield Box(site.Offset+m.Center,m.Half,Vec3.unitX,Vec3.unitY,Vec3.unitZ)
+                   for a,c in site.Braces do yield beam (site.Offset+a) (site.Offset+c) 2.2
+                   if PortWork.hasHoist index then
+                       let a,c = PortWork.hoistRail
+                       yield beam (site.Offset+a) (site.Offset+c) 1.1
+                       for top in [a;c] do
+                           yield beam (site.Offset+v top.X -14 -17) (site.Offset+top) 1.45
+                           yield beam (site.Offset+v top.X -14 1) (site.Offset+top) 1.1 |]
+            { Bodies = Array.concat [|bodies port.Kind; wreckBodies; outworks|]
               Port = port.Position
               Bounds =
                   [| yield port.Position + StationMeshes.worksCenter, StationMeshes.worksRadius port.Kind
+                     yield port.Position + site.Offset, 87.0
                      for wreck in wrecks do
                          yield wreck.Position, Vec3.length (WreckFields.solidHalf wreck.Kind) |] })
 

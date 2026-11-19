@@ -674,7 +674,7 @@ module StationMeshes =
         | ResearchRelay -> 251.
         | FleetDock -> 209.
 
-    let station kind =
+    let private build kind satellite =
         let b = MeshBuilder()
         dock b
         match kind with
@@ -684,4 +684,8 @@ module StationMeshes =
         | OrbitalYard -> kepler b
         | ResearchRelay -> theta b
         | FleetDock -> morgenlicht b
+        satellite |> Option.iter (PortWork.appendMesh b)
         b.Build()
+
+    let station kind = build kind None
+    let harbour index = build Universe.sectors.[index].Outpost.Kind (Some index)

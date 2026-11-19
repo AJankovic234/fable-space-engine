@@ -21,6 +21,7 @@ type SkyBackdrop =
       UView: WebGLUniformLocation
       UHdr: WebGLUniformLocation
       USector: WebGLUniformLocation
+      UVeil: WebGLUniformLocation
       USun: WebGLUniformLocation
       USunColor: WebGLUniformLocation
       ULens: WebGLUniformLocation }
@@ -408,6 +409,7 @@ uniform mat4 uView;
 uniform vec2 uLens;
 uniform bool uHdr;
 uniform int uSector;
+uniform float uVeil;
 uniform vec3 uSun;
 uniform vec3 uSunColor;
 out vec4 outColor;
@@ -443,6 +445,10 @@ void main() {
             vec4 body=texture(uBodies,local);
             radiance=radiance*(1.0-body.a)+4.0*body.rgb*body.rgb;
         }
+    }
+    if (uVeil > 0.0) {
+        float folds = 0.5 + 0.5*sin(ray.x*9.0 + ray.y*5.0 + 2.3*sin(ray.z*7.0));
+        radiance = mix(radiance, vec3(0.12,0.075,0.17), uVeil*(0.52+0.28*folds));
     }
     outColor = vec4(uHdr ? radiance : displayColor(radiance), 1.0);
 }
@@ -507,6 +513,7 @@ void main() {
           UView = gl.getUniformLocation (program, "uView")
           UHdr = gl.getUniformLocation (program, "uHdr")
           USector = gl.getUniformLocation (program, "uSector")
+          UVeil = gl.getUniformLocation (program, "uVeil")
           USun = gl.getUniformLocation (program, "uSun")
           USunColor = gl.getUniformLocation (program, "uSunColor")
           ULens = gl.getUniformLocation (program, "uLens") }
@@ -574,6 +581,7 @@ void main() {
         gl.useProgram sky.Program
         gl.uniform1i (sky.UHdr, if renderer.Post.Hdr then 1.0 else 0.0)
         gl.uniform1i (sky.USector, float cell)
+        gl.uniform1f (sky.UVeil, renderer.VeilDensity)
         gl.uniform3fv (sky.USun, renderer.Lights.SunDirection)
         gl.uniform3fv (sky.USunColor, renderer.Lights.SunColor)
         gl.uniformMatrix4fv (sky.UView, false, camera.View.Data)

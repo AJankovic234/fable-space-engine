@@ -135,6 +135,12 @@ type private Scene =
       mutable CourseTarget: string option
       mutable CourseVia: string option
       mutable WreckSalvage: Map<string, WreckStock>
+      mutable PortPackets: int
+      mutable OuterFlight: OuterRoutes.FlightLog
+      mutable Poi: SectorPoi.Log
+      mutable OuterCallHeard: bool
+      mutable Watch: Attendance.Log
+      mutable PortLinkTime: float
       Wallet: Wallet
       Cargo: CargoHold
       Markets: StationMarket[]
@@ -154,9 +160,13 @@ type private Scene =
       EnemyBatches: InstanceBatch[]
       CrystalBatch: InstanceBatch
       StationBatches: Lazy<InstanceBatch>[]
-      RelicBatches: (Vec3 * Lazy<InstanceBatch>)[]
+      RelicBatches: Lazy<InstanceBatch>[]
+      OuterModels: Lazy<OuterSiteMeshes.Models>
+      PoiModels: Lazy<PoiMeshes.Models>
       mutable ArchiveScan: ArchiveScan option
       FreighterBatch: InstanceBatch
+      LifeboatBatch: Lazy<InstanceBatch>
+      TrolleyBatch: Lazy<InstanceBatch>
       BuoyFrames: InstanceBatch
       BuoyLenses: InstanceBatch
       GateFrameBatch: InstanceBatch
@@ -301,27 +311,24 @@ let private createScene () : Scene =
     // Meshes
     let crystalMesh = Renderer.createMesh renderer (ProceduralMeshes.mineralCrystal ())
     let stationBatches =
-        Universe.sectors |> Array.map (fun sector ->
+        Universe.sectors |> Array.mapi (fun index sector ->
             lazy (
                 let outpost = sector.Outpost
-                let mesh = Renderer.createMesh renderer (StationMeshes.station outpost.Kind)
+                let mesh = Renderer.createMesh renderer (StationMeshes.harbour index)
                 let batch = Renderer.createBatch renderer mesh 1 Opaque
                 batch.Shininess <- 42.0
                 batch.Specular <- 0.31
                 InstanceBatch.push batch outpost.Position Quat.identity Vec3.one 1.0 1.0 1.0 0.0
                 batch))
     let freighterMesh = Renderer.createMesh renderer (ProceduralMeshes.freightHauler ())
-    let relicBatch kind p = lazy (
+    let relicBatch kind = lazy (
         let mesh = Renderer.createMesh renderer (ProceduralMeshes.archiveRelic kind true)
         let batch = Renderer.createBatch renderer mesh 1 Opaque
         batch.Shininess <- 34.0
         batch.Specular <- 0.29
-        InstanceBatch.push batch p (Recovery.rotation kind) Vec3.one 1.0 1.0 1.0 0.0
         batch)
     let relicBatches =
-        Universe.sectors |> Array.mapi (fun i sector ->
-            let p = RelicArchive.position sector.Outpost.Position i
-            p, relicBatch sector.Outpost.Kind p)
+        Universe.sectors |> Array.map (fun sector -> relicBatch sector.Outpost.Kind)
     let buoyBody, buoyLens = ProceduralMeshes.approachBuoy ()
     let buoyBatch data = Renderer.createBatch renderer (Renderer.createMesh renderer data) (2*ApproachPairs) Opaque
     let gateFrameBatch = Renderer.createBatch renderer (Renderer.createMesh renderer (ProceduralMeshes.jumpGateFrame ())) 4 Opaque
@@ -442,6 +449,11 @@ let private createScene () : Scene =
           CourseTarget = None
           CourseVia = None
           WreckSalvage = Map.empty
+          PortPackets = 0; PortLinkTime = 0.0
+          OuterFlight = OuterRoutes.empty
+          Poi = SectorPoi.empty
+          OuterCallHeard = false
+          Watch = Attendance.create 1
           Wallet = Economy.create ()
           Cargo = TradeSystem.createCargo 16
           Markets = TradeSystem.createUniverseMarkets ()
@@ -463,8 +475,12 @@ let private createScene () : Scene =
           CrystalBatch = Renderer.createBatch renderer crystalMesh Salvage.Capacity Opaque
           StationBatches = stationBatches
           RelicBatches = relicBatches
+          OuterModels = lazy (OuterSiteMeshes.create renderer)
+          PoiModels = lazy (PoiMeshes.create renderer)
           ArchiveScan = None
           FreighterBatch = freighters
+          LifeboatBatch = lazy (Renderer.createBatch renderer (Renderer.createMesh renderer (CivilTrafficMeshes.lifeboat ())) 1 Opaque)
+          TrolleyBatch = lazy (Renderer.createBatch renderer (Renderer.createMesh renderer (PortWork.slingLoad ())) 1 Opaque)
           BuoyFrames = buoyBatch buoyBody
           BuoyLenses = buoyBatch buoyLens
           GateFrameBatch = gateFrameBatch
@@ -572,6 +588,10 @@ let private setState (scene: Scene) (state: GameState) =
 let private sectorIndex (scene: Scene) = if scene.Trading then scene.Sector else max 0 (scene.Wave - 1)
 let private currentSector (scene: Scene) = Universe.sectorByIndex (sectorIndex scene)
 
+let private archivePosition (scene: Scene) sector =
+    if scene.Trading then OuterRoutes.sites.[sector].Archive
+    else RelicArchive.position (currentSector scene).Outpost.Position sector
+
 let private storage =
     { Read = fun key -> window.localStorage.getItem key
       Write = fun key json -> window.localStorage.setItem(key, json) }
@@ -617,6 +637,11 @@ let private refreshSaveSlots (scene: Scene) =
     | None -> ()
     if scene.Saves.Visible then SaveUi.render scene.Saves entries (canSave scene)
 
+let private sectorOps = SectorOps.create ()
+
+/// Sehenswürdigkeiten und Schürfer im Sektor (SectorSights); beim ersten Zeichnen angelegt.
+let mutable private sightModels : SectorSights.Models option = None
+
 let private snapshot (scene: Scene) =
     let run =
         { Trading = scene.Trading; SectorId = (currentSector scene).Id; Wave = scene.Wave
@@ -624,6 +649,11 @@ let private snapshot (scene: Scene) =
           WreckSalvage = if scene.WreckSalvage.IsEmpty then None else Some (scene.WreckSalvage |> Map.toArray |> Array.map snd)
           SalvagedMissiles = if scene.Missiles.Reserve > 0 then Some scene.Missiles.Reserve else None
           WreckVoices = if WreckVoices.saved () <> 0 then Some (WreckVoices.saved ()) else None
+          PortPackets = if scene.PortPackets = 0 then None else Some scene.PortPackets
+          OuterFlight = if scene.Trading then Some scene.OuterFlight else None
+          Poi = if scene.Trading then Some scene.Poi else None
+          Operation = if scene.Trading then SectorOps.snapshot sectorOps scene.Sector else None
+          Watch = if scene.Trading then Some scene.Watch else None
           Phase = (match scene.Phase with Intermission -> 0 | Fighting -> 1 | Salvaging -> 2)
           PhaseTimer = scene.PhaseTimer; Spawned = scene.Spawned; SpawnTimer = scene.SpawnTimer
           Patrol = Array.map int scene.Patrol; Score = scene.Score; Kills = scene.Kills
@@ -696,7 +726,8 @@ let private clearShippingLanes (scene: Scene) =
             AsteroidField.remove field i
 
 let private seedTradeBelt (scene: Scene) =
-    AsteroidField.generateForSector scene.World.Asteroids scene.World.Rng InitialAsteroids (currentSector scene)
+    // Jeder Sektor hat seine eigene Landschaft; Erz liegt in Nestern weit weg von der Station.
+    SectorFields.generate scene.World.Asteroids scene.World.Rng scene.Sector
     clearShippingLanes scene
 
 let private clearDockingArea (scene: Scene) =
@@ -736,7 +767,14 @@ let private spawnEnemy (scene: Scene) (index: int) =
         let angle = float index * 2.39996 + rng.Range(-0.25, 0.25)
         let local = Vec3(sin angle * 0.9, rng.Range(-0.22, 0.22), -0.7 - abs (cos angle) * 0.5)
         let direction = Quat.rotateVec3 player.Rotation (Vec3.normalize local)
-        position <- player.Position + direction * rng.Range(320.0, 440.0)
+        position <-
+            match if scene.OuterFlight.Engaged then OuterRoutes.threat scene.Sector world.Time |> Option.map fst
+                  else SectorOps.anchor sectorOps scene.Sector with
+            // Einsätze der Sektorlage: die Gegner sind schon am Einsatzort.
+            | Some point ->
+                let d = rng.UnitVector()
+                point + Vec3(d.X, d.Y * 0.35, d.Z) * rng.Range(110.0, 220.0)
+            | None -> player.Position + direction * rng.Range(320.0, 440.0)
         placed <- isFreeSpace world.Asteroids position.X position.Y position.Z 30.0
         attempts <- attempts + 1
 
@@ -746,6 +784,84 @@ let private spawnEnemy (scene: Scene) (index: int) =
     scene.Brains.[index].Role <- role
     Ship.reset enemy position (Quat.lookRotation (player.Position - position) Vec3.unitY)
     AI.reset scene.Brains.[index] enemy player.Position
+
+/// Schließt einen laufenden Einsatz der Sektorlage ab: Prämie, Dank und Meldung.
+/// false, wenn kein Einsatz lief (dann war es die Einflugpatrouille).
+let private finishSectorOp (scene: Scene) =
+    match SectorOps.complete sectorOps scene.Sector with
+    | Some op ->
+        if op.Reward > 0 then Economy.earn scene.Wallet op.Reward false
+        if op.Kind <> OpKind.Flotsam then
+            let ship = scene.World.Player
+            let drop = ship.Position + Quat.rotateVec3 ship.Rotation (Vec3(0.0, 0.0, -28.0))
+            for kind, count in op.Loot do Salvage.spawn scene.Pickups drop kind count
+        let title, thanks =
+            match op.Kind with
+            | OpKind.Lifeboat -> "KAPSEL STABILISIERT", "Notsauerstoff gekoppelt. Die Sanitätsfähre hat die Position."
+            | OpKind.Distress -> "BESATZUNG GERETTET", "Die Crew schießt dir Reicherz herüber."
+            | OpKind.Bounty -> "KOPFGELD KASSIERT", "Nav-Daten aus dem Bordrechner des Anführers."
+            | OpKind.Flotsam -> "TREIBGUT GESICHERT", "Container einsammeln, bevor sie abtreiben."
+        Hud.notify scene.Hud title ((if op.Reward > 0 then "+" + string op.Reward + " CR · " else "") + thanks) 5.0
+        Sound.sectorClear scene.Sound
+        scene.SaveDirty <- true
+        true
+    | None -> false
+
+/// Sektorlage im ruhigen Handelsflug: Lagebild beim Betreten, neue Einsätze, Auslösung vor Ort.
+let private updateSectorOps (scene: Scene) dt =
+    let sector = currentSector scene
+    let ship = scene.World.Player
+    match SectorOps.tick sectorOps scene.Sector sector.DangerLevel ship.Position dt with
+    | OpSignal.Quiet -> ()
+    | OpSignal.Arrived label -> Hud.notify scene.Hud ("LAGEBILD · " + sector.Name) label 4.5
+    | OpSignal.Offered op ->
+        scene.SaveDirty <- true
+        Hud.notify scene.Hud op.Title (op.Detail + " · " + string (int (Vec3.distance op.Position ship.Position)) + " m") 6.0
+        Sound.scannerPing scene.Sound
+    | OpSignal.Engaged op ->
+        if op.Kind = OpKind.Flotsam then
+            for kind, count in op.Loot do Salvage.spawn scene.Pickups op.Position kind count
+        if op.Roster.Length = 0 then finishSectorOp scene |> ignore
+        else
+            scene.SaveDirty <- true
+            scene.Patrol <- op.Roster
+            scene.Spawned <- min 2 op.Roster.Length
+            for i in 0 .. scene.Spawned - 1 do spawnEnemy scene i
+            scene.EnemiesAlive <- scene.Spawned
+            scene.SpawnTimer <- 8.0
+            scene.Phase <- States.fighting
+            let hint =
+                match op.Kind with
+                | OpKind.Lifeboat -> op.Detail
+                | OpKind.Distress -> "Die Besatzung liegt unter Beschuss · 100 CR je Abschuss · X bremst."
+                | OpKind.Bounty -> "Der Anführer hat dich erfasst · Prämie, wenn sein Verband fällt."
+                | OpKind.Flotsam -> "Plünderer im Anflug · Container einsammeln und verteidigen."
+            if sectorOps.Inbound then
+                Hud.notify scene.Hud "ABFANGROTTE · PIRATEN" "Die Rotte verlässt ihre Position und kommt auf dich zu. Hafenanflug oder Gefecht." 5.0
+            else Hud.notify scene.Hud op.Title hint 4.5
+            Sound.pirateAmbush scene.Sound
+
+/// Lokale Einsätze und Außenhinterhalte teilen sich denselben Gefechtszustand.
+let private updateTradeEncounters (scene: Scene) dt =
+    let sector, pos = scene.Sector, scene.World.Player.Position
+    if OuterRoutes.triggers sector scene.World.Time pos scene.OuterFlight then
+        SectorOps.reset sectorOps
+        scene.OuterFlight <- { scene.OuterFlight with Sprung = scene.OuterFlight.Sprung ||| (1 <<< sector); Engaged = true }
+        scene.Patrol <- OuterRoutes.defenders sector
+        scene.Spawned <- scene.Patrol.Length
+        for i in 0 .. scene.Spawned - 1 do spawnEnemy scene i
+        scene.EnemiesAlive <- scene.Spawned
+        scene.Phase <- States.fighting
+        scene.SpawnTimer <- 0.
+        scene.SaveDirty <- true
+        let title =
+            match sector with
+            | 5 -> "REGISTERPATROUILLE · Kennung erfasst"
+            | 7 -> "HINTERHALT · Triebwerke im Konvoi"
+            | _ -> "HINTERHALT · Falsches Zollfeuer"
+        Hud.notify scene.Hud title "Die Rotte sichert den Fundort. Über einen Kilometer Abstand gewinnen oder den Kontakt ausfechten." 5.
+        Sound.pirateAmbush scene.Sound
+    elif Vec3.distance pos (currentSector scene).Outpost.Position < 1450. then updateSectorOps scene dt
 
 /// Neue Abschnitte haben feste gemischte Verbände und zeitversetzte Verstärkung.
 let private startWave (scene: Scene) =
@@ -811,6 +927,7 @@ let private canTrain (scene: Scene) =
     scene.Trading && scene.Sector = 0 && scene.Phase = Salvaging && scene.Sortie.Role = 0
 
 let private clearScreen (scene: Scene) =
+    scene.OuterFlight <- { scene.OuterFlight with Engaged = false }
     for enemy in scene.World.Enemies do enemy.Alive <- false
     scene.World.Lasers.Count <- 0
     scene.Patrol <- Array.empty
@@ -834,7 +951,7 @@ let private refreshShop (scene: Scene) =
     (document.getElementById "open-star-map").hidden <- not scene.Trading
     SkillUi.refresh scene.Skills scene.Pilot
     ResearchUi.refresh scene.ResearchUi scene.Research (currentSector scene).Id scene.Pilot.Relics scene.Wallet scene.Cargo scene.Trading
-    DockContact.refreshArchive scene.Contact scene.Pilot
+    DockContact.refreshArchive scene.Contact scene.Pilot (if scene.Trading then Some scene.OuterFlight.Finds else None)
     let terms = tradeTerms scene
     Shop.refresh scene.Shop terms scene.Wallet scene.Upgrades scene.Cargo scene.Markets.[sectorIndex scene] (currentSector scene).Outpost (canAdvance scene) scene.Fleet
     Shop.refreshRepair scene.Shop terms scene.Wallet scene.Cargo scene.World.Player (currentSector scene).Outpost
@@ -867,8 +984,12 @@ let private openStarMap (scene: Scene) =
             scene.Input.FocusLost <- false
             if docked then
                 refreshShop scene
-                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot
-        StarMap.show scene.Sector scene.Cargo scene.Markets (tradeTerms scene) scene.Blockade scene.CourseTarget scene.CourseVia setCourse close
+                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot (if scene.Trading then Some scene.OuterFlight.Finds else None)
+        let watch = Attendance.watch scene.Watch.Seed scene.World.Time
+        let pin id =
+            scene.Poi <- { scene.Poi with Pinned = id }
+            scene.SaveDirty <- true
+        StarMap.show scene.Sector scene.Cargo scene.Markets (tradeTerms scene) scene.Blockade watch scene.CourseTarget scene.CourseVia setCourse scene.Poi pin close
 
 let private applyPlayerStats (scene: Scene) =
     let ship = scene.World.Player
@@ -893,6 +1014,12 @@ let private syncMissileRack (scene: Scene) =
         (Research.has scene.Research Research.SwarmMissiles)
 
 let private showDock (scene: Scene) arrived =
+    let packets, fee = PortWork.deliver scene.PortPackets scene.Sector
+    if scene.Trading && arrived && fee > 0 then
+        scene.PortPackets <- packets
+        Economy.earn scene.Wallet fee false
+        scene.TradeProfit <- scene.TradeProfit + float fee
+        scene.SaveDirty <- true
     syncMissileRack scene
     Missiles.reload scene.Missiles
     let graduated = scene.School.Step = FlightSchool.Dock
@@ -900,7 +1027,7 @@ let private showDock (scene: Scene) arrived =
     let sector = currentSector scene
     scene.Input.UiMode <- true
     Shop.show scene.Shop sector.Outpost
-    DockContact.dock scene.Contact sector.Outpost.Id scene.Pilot
+    DockContact.dock scene.Contact sector.Outpost.Id scene.Pilot (if scene.Trading then Some scene.OuterFlight.Finds else None)
     refreshShop scene
     let next = Universe.sectorByIndex scene.Wave
     let route = document.getElementById "route-hint"
@@ -919,6 +1046,8 @@ let private showDock (scene: Scene) arrived =
     scene.Accumulator <- 0.0
     setState scene States.refitting
     if graduated then scene.Shop.Notice.textContent <- "Flugschule abgeschlossen. Kestrels Handelsmarkt und Frachtbörse stehen dir offen."
+    if scene.Trading && arrived && fee > 0 then
+        scene.Shop.Notice.textContent <- sprintf "%s quittiert · %d CR Kurierlohn." PortWork.sites.[scene.Sector].Packet fee
     if arrived then
         Sound.clearRadio scene.Sound
         match sector.Outpost.Kind with
@@ -989,6 +1118,43 @@ let private tryRecoverWreck (scene: Scene) dt =
             else Hud.notify scene.Hud "BERGUNG" "Dieses Wrack ist bereits leer." 2.5
             true
 
+let private poiContact (scene: Scene) (site: SectorPoi.Site) contact =
+    let record log =
+        scene.Poi <- log
+        scene.SaveDirty <- true
+        clearArchiveScan scene
+    match contact with
+    | SectorPoi.OutOfRange -> false
+    | SectorPoi.FirstReading log ->
+        record log
+        Sound.scannerPing scene.Sound
+        Hud.notify scene.Hud site.Name "Westpeilung gespeichert. Zum türkisfarbenen Ostempfänger fliegen und mit G messen." 5.
+        true
+    | SectorPoi.Completed log ->
+        record log
+        Economy.earn scene.Wallet site.Fee false
+        Sound.tradeConfirm scene.Sound
+        Hud.notify scene.Hud site.Name (sprintf "+%d CR · %s" site.Fee site.Report) 6.
+        true
+    | SectorPoi.Advice hint ->
+        clearArchiveScan scene
+        Hud.notify scene.Hud site.Name hint 4.
+        true
+
+let private tryScanPoi (scene: Scene) =
+    let ship = scene.World.Player
+    scene.Trading && ship.Alive && scene.Sortie.Role = 0 && Input.wasPressed scene.Input GameAction.ScanRelic &&
+    (SectorPoi.bySector.[scene.Sector] |> Array.exists (fun site ->
+        SectorPoi.scan scene.Poi site ship.Position (Vec3.length ship.Velocity) scene.Cargo |> poiContact scene site))
+
+let private updatePoiCrossing (scene: Scene) =
+    let ship = scene.World.Player
+    if scene.Trading && ship.Alive && scene.Sortie.Role = 0 && scene.School.Step = FlightSchool.Off then
+        for site in SectorPoi.bySector.[scene.Sector] do
+            match SectorPoi.flight scene.Poi site ship.PrevPosition ship.Position ship.Radius with
+            | SectorPoi.OutOfRange -> ()
+            | contact -> poiContact scene site contact |> ignore
+
 let private updateArchiveScan (scene: Scene) dt =
     let sector = sectorIndex scene
     let kind = (currentSector scene).Outpost.Kind
@@ -996,16 +1162,47 @@ let private updateArchiveScan (scene: Scene) dt =
     if not ship.Alive then
         if scene.ArchiveScan.IsSome then clearArchiveScan scene
     elif Input.wasPressed scene.Input GameAction.ScanRelic then
-        let source = fst scene.RelicBatches.[sector]
+        let source = archivePosition scene sector
         let radius = RelicArchive.range scene.Pilot
         let echo = Recovery.scan scene.Pilot sector ship.Position source
         scene.ArchiveScan <- Some { Echo = echo; Elapsed = 0.0 }
         Sound.receiver scene.Sound -1.0
         Sound.scannerPing scene.Sound
-        match echo with
-        | NoEcho ->
+        if echo <> NoEcho then scene.SaveDirty <- true
+        let exploring = scene.Trading && scene.Sortie.Role = 0
+        let log, fee =
+            if exploring then OuterRoutes.survey sector ship.Position scene.OuterFlight
+            else scene.OuterFlight, 0
+        if fee > 0 then
+            scene.OuterFlight <- log
+            Economy.earn scene.Wallet fee false
+            scene.SaveDirty <- true
+            Sound.printerTick scene.Sound
+            let s = OuterRoutes.sites.[sector]
+            let credit = if (match echo with NewRecording _ -> true | _ -> false) then " · +1 Stack-Punkt" else ""
+            let report =
+                if sector = 7 then
+                    let crate = ship.Position + Quat.forward ship.Rotation * 22.
+                    Salvage.spawn scene.Pickups crate Salvage.PlasmaCoresKind 2
+                    Salvage.spawn scene.Pickups crate Salvage.NavDataKind 1
+                    "Frachtregister gesichert. Zwei Plasmakerne und ein Nav-Datensatz sind zur Bergung freigegeben."
+                elif fee > s.Fee then OuterRoutes.chartReport
+                else s.Report
+            Hud.showRecovery s.Name (sprintf "Außenfund kartiert · +%d CR%s" fee credit) report 1.
+        else
+          match echo with
+          | NoEcho when exploring ->
+            let s = OuterRoutes.sites.[sector]
+            scene.OuterFlight <- { scene.OuterFlight with Tracking = true }
+            scene.SaveDirty <- true
+            let _,hint = OuterRoutes.bearing sector ship.Position scene.OuterFlight
+            let status = if scene.OuterFlight.Engaged then "Gefechtskontakt · Abstand gewinnen oder Rotte vertreiben"
+                         elif OuterRoutes.has log.Finds sector then "Position im Fundarchiv"
+                         else "Peilung im Cockpit · G für Nahaufnahme"
+            Hud.showRecovery ("Außenband · " + s.Guide) status hint 0.25
+          | NoEcho ->
             Hud.showRecovery "Kein Archivecho" (sprintf "Scanradius %d m" (int radius)) "Versuche es an einer anderen Stelle im Stationsanflug." 0.0
-        | KnownRecording distance | NewRecording distance ->
+          | KnownRecording distance | NewRecording distance ->
             let status =
                 match echo with
                 | NewRecording _ ->
@@ -1013,8 +1210,13 @@ let private updateArchiveScan (scene: Scene) dt =
                     Sound.printerTick scene.Sound
                     "+1 Stack-Punkt · Bericht am Dock"
                 | _ -> "Bereits im Fundarchiv"
+            let detail =
+                if exploring && not (OuterRoutes.has log.Finds sector) then
+                    scene.OuterFlight <- { scene.OuterFlight with Tracking = true }
+                    OuterRoutes.sites.[sector].Approach
+                else snd RelicArchive.entries.[sector]
             Hud.showRecovery (fst RelicArchive.entries.[sector]) (sprintf "Echo auf %d m · %s" (int (round distance)) status)
-                (Recovery.transmission kind) (1.0 - distance / radius)
+                detail (1.0 - distance / radius)
     else
         match scene.ArchiveScan with
         | Some scan ->
@@ -1214,6 +1416,7 @@ let private arrive (scene: Scene) distance =
     applySectorAtmosphere scene
 
 let private beginSchool scene =
+    SectorOps.reset sectorOps
     clearScreen scene
     scene.School.Step <- FlightSchool.Accelerate
     arrive scene 310.0
@@ -1270,6 +1473,7 @@ let private configureBomber (ship: Ship) =
     ship.MaxShield <- 100.0
 
 let private launchSortie (scene: Scene) role =
+    SectorOps.reset sectorOps
     let ship = scene.World.Player
     let flight = scene.Sortie
     CapitalFlight.beginSortie flight role ship.Hull ship.Shield
@@ -1373,6 +1577,10 @@ let private updateSortie (scene: Scene) dt =
             else Sound.torpedoImpact scene.Sound
 
 let private completeTravel (scene: Scene) terms (plan: TravelPlan) exitGate =
+    scene.OuterFlight <- OuterRoutes.depart scene.OuterFlight
+    scene.OuterCallHeard <- false
+    SectorOps.reset sectorOps
+    scene.PortLinkTime <- 0.0
     Blockade.onTravel scene.Blockade scene.Markets scene.Sector plan.Destination |> ignore
     let heliosBlockaded = scene.Blockade.Started && not scene.Blockade.Lifted
     TradeSystem.driftMarkets scene.Markets heliosBlockaded
@@ -1478,6 +1686,13 @@ let private startGame (scene: Scene) (trading: bool) startHull =
     scene.CourseTarget <- None
     scene.CourseVia <- None
     scene.WreckSalvage <- Map.empty
+    scene.PortPackets <- 0
+    scene.OuterFlight <- OuterRoutes.empty
+    scene.Poi <- SectorPoi.empty
+    scene.OuterCallHeard <- false
+    scene.Watch <- Attendance.create (System.Random().Next(1,1000001))
+    scene.PortLinkTime <- 0.0
+    SectorOps.reset sectorOps
     WreckVoices.restore 0
     scene.Missiles.Reserve <- 0
     Missiles.reload scene.Missiles
@@ -1608,6 +1823,10 @@ let private processEvents (scene: Scene) =
 
                 if team = Team.Player then
                     scene.Score <- scene.Score + (10 + int radius) * scene.Hud.Combo
+        | OreCrustHit(_, remaining) ->
+            if playing then
+                scene.Hud.RewardText <- "ERZKRUSTE " + string (int (ceil (remaining * 100.0))) + " % · WEITERFEUERN"
+                scene.Hud.RewardTime <- 0.6
         | MineralReleased(position, kind, count) ->
             if playing then
                 Salvage.spawn scene.Pickups position kind count
@@ -1771,6 +1990,15 @@ let private updateWaves (scene: Scene) (dt: float) =
                             Hud.notify scene.Hud "PIRATEN AUF ABFANGKURS" "Zur Station durchbrechen oder kämpfen · 100 CR je Abschuss · X bremst." 4.0
                         Sound.pirateAmbush scene.Sound
                     else startWave scene
+            | Fighting when scene.Trading && scene.Sortie.Role = 0 && scene.School.Step = FlightSchool.Off &&
+                            ((scene.OuterFlight.Engaged && not (OuterRoutes.nearSite scene.Sector scene.World.Player.Position)) ||
+                             (not scene.OuterFlight.Engaged && alive > 0 &&
+                              Vec3.distance scene.World.Player.Position (currentSector scene).Outpost.Position > 1450. &&
+                              (enemies |> Array.forall (fun e -> not e.Alive || Vec3.distance e.Position scene.World.Player.Position > 720.)))) ->
+                SectorOps.reset sectorOps
+                clearScreen scene
+                scene.SaveDirty <- true
+                Hud.notify scene.Hud "KONTAKT ABGERISSEN" "Die Rotte kehrt auf ihre Position zurück." 3.
             | Fighting ->
                 // Im Bossabschnitt bleibt ein Teil der Eskorte in Reserve, bis die Korvette ruft.
                 let count = Encounters.rosterLimit (encounterRoles scene) scene.Brains enemies
@@ -1795,11 +2023,28 @@ let private updateWaves (scene: Scene) (dt: float) =
                         if scene.Sortie.Role <> 0 then
                             scene.Hud.RewardText <- if scene.Sortie.Role = CapitalFlight.Escort then "Kepler Zwei · »Danke. Wir haben freie Sicht.«" else "Abfangjäger ausgeschaltet"
                             scene.Hud.RewardTime <- 3.0
-                        else
+                        elif scene.OuterFlight.Engaged then
+                            scene.OuterFlight <- { scene.OuterFlight with Engaged = false }
+                            Hud.notify scene.Hud "AUSSENBAND FREI" "Der Fundort antwortet wieder. Mit G untersuchen." 4.
+                        elif not (finishSectorOp scene) then
                             Hud.notify scene.Hud "HANDELSWEG FREI" "Patrouille ausgeschaltet · Station anfliegen, handeln oder Erz bergen." 4.0
                             Sound.sectorClear scene.Sound
                     else completeWave scene
-            | Salvaging -> ()
+            | Salvaging ->
+                if scene.Trading && scene.Sortie.Role = 0 && scene.School.Step = FlightSchool.Off then
+                    updateTradeEncounters scene dt
+                    let ship = scene.World.Player
+                    if scene.Phase = Salvaging && PortWork.status scene.PortPackets scene.Sector = 0
+                       && Vec3.distance ship.Position (PortWork.terminal scene.Sector) <= PortWork.range
+                       && Vec3.length ship.Velocity <= PortWork.maxSpeed then
+                        scene.PortLinkTime <- scene.PortLinkTime + dt
+                        if scene.PortLinkTime >= PortWork.linkSeconds then
+                            scene.PortPackets <- PortWork.collect scene.PortPackets scene.Sector
+                            let site = PortWork.sites.[scene.Sector]
+                            Hud.notify scene.Hud (site.Packet + " an Bord") (sprintf "Am Dock von %s abgeben · %d CR" (currentSector scene).Outpost.Name site.Fee) 5.0
+                            Sound.scannerPing scene.Sound
+                            scene.SaveDirty <- true
+                    else scene.PortLinkTime <- 0.0
         else
             // Die Explosion des eigenen Schiffs noch zeigen, dann Game Over
             scene.DeathTimer <- scene.DeathTimer - dt
@@ -1848,7 +2093,9 @@ let private updateWaves (scene: Scene) (dt: float) =
             if scene.Sortie.Role <> 0 && scene.Blockade.Lifted then "Frachter Sechs hat Freigabe. B bringt dich nach Helios zurück."
             elif scene.Sortie.Role = CapitalFlight.Bomber then "Kreuzer im Visier halten · J Torpedo bei Zielton · B Rückzug"
             elif scene.Sortie.Role = CapitalFlight.Escort then "Kepler Zwei decken · Abfangjäger ausschalten · B Rückzug"
+            elif scene.OuterFlight.Engaged then "Rotte am Fundort · Abwehr oder Rückzug auf 1,2 km Abstand"
             elif scene.Phase = Fighting then "Piraten: Durchbrechen oder bekämpfen. Nur nahe Feinde sperren das Dock."
+            elif PortWork.status scene.PortPackets scene.Sector = 1 then "Hafenpost an Bord · am örtlichen Dock mit B quittieren."
             elif scene.Cargo.Freight.IsSome then Freight.flightHint scene.Sector scene.Cargo.Freight.Value
             else
                 match Blockade.manifestLeg scene.Blockade scene.Sector with
@@ -1858,8 +2105,9 @@ let private updateWaves (scene: Scene) (dt: float) =
                 | None when scene.Sector = Blockade.helios && not scene.Blockade.Lifted && scene.Blockade.Permit = 0 ->
                     "AETHER hält den Filterfrachter fest. Orlov wartet am Dock."
                 | None when scene.TradeProfit >= 1000.0 -> "Handelsziel erreicht! Neue Routen, größere Fracht oder bessere Ausrüstung?"
-                | None when scene.Trips = 0 && TradeSystem.usedVolume scene.Cargo = 0 -> "Erster Handel: Kestrel anfliegen, Kryo-Erz kaufen oder selbst bergen."
-                | None -> "Fracht verkaufen, Kurse vergleichen und deine nächste Route wählen."
+                | None when scene.Trips = 0 && TradeSystem.usedVolume scene.Cargo = 0 && PortWork.status scene.PortPackets scene.Sector = 0 -> "Seilwinde Vier zahlt 180 CR für die Schichtrollen. Weitere Frachtaufträge gibt es am Dock."
+                | None when scene.OuterFlight.Tracking -> "Außenband aktiv · der Peilung folgen und die Quelle mit G untersuchen."
+                | None -> "Handelsroute wählen oder mit G das Außenband nach unkartierten Signalen abhören."
 
 let private closeSaves (scene: Scene) =
     let wasOpen = scene.Saves.Visible
@@ -1872,7 +2120,7 @@ let private closeSaves (scene: Scene) =
         Sound.uiClick scene.Sound
         if scene.State = Refitting then
             scene.Shop.Root.removeAttribute "hidden"
-            DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot
+            DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot (if scene.Trading then Some scene.OuterFlight.Finds else None)
             (document.getElementById "depart" :?> HTMLButtonElement).focus()
     scene.Input.UiMode <- scene.State = Refitting || scene.State = Menu
     if wasOpen && scene.State = Menu then (document.getElementById "menu-saves").focus()
@@ -1902,6 +2150,7 @@ let private loadFlight (scene: Scene) json =
         scene.Skills.Request <- None
         scene.ResearchUi.Request <- None
         Research.reset scene.Research
+        SectorOps.reset sectorOps
         Shop.hide scene.Shop
         scene.Input.UiMode <- false
         document.exitPointerLock()
@@ -1911,6 +2160,12 @@ let private loadFlight (scene: Scene) json =
         Missiles.reload scene.Missiles
         scene.Missiles.Reserve <- defaultArg run.SalvagedMissiles 0
         WreckVoices.restore (defaultArg run.WreckVoices 0)
+        scene.PortPackets <- defaultArg run.PortPackets 0
+        scene.OuterFlight <- defaultArg run.OuterFlight OuterRoutes.empty
+        scene.Poi <- defaultArg run.Poi SectorPoi.empty
+        scene.OuterCallHeard <- false
+        scene.Watch <- defaultArg run.Watch (Attendance.create (1 + int (data.RandomState % 1000000.)))
+        scene.PortLinkTime <- 0.0
         scene.WreckSalvage <-
             defaultArg run.WreckSalvage Array.empty |> Array.map (fun remaining -> remaining.Id,remaining) |> Map.ofArray
         scene.School <- defaultArg run.School (FlightSchool.create ())
@@ -1932,7 +2187,9 @@ let private loadFlight (scene: Scene) json =
         DockContact.restore scene.Contact (defaultArg run.HeardContacts 0)
         scene.Trading <- run.Trading
         scene.Sector <- scene.World.SectorIndex
-        if scene.Trading && Seizure.sites.[scene.Sector].IsSome then clearShippingLanes scene
+        run.Operation |> Option.iter (SectorOps.restore sectorOps scene.Sector)
+        if scene.Trading && (SectorFields.planFor scene.Sector).Shape = Swept then scene.World.Asteroids.Count <- 0
+        if scene.Trading && (Seizure.sites.[scene.Sector].IsSome || run.Watch.IsNone) then clearShippingLanes scene
         scene.CourseTarget <- run.CourseTarget
         scene.CourseVia <- if StarMap.validStop scene.Sector run.CourseTarget run.CourseVia then run.CourseVia else None
         scene.Wave <- run.Wave
@@ -2721,6 +2978,10 @@ let private pushEquipmentAndMinerals (scene: Scene) (position: Vec3) (rotation: 
             pushEngineHalo scene head scene.Turret.Rotation gun (0.28 + flash * 0.25) (0.15 * flash) (1.5 * flash) (1.8 * flash)
 
     LandmarkMeshes.pushLights scene.Landmarks (sectorIndex scene) scene.Time scene.Renderer.Lights scene.EngineHaloBatch scene.Camera.Rotation
+    match sightModels with
+    | Some sights when scene.Trading ->
+        SectorSights.pushLights sights (sectorIndex scene) scene.Time scene.Renderer.Lights scene.Camera.Rotation scene.World.Player.Position
+    | _ -> ()
 
 /// Physische 3D-Sprungtore, rotierende Beschleunigerringe und Portal-Leuchtfeuer.
 let private updateGateCrossing (scene: Scene) =
@@ -2781,7 +3042,7 @@ let private pushJumpGates (scene: Scene) (playerPosition: Vec3) =
 /// Ships in transit and the freighters stationed at the port.
 let private pushFreighters (scene: Scene) =
     let sector = if scene.Trading then scene.Sector else -1
-    Traffic.push scene.Traffic sector scene.World.Time scene.Camera.Position (pushFlame scene) (pushEngineHalo scene)
+    Traffic.push scene.Traffic sector scene.Watch.Seed scene.World.Time scene.World.Player.Position scene.Camera.Position (pushFlame scene) (pushEngineHalo scene)
     EngineTrails.traffic scene.Trails scene.GpuParticles scene.Traffic sector scene.Camera.Position
     let batch = scene.FreighterBatch
     InstanceBatch.clear batch
@@ -3030,9 +3291,12 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     pushCustomsGlow scene
 
     // Zeichnen: erst deckend, dann additiv
+    renderer.VeilDensity <- if scene.Trading then OuterRoutes.veilDensity scene.Sector camera.Position scene.World.Time else 0.
     Renderer.beginFrame renderer camera.View camera.Projection camera.Position
     Frustum.update scene.AsteroidFrustum renderer.ViewProj
-    let rocks = scene.AsteroidBatches.[min (scene.AsteroidBatches.Length - 1) (sectorIndex scene)].Value
+    let rocks =
+        if scene.World.Asteroids.Count = 0 then Array.empty
+        else scene.AsteroidBatches.[min (scene.AsteroidBatches.Length - 1) (sectorIndex scene)].Value
     pushAsteroids scene rocks backstep
     let wrecks = scene.WreckBatches.[sectorIndex scene].Value
 
@@ -3066,6 +3330,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     Renderer.drawShadow renderer scene.FreighterBatch
     for batch in scene.Traffic.Hulls do Renderer.drawShadow renderer batch
     Renderer.drawShadow renderer scene.Traffic.Bridge
+    Renderer.drawShadow renderer scene.Traffic.Optic
     Renderer.drawShadow renderer scene.GateFrameBatch
     Renderer.drawShadow renderer scene.GateRingBatch
     Renderer.drawShadow renderer scene.TurretBaseBatch
@@ -3088,14 +3353,55 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     for batch in scene.EnemyBatches do Renderer.draw renderer batch
     let sector = sectorIndex scene
     Renderer.draw renderer scene.StationBatches.[sector].Value
+    if PortWork.hasHoist sector && Vec3.distanceSq position (PortWork.center sector) < 1200.0*1200.0 then
+        let batch = scene.TrolleyBatch.Value
+        InstanceBatch.clear batch
+        InstanceBatch.push batch (PortWork.trolley sector scene.World.Time) Quat.identity Vec3.one 1. 1. 1. 0.
+        Renderer.draw renderer batch
+    match sectorOps.Current with
+    | Some op when scene.Trading && scene.Sortie.Role = 0 && op.Sector = sector && op.Kind = Lifeboat && not sectorOps.Active ->
+        let batch = scene.LifeboatBatch.Value
+        InstanceBatch.clear batch
+        let rotation = Quat.fromAxisAngle Vec3.unitZ (scene.World.Time * 0.19)
+        InstanceBatch.push batch op.Position rotation Vec3.one 1.0 1.0 1.0 0.0
+        Renderer.draw renderer batch
+        if scene.World.Time % 2.0 < 0.24 then
+            pushEngineHalo scene op.Position rotation (Vec3(0.,3.4,0.)) 8.0 1.0 1.0 0.95
+    | _ -> ()
     drawCustomsShips scene
     LandmarkMeshes.drawOpaque renderer scene.Landmarks sector scene.AsteroidFrustum scene.Time
-    let origin, relic = scene.RelicBatches.[sector]
+    if scene.Trading then
+        let sights =
+            match sightModels with
+            | Some models -> models
+            | None ->
+                let models = SectorSights.create renderer
+                sightModels <- Some models
+                models
+        SectorSights.drawOpaque renderer sights sector scene.World.Asteroids scene.AsteroidFrustum scene.Time
+        let site = OuterRoutes.sites.[sector]
+        let guide, heading = OuterRoutes.guidePose sector scene.World.Time
+        let visible (p: Vec3) radius = Frustum.intersectsSphere scene.AsteroidFrustum p.X p.Y p.Z radius
+        if visible site.Origin 320. then
+            let pulse =
+                match scene.ArchiveScan with
+                | Some scan when Vec3.distance position site.Origin < 460. -> max 0. (1. - scan.Elapsed / 1.4)
+                | _ -> 0.
+            OuterSiteMeshes.draw renderer scene.OuterModels.Value sector site.Origin scene.World.Time pulse
+        if visible guide 60. then OuterSiteMeshes.drawGuide renderer scene.OuterModels.Value sector guide heading scene.World.Time
+        for poi in SectorPoi.bySector.[sector] do
+            if visible poi.Position 180. then
+                PoiMeshes.draw renderer scene.PoiModels.Value (SectorPoi.kindIndex poi.Kind) sector poi.Position scene.World.Time (SectorPoi.doneAt scene.Poi poi)
+    let origin = archivePosition scene sector
     if Frustum.intersectsSphere scene.AsteroidFrustum origin.X origin.Y origin.Z 9.0 then
-        Renderer.draw renderer relic.Value
+        let batch = scene.RelicBatches.[sector].Value
+        InstanceBatch.clear batch
+        InstanceBatch.push batch origin (Recovery.rotation (currentSector scene).Outpost.Kind) Vec3.one 1. 1. 1. 0.
+        Renderer.draw renderer batch
     Renderer.draw renderer scene.FreighterBatch
     for batch in scene.Traffic.Hulls do Renderer.draw renderer batch
     Renderer.draw renderer scene.Traffic.Bridge
+    Renderer.draw renderer scene.Traffic.Optic
     Renderer.draw renderer scene.BuoyFrames
     Renderer.draw renderer scene.BuoyLenses
     Renderer.draw renderer scene.GateFrameBatch
@@ -3106,11 +3412,15 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     Renderer.draw renderer scene.MissileBatch
     Renderer.draw renderer scene.DustBatch
     Renderer.draw renderer scene.Landmarks.Horizon
+    match sightModels with
+    | Some sights when scene.Trading -> SectorSights.drawAdditive renderer sights
+    | _ -> ()
     if player.Alive && camera.Mode = Chase then
         ShipEmblem.draw renderer scene.Emblem position hull scene.Fleet scene.Cargo.Freight.IsSome (scene.Sortie.Role = CapitalFlight.Bomber) scene.Wallet.TurretOwned
     Renderer.draw renderer scene.ShieldBatch
     Renderer.draw renderer scene.ExhaustBatch
     Renderer.draw renderer scene.EngineHaloBatch
+    Renderer.draw renderer scene.Traffic.Scan
     Renderer.draw renderer scene.LaserBatch
     Renderer.draw renderer scene.VfxRingBatch
     Renderer.draw renderer scene.VfxStreakBatch
@@ -3156,6 +3466,8 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
                 Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
                 Hud.drawTraffic hud renderer.ViewProj scene.Traffic position
                 Hud.drawWrecks hud renderer.ViewProj sector scene.WreckSalvage position
+                Hud.drawSectorOps hud renderer.ViewProj (Renderer.aspect renderer) sector (if sectorOps.Active then None else sectorOps.Current) scene.PortPackets scene.PortLinkTime scene.World.Asteroids position scene.OuterFlight scene.World.Time scene.Poi
+                Hud.drawSights hud renderer.ViewProj sector position
         if scene.Trading && scene.Sector = Blockade.helios then
             let port = (currentSector scene).Outpost.Position
             let berth = port + Quat.rotateVec3 stationOrientation (Vec3(30.5,-12.0,14.7))
@@ -3189,6 +3501,8 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
                 Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
                 Hud.drawTraffic hud renderer.ViewProj scene.Traffic position
                 Hud.drawWrecks hud renderer.ViewProj sector scene.WreckSalvage position
+                Hud.drawSectorOps hud renderer.ViewProj (Renderer.aspect renderer) sector (if sectorOps.Active then None else sectorOps.Current) scene.PortPackets scene.PortLinkTime scene.World.Asteroids position scene.OuterFlight scene.World.Time scene.Poi
+                Hud.drawSights hud renderer.ViewProj sector position
         if scene.Trading && scene.Sector = Blockade.helios then
             let port = (currentSector scene).Outpost.Position
             let berth = port + Quat.rotateVec3 stationOrientation (Vec3(30.5,-12.0,14.7))
@@ -3246,6 +3560,8 @@ let private initializeFlight () : Scene option =
         let syncAudioUi () =
             let vols = Sound.getVolumes scene.Sound
             for prefix in audioPrefixes do
+                let voice = document.getElementById (prefix + "voice") :?> HTMLInputElement
+                voice.``checked`` <- Sound.autoRadioVoice scene.Sound
                 for i in 0 .. audioChannels.Length - 1 do
                     let pct = int (round (vols.[i] * 100.0))
                     let el = document.getElementById (prefix + audioChannels.[i])
@@ -3254,6 +3570,10 @@ let private initializeFlight () : Scene option =
                     if not (isNull outEl) then outEl.textContent <- string pct + " %"
         syncAudioUi ()
         for prefix in audioPrefixes do
+            let voice = document.getElementById (prefix + "voice") :?> HTMLInputElement
+            voice.addEventListener ("change", fun _ ->
+                Sound.setAutoRadioVoice scene.Sound voice.``checked``
+                syncAudioUi ())
             for i in 0 .. audioChannels.Length - 1 do
                 let el = document.getElementById (prefix + audioChannels.[i])
                 if not (isNull el) then
@@ -3278,7 +3598,7 @@ let private initializeFlight () : Scene option =
                 DockContact.leave scene.Contact
                 flush ()
             elif scene.State = Refitting && not scene.Saves.Visible && not (StarMap.visible ()) then
-                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot)
+                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot (if scene.Trading then Some scene.OuterFlight.Finds else None))
         Some scene
     with ex ->
         // Klartext statt schwarzem Bildschirm, falls WebGL2 fehlt oder ein Shader bricht.
@@ -3607,6 +3927,20 @@ let private frame (timestamp: float) =
             && ((scene.Phase = Fighting && (scene.World.Enemies |> Array.exists (fun e -> e.Alive)))
                 || (scene.Sortie.Role <> 0 && not scene.Blockade.Lifted))
         Sound.setMusicCombat scene.Sound musicInCombat
+        let aetherTrafficNear =
+            scene.Traffic.Contacts
+            |> Array.exists (function
+                | Some c ->
+                    let m = Traffic.models.[int c.Class]
+                    m.Aether && Vec3.distanceSq ship.Position c.Position <= 780.0 * 780.0
+                | None -> false)
+        let musicAetherPresent =
+            scene.State = Playing
+            && scene.School.Step = FlightSchool.Off
+            && ((currentSector scene).Id = "morgenlicht-bastion"
+                || scene.World.Customs.IsSome
+                || aetherTrafficNear)
+        Sound.setMusicAether scene.Sound musicAetherPresent
         let thrust = if ship.Controls.Brake then 0.0 else ship.Controls.Throttle
         Sound.updateEngine scene.Sound (engineActive && not mapVisible) thrust ship.Boost
 
@@ -3681,6 +4015,7 @@ let private frame (timestamp: float) =
                             Sound.refit scene.Sound
                     scene.PrevBoostDown <- ship.Controls.Boost
                 Physics.step world PhysicsStep
+                updatePoiCrossing scene
                 updateGateCrossing scene
                 if scene.State = Playing && scene.Sortie.Role <> CapitalFlight.Bomber then
                     let baseRadius = if PilotSkills.level scene.Pilot 0 >= 1 then 85.0 else Salvage.MagnetRadius
@@ -3710,7 +4045,7 @@ let private frame (timestamp: float) =
             if scene.State = Playing then updateSortie scene simulatedTime
             if scene.State = Playing && scene.School.Step <> FlightSchool.Off then
                 if ship.Alive then advanceSchool scene
-            elif scene.State = Playing && not (tryRecoverWreck scene simulatedTime) then updateArchiveScan scene simulatedTime
+            elif scene.State = Playing && not (tryRecoverWreck scene simulatedTime) && not (tryScanPoi scene) then updateArchiveScan scene simulatedTime
 
             if scene.State = Playing && ship.Alive && (scene.School.Step = FlightSchool.Off || scene.School.Step = FlightSchool.Dock) then
                 let outpost = (currentSector scene).Outpost
@@ -3729,6 +4064,26 @@ let private frame (timestamp: float) =
                             scene.RadioTimer <- max scene.RadioTimer 5.5
                         | None -> ()
                     | None -> ()
+                    if scene.Sortie.Role = 0 && scene.Hud.RadioTime <= 0.0 && not scene.OuterCallHeard then
+                        let site = OuterRoutes.sites.[scene.Sector]
+                        let nearRelay = Vec3.distanceSq ship.Position site.Relay < 470. * 470.
+                        if nearRelay || OuterRoutes.nearSite scene.Sector ship.Position then
+                            Hud.showRadio scene.Hud site.Guide OuterRoutes.workRadio.[scene.Sector] 0 0. 6.5
+                            scene.OuterCallHeard <- true
+                            scene.RadioTimer <- max scene.RadioTimer 7.
+                    if scene.Sortie.Role = 0 && scene.Hud.RadioTime <= 0.0 then
+                        let watch = Attendance.watch scene.Watch.Seed scene.World.Time
+                        match Attendance.cue scene.Watch watch scene.Sector ship.Position with
+                        | Some cue ->
+                            let pan = if cue.Reply then -0.28 else 0.18
+                            let audio = Sound.playFactionRadio scene.Sound cue.Clip pan (not cue.Reply)
+                            if audio >= 0. then
+                                let duration = max (float cue.Text.Length * 0.05 + 2.0) (audio + 0.45)
+                                Hud.showRadio scene.Hud cue.Callsign cue.Text 1 pan duration
+                                scene.RadioTimer <- max scene.RadioTimer (duration + 0.6)
+                                scene.Watch <- {scene.Watch with Heard=cue.Id}
+                                scene.SaveDirty <- true
+                        | None -> ()
                 let playRadioLine (line: RadioLine) =
                     let audioDur = Sound.playFactionRadio scene.Sound line.AudioKey line.Pan line.CleanFilter
                     if audioDur < 0.0 then None
@@ -3762,13 +4117,10 @@ let private frame (timestamp: float) =
                               CombatActive = scene.Hud.InCombat }
                         match RadioChatter.pick ctx (Array.ofList scene.RadioRecent) (System.Random().NextDouble()) with
                         | Some ex when ex.Lines.Length > 0 ->
-                            match playRadioLine ex.Lines.[0] with
-                            | Some dur ->
-                                scene.RadioRecent <- (ex.Id :: scene.RadioRecent) |> List.truncate 6
-                                scene.RadioPending <- ex.Lines.[1..] |> Array.toList
-                                scene.RadioPendingDelay <- if ex.Lines.Length > 1 then dur + 0.45 else 0.0
-                                scene.RadioTimer <- 24.0 + System.Random().NextDouble() * 18.0
-                            | None -> scene.RadioTimer <- 3.0
+                            scene.RadioRecent <- (ex.Id :: scene.RadioRecent) |> List.truncate 6
+                            scene.RadioPending <- Array.toList ex.Lines
+                            scene.RadioPendingDelay <- 0.0
+                            scene.RadioTimer <- 24.0 + System.Random().NextDouble() * 18.0
                         | _ -> scene.RadioTimer <- 16.0
             Hud.update scene.Hud simulatedTime
             if canSave scene then scene.FlightChanged <- true
@@ -3831,63 +4183,7 @@ let private frame (timestamp: float) =
         Lights.setBudget scene.Renderer.Lights scene.Graphics.Preset.PointLights
 
         updateStats scene elapsed
-        let introActive = scene.State = Menu && not (isNull (window?introCam)) && unbox<bool> (window?introCam?active)
-        if introActive then
-            let t = unbox<float> (window?introCam?time)
-            let shot = if isNull (window?introCam?shot) then 1 else unbox<int> (window?introCam?shot)
-            let shotT = if isNull (window?introCam?shotTime) then t else unbox<float> (window?introCam?shotTime)
-            let target, eye, fovMul, bank =
-                match shot with
-                | 0 ->
-                    // Rasanter Weitwinkel-Vorbeiflug an Kestrel & Raumverkehr
-                    let port = (currentSector scene).Outpost.Position
-                    let sweep = shotT * 0.42 - 0.85
-                    let p = port + Vec3(cos sweep * 195.0, 38.0 + 16.0 * sin (shotT * 0.55), sin sweep * 195.0 + 70.0)
-                    port + Vec3(0.0, 6.0, 0.0), p, 1.12, -0.10 * sin (shotT * 0.6)
-                | 1 ->
-                    // Dynamischer Whip-In um das Spielerschiff fuer den Borderlands-Freeze-Frame
-                    let u = min 1.0 (max 0.0 (shotT / 0.68))
-                    let ease = 1.0 - (1.0 - u) ** 3.0
-                    let angle = -1.65 + ease * 0.95 + shotT * 0.08
-                    let radius = 26.0 - ease * 13.5
-                    let height = 6.2 - ease * 3.8
-                    position + Vec3(0.0, 0.4, 0.0), position + Vec3(cos angle * radius, height, sin angle * radius), 1.08 - ease * 0.14, 0.14 * (1.0 - ease)
-                | 2 ->
-                    // High-Speed-Action-Tiefflug mit Banking durch den Sektor
-                    let forward = Quat.rotateVec3 rotation (Vec3(0.0, 0.0, -1.0))
-                    let right = Quat.rotateVec3 rotation (Vec3(1.0, 0.0, 0.0))
-                    let up = Quat.rotateVec3 rotation Vec3.unitY
-                    let dive = shotT * 48.0
-                    let origin = position + forward * (36.0 + dive) + right * (sin (shotT * 1.45) * 28.0) + up * (9.0 + cos (shotT * 1.15) * 6.5)
-                    let look = origin + forward * 120.0 + right * (cos (shotT * 1.45) * 18.0) - up * 3.5
-                    look, origin, 1.20, 0.22 * sin (shotT * 1.35)
-                | 4 ->
-                    // Episches Finale: ansteigender Hero-Pullback mit oeffnendem Sichtfeld
-                    let u = min 1.0 (max 0.0 (shotT / 3.4))
-                    let ease = 1.0 - (1.0 - u) ** 2.5
-                    let angle = 0.55 + shotT * 0.22
-                    let radius = 14.5 + ease * 14.0
-                    position, position + Vec3(cos angle * radius, 4.2 + ease * 6.5, sin angle * radius), 0.96 + ease * 0.18, -0.07 * ease
-                | _ ->
-                    // Nahaufnahme um den Bergungskutter
-                    let angle = shotT * 0.26 - 0.95
-                    let radius = 13.5 + 2.5 * sin (shotT * 0.45)
-                    position, position + Vec3(cos angle * radius, 2.4 + 1.6 * cos (shotT * 0.34), sin angle * radius), 1.0, 0.0
-            scene.Camera.Position <- eye
-            let baseRot = Quat.lookRotation (target - eye) Vec3.unitY
-            scene.Camera.Rotation <- if abs bank > 0.001 then baseRot * Quat.fromAxisAngle Vec3.unitZ bank else baseRot
-            scene.Camera.Fov <- scene.Camera.BaseFov * fovMul
-            let introShake = if isNull (window?introCam?shake) then 0.0 else unbox<float> (window?introCam?shake)
-            scene.Camera.Jolt <-
-                if introShake > 0.002 then
-                    let s = min 1.0 introShake * 0.022
-                    Quat.fromAxisAngle Vec3.unitX (sin (t * 47.0) * s)
-                    * Quat.fromAxisAngle Vec3.unitY (cos (t * 53.0) * s)
-                    * Quat.fromAxisAngle Vec3.unitZ (sin (t * 39.0) * s * 1.4)
-                else Quat.identity
-            if not (unbox<bool> (window?introCam?freeze)) then scene.Time <- scene.Time + dt
-            render scene position rotation alpha
-        elif scene.State <> Menu then
+        if scene.State <> Menu then
             render scene position rotation alpha
         Input.endFrame input
         window.requestAnimationFrame loop.Callback |> ignore

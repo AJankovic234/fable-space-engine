@@ -898,7 +898,8 @@ module Hud =
                         project hud viewProj p.X p.Y p.Z
                         if onScreen hud then
                             if ship.Broadcast then
-                                queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 5.0 Amber 43 false ship.Name ship.Detail
+                                let tint = if ship.Class = Traffic.ShipClass.Registrar then Cyan else Amber
+                                queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 5.0 tint 43 false ship.Name ship.Detail
                             else
                                 let dx,dy = hud.ScreenX-hud.Width*0.5, hud.ScreenY-hud.Height*0.5
                                 let score = dx*dx + dy*dy
@@ -940,6 +941,97 @@ module Hud =
                         elif voice = Sending then Amber, "Sendet noch · Bergung ab 65 m"
                         else Amber, "Bergung ab 65 m"
                     queueMarker hud HudContacts.CargoCrate hud.ScreenX hud.ScreenY 8.0 tint 65 (hud.InCombat && distance > WreckFields.SalvageRange) title detail
+
+    /// Sehenswürdigkeiten des Sektors: aus der Ferne ein dezentes Symbol, in der Nähe der Name.
+    let drawSights (hud: Hud) (viewProj: Mat4) sector (position: Vec3) =
+        for s in SectorSights.forSector sector do
+            let distance = Vec3.distance s.Position position
+            if distance > s.Radius then
+                let p = s.Position + Vec3(0.0, s.Radius * 0.45, 0.0)
+                project hud viewProj p.X p.Y p.Z
+                if onScreen hud then
+                    let near = distance < 700.0 && not hud.InCombat
+                    queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 4.0 Cyan 25 (not near)
+                        (s.Name + " · " + string (int distance) + " m") ""
+
+    /// Sektorlage: der offene Einsatz (am Bildrand als Peilung) und die Erznester des
+    /// Sektors mit ihren noch ungebrochenen Erzadern.
+    let drawSectorOps (hud: Hud) (viewProj: Mat4) (aspect: float) sector (op: SectorOp option) packets link (asteroids: AsteroidField) (position: Vec3) (log: OuterRoutes.FlightLog) time (poiLog: SectorPoi.Log) =
+        let bearing (p: Vec3) glyph =
+            project hud viewProj p.X p.Y p.Z
+            if onScreen hud then hud.ScreenX,hud.ScreenY,glyph
+            else
+                let dx,dy = hud.ClipX / max 0.01 aspect,-hud.ClipY
+                let length = sqrt (dx*dx + dy*dy)
+                let nx,ny = if length < 0.001 then 0.0,1.0 else dx/length,dy/length
+                hud.Width*0.5 + nx*max 16.0 (hud.Width*0.5-30.0),
+                hud.Height*0.5 + ny*max 16.0 (hud.Height*0.5-186.0),HudContacts.Bearing(nx,ny)
+        for poi in SectorPoi.bySector.[sector] do
+            let pinned = poiLog.Pinned = Some poi.Id
+            let point = SectorPoi.target poiLog poi
+            let distance = Vec3.distance position point
+            if pinned || (not hud.InCombat && distance < 680.) then
+                let x,y,glyph = bearing point HudContacts.Square
+                let detail =
+                    if SectorPoi.doneAt poiLog poi then "Abgeschlossen"
+                    elif pinned || distance < 300. then SectorPoi.instruction poiLog poi
+                    else SectorPoi.category poi.Kind
+                queueMarker hud glyph x y 7.0 "#a7ebac" (if pinned then 86 else 56) hud.InCombat (sprintf "%s · %d m" poi.Name (int distance)) detail
+        let outer = OuterRoutes.sites.[sector]
+        let distanceToSite = Vec3.distance position outer.Origin
+        let found = OuterRoutes.has log.Finds sector
+        let guide, _ = OuterRoutes.guidePose sector time
+        if not hud.InCombat && (log.Tracking || distanceToSite < 900.) then
+            let point, hint = OuterRoutes.bearing sector position log
+            let x,y,glyph = bearing point HudContacts.Circle
+            let title =
+                if found then outer.Name
+                elif distanceToSite < 460. then sprintf "Signalquelle · %d m · G scannen" (int (Vec3.distance position point))
+                elif OuterRoutes.linked log.Finds sector then "Archivkoordinate · Außenband"
+                else "Peilung · Außenband"
+            let detail = if found then "Kartiert" elif distanceToSite < 900. then outer.Approach else hint
+            queueMarker hud glyph x y 8.0 "#c8adef" 78 false title detail
+        elif not hud.InCombat && not found && Vec3.distance position guide < 650. then
+            project hud viewProj guide.X guide.Y guide.Z
+            if onScreen hud then queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 5.0 CyanDim 46 false outer.Guide "G · Außenband peilen"
+        let site = PortWork.sites.[sector]
+        let status = PortWork.status packets sector
+        let terminal = PortWork.terminal sector
+        let distance = Vec3.distance terminal position
+        if status = 0 && distance < 850.0 && not hud.InCombat then
+            let x,y,glyph = bearing terminal HudContacts.CargoCrate
+            let detail =
+                if link > 0.0 then sprintf "Datenfunk · %d %%" (min 100 (int (100.0 * link / PortWork.linkSeconds)))
+                elif distance <= PortWork.range then "Für die Übertragung auf 18 m/s abbremsen"
+                else sprintf "%s holen · 3 s am Funkbügel · %d CR am Dock" site.Packet site.Fee
+            queueMarker hud glyph x y 7.0 Cyan 68 false (sprintf "%s · %d m" site.Name (int distance)) detail
+        let d = asteroids.Data
+        for nest in (SectorFields.planFor sector).Nests do
+            let c = nest.Center
+            let distance = Vec3.distance c position
+            if distance > nest.Spread * 1.5 then
+                project hud viewProj c.X c.Y c.Z
+                if onScreen hud then
+                    let reach = nest.Spread * 2.6
+                    let mutable veins = 0
+                    for i in 0 .. asteroids.Count - 1 do
+                        if asteroids.Ore.[i] > 0uy then
+                            let o = i * AsteroidField.Stride
+                            let dx = float d.[o] - c.X
+                            let dy = float d.[o + 1] - c.Y
+                            let dz = float d.[o + 2] - c.Z
+                            if dx * dx + dy * dy + dz * dz <= reach * reach then veins <- veins + 1
+                    let detail = if veins > 0 then string veins + " Erzadern · Kruste aufbrechen" else "Abgebaut"
+                    queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 6.0 (if veins > 0 then Amber else CyanDim) 40 hud.InCombat
+                        ("Erznest " + nest.Name + " · " + string (int distance) + " m") detail
+        match op with
+        | Some op when Vec3.distance position outer.Port < 1450. ->
+            let p = op.Position
+            let distance = Vec3.distance p position
+            let x,y,glyph = bearing p HudContacts.Diamond
+            let tint = if op.Kind = Lifeboat then Cyan elif op.Kind = Flotsam then Amber else Red
+            queueMarker hud glyph x y 9.0 tint 90 false (op.Title + " · " + string (int distance) + " m") op.Detail
+        | _ -> ()
 
     /// Das Flug-HUD.
     ///   viewProj/aspect : Kamera des aktuellen Frames
@@ -1132,7 +1224,7 @@ module Hud =
         let sector = Universe.sectorByIndex sectorIndex
         // Archivposition erst nach erfolgreichem Scan einblenden.
         if school = FlightSchool.Off && PilotSkills.contains world.Pilot.Relics sectorIndex then
-            let p = RelicArchive.position sector.Outpost.Position sectorIndex
+            let p = if hud.Trading then OuterRoutes.sites.[sectorIndex].Archive else RelicArchive.position sector.Outpost.Position sectorIndex
             let distance = Vec3.distance p playerPosition
             if distance <= RelicArchive.range world.Pilot then
                 project hud viewProj p.X p.Y p.Z

@@ -60,15 +60,15 @@ module PilotSkills =
 module RelicArchive =
     // Summaries stay sealed in the dock archive until the corresponding signal is scanned.
     let entries =
-        [| "Kestrel-04", "Auf dem Flugschreiber steht J. Halden. Seine Kennung stimmt bis zur letzten Ziffer mit meiner überein. »Die haben sie auf eine Lockdrohne kopiert«, sagt er in seinem letzten Eintrag. »Flieg bloß nicht mit meinem Namen nach Morgenlicht.«"
-           "Schichtliste aus Schacht 9", "Hinter allen 38 Namen steht »Sleeve-Transfer abgeschlossen«. Im Umschlag steckt auch der Ausdruck vom Sauerstoffventil. Als der Verbrauch vier Prozent über Plan lag, hat die Leitstelle die Zufuhr zu Schacht 9 geschlossen."
-           "Der Puffer-Chor", "Auf der Antenne laufen zwölf Notrufe in einer Schleife. Ich habe die Stimme der Frau herauskopiert, bis zu der Stelle, an der sie den Funk ablegt. Die Aufnahme ist elf Jahre alt."
-           "Trockendock B", "Im Werkstattbuch des Kolonieschiffs ist ein Kästchen frei geblieben. »Startfreigabe Erde« steht darüber. Seit dem Eintrag von 03 AE schickt das Dock dieselbe Anfrage an die Bodenstation."
-           "RT-9-Mirror", "Am 14. März 2034 hat RT-9 beide Teile von ORPHEUS-7 empfangen. Ihre Bahnen laufen auseinander, über beiden Spuren steht dieselbe Kennung. Das Band endet vor der Bestätigung des Wiedereintritts."
-           "Sleeve-Satellit", "Beim Reaktorleck von 2564 starb Kaelen Vance. Sein Totenschein liegt in der Wiederherstellungsakte, gleich vor dem ersten Antrag auf Ersatz. Laut jüngstem Eintrag ist auf der Sovereign gerade Sleeve Nummer 7 im Dienst."
-           "Pumpenbuch der Kaltstrom-Schicht", "Im ersten Winter leiteten die Mechaniker einen Teil des Kühlmittels zum Schlafdeck. Die Pumpen liefen mit Zellen aus Helios. Als der Nachschub ausblieb, strich die Verwaltung zuerst die Leute von der Anwesenheitsliste."
-           "Schleppschein 44", "Der Auftrag lautet, die Presse aus dem Deck zu bergen. Der Schlepper hat sechsmal nach den Rettungskapseln gefragt. Jedes Mal antwortete die Leitstelle mit derselben veralteten Inventarliste."
-           "Kursprotokoll 17", "Die Relaiscrew hat den Nebel vermessen und die sichere Spur an beide Docks geschickt. Am nächsten Morgen verlangte ein unbekannter Sender Geleitschutz genau für diese Spur." |]
+        [| "Kestrel-04", "Auf dem Flugschreiber steht J. Halden, Kennung identisch mit meiner. In seinem letzten Eintrag meldet er eine Drohne mit derselben Nummer und warnt vor dem Anflug auf Morgenlicht."
+           "Schichtliste aus Schacht 9", "Hinter allen 38 Namen steht „Transfer abgeschlossen“. Im selben Umschlag liegt der Druckverlauf vom Sauerstoffventil: bei vier Prozent Mehrverbrauch wurde der Strang abgeriegelt."
+           "Der Puffer-Chor", "Zwölf Notrufe in Endlosschleife auf einer Antenne. Eine der Stimmen bricht mitten im Satz ab, als jemand das Mikro weglegt. Zeitstempel liegt elf Jahre zurück."
+           "Trockendock B", "Im Werkstattbuch des Kolonieschiffs fehlt genau ein Stempel: Startfreigabe Erde. Seit dem Eintrag von 03 AE wiederholt das Dock dieselbe Anfrage an die Bodenstation."
+           "RT-9-Mirror", "14. März 2034. Relais RT-9 empfängt zwei getrennte Bahnen von ORPHEUS-7 unter genau derselben Kennung. Das Band reißt vor der Wiedereintritts-Meldung ab."
+           "Sleeve-Satellit", "Reaktorleck 2564: Totenschein auf den Namen Kaelen Vance, direkt gefolgt vom ersten Wiederherstellungsantrag. Im aktuellen Schiffsregister der Grace Period läuft Sleeve Nummer 7."
+           "Pumpenbuch Raureif", "Erster Winter: Die Mechaniker haben Kühlleistung aufs Schlafdeck umgeleitet. Als die Zellen aus Helios ausblieben, verschwand die ganze Schicht aus dem Dienstplan."
+           "Schleppschein 44", "Bergungsauftrag für die Erzpresse. Im Log fragt der Schlepper sechsmal nach den Rettungskapseln; die Leitstelle schickt jedes Mal nur die alte Inventarliste zurück."
+           "Kursprotokoll 17", "Die Crew von Graue Wacht schickt ihre vermessene Nebelspur kostenlos an beide Docks. Am nächsten Morgen verlangt ein anderer Sender Gebühren für genau diese Koordinaten." |]
     let position (port: Vec3) sector =
         let side = if sector % 2 = 0 then 1.0 else -1.0
         port + Vec3(side * (145.0 + 12.0 * float sector), 30.0 + 9.0 * float sector, 65.0)

@@ -4,26 +4,26 @@
     { id: "kestrel", label: "Kestrel-Schwinge", file: "/assets/emblems/emblem-kestrel.svg" },
     { id: "eclipse", label: "2601AE Eclipse",   file: "/assets/emblems/emblem-eclipse.svg" },
     { id: "rt9",     label: "RT-9 Analogpuls",  file: "/assets/emblems/emblem-rt9.svg" },
-    { id: "skull",   label: "Lizenzleiche",     file: "/assets/emblems/emblem-skull.svg" },
+    { id: "skull",   label: "Gestrichene ID",   file: "/assets/emblems/emblem-skull.svg" },
     { id: "hex",     label: "Drift-Wabe",       file: "/assets/emblems/emblem-hex.svg" },
     { id: "lance",   label: "Blockadebrecher",  file: "/assets/emblems/emblem-lance.svg" }
   ];
   const ORIGINS = [
-    { id: "miner",   label: "Gürtel-Schürfer",     tag: "SIN: ABGELAUFEN · ROST-SLEEVE",     hint: "Dein letzter gültiger Ausweis trägt noch den Stempel der Erzschicht auf Kestrel." },
-    { id: "smuggler",label: "Drift-Schmuggler",    tag: "SIN: GEKLEBT · HALDEN-CLONE",      hint: "Die Lötstellen an deinem Transponder verraten, wer ihn auf Drift-9 umgebaut hat." },
-    { id: "analyst", label: "Abtrünniger Analyst", tag: "SIN: GELÖSCHT · EX-MORGENLICHT",   hint: "Auf deinem alten Dienstausweis steht Morgenlicht. Die Kennung wurde aus dem Register gelöscht." }
+    { id: "miner",   label: "Gürtel-Schürfer",     tag: "SIN: ABGELAUFEN · KESTREL",        hint: "Dein letzter Ausweis trägt noch den Stempel der Erzschicht auf Kestrel." },
+    { id: "smuggler",label: "Drift-Schmuggler",    tag: "SIN: UMGELÖTET · DRIFT-9",         hint: "Kipper hat deinen Transponder auf Drift-9 umgelötet. Hält, solange keiner genau hinsieht." },
+    { id: "analyst", label: "Ehem. Analyst",       tag: "SIN: GELÖSCHT · MORGENLICHT",      hint: "Dein alter Dienstausweis stammt aus Morgenlicht. Die Kennung wurde über Nacht gesperrt." }
   ];
   const COLORS = [
     { id: "cyan",    hex: "#76e5f9", label: "Kurier-Cyan" },
     { id: "amber",   hex: "#f4a24b", label: "RT-9 Bernstein" },
     { id: "phosphor",hex: "#5ef29d", label: "Drift-Phosphor" },
-    { id: "crimson", hex: "#ff5a67", label: "Sovereign-Karmin" }
+    { id: "crimson", hex: "#ff5a67", label: "AETHER-Karmin" }
   ];
   const PRESETS = [
     { callsign: "KESTREL-04", origin: "miner",    emblem: "kestrel", color: "#76e5f9", label: "KESTREL-04 · Schürfer" },
     { callsign: "ASH-7",      origin: "smuggler", emblem: "hex",     color: "#5ef29d", label: "ASH-7 · Drift-Kurier" },
     { callsign: "RT9-ECHO",   origin: "analyst",  emblem: "rt9",     color: "#f4a24b", label: "RT9-ECHO · Analog" },
-    { callsign: "STATIC",     origin: "smuggler", emblem: "skull",   color: "#ff5a67", label: "STATIC · Lizenzleiche" }
+    { callsign: "STATIC",     origin: "smuggler", emblem: "skull",   color: "#ff5a67", label: "STATIC · Ungelistet" }
   ];
 
   function load() {

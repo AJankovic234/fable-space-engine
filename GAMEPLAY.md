@@ -1,5 +1,7 @@
 # Fable Space – Handelsflug
 
+Über **Intro-Film** im Hauptmenü läuft [Rücklauf](public/assets/intro/ruecklauf.mp4), eine 26 Sekunden lange Szene an der Orbitalwerft Kepler. Mit **← / →** springst du zwischen den Einstellungen. **Esc** bringt dich zurück ins Menü.
+
 ## Flugschule auf Kestrel
 
 Ein neuer Handelsflug beginnt auf dem Übungskurs. Mit **↑** oder **R** beschleunigst du auf 18 m/s. **↓** oder **F** nimmt Schub zurück. **X** bremst bis zum Stillstand. Danach schießt du mit der **Leertaste** erst auf eine stehende, dann auf eine seitlich pendelnde Zieldrohne. Beide sind unbewaffnet. Für jede gibt es beim ersten Abschuss 100 CR. An der Stationsmarke öffnet **B** unter 90 Metern den Markt.
@@ -103,6 +105,8 @@ Am Zollkreuzer sitzt die Brücke über der seitlichen Kontrollbucht. Nach dem er
 
 Im Handelsflug pendeln Hafenshuttles zwischen Station und Toren. Bei Kestrel ziehen Bergungsschlepper im rotbraunen Rostschutzgrund unter dem Hafen vorbei. Zwischen ihren Arbeitsscheinwerfern liegen die offenen, gelben Greifarme mit freiliegenden Kolben und Gelenkbolzen. Darüber fliegen grauweiße Passagierliner mit dunklem Kiel. Ihre Aussichtsgalerie aus geschwärztem Glas sitzt auf dem Oberdeck, nur wenige Kabinenfenster sind erleuchtet, und die Rettungskapseln hängen unter den Kabinenfenstern. Containerfrachter belegen den Außenliegeplatz und die Warteposition.
 
+Der Registerkreuzer **Doppel-A** fliegt über acht Häfen seine Runde. Auf der **Universumskarte (F7)** nennt der Dienstfunk den aktuellen und den nächsten Halt. Der Schleierpass bleibt sein blinder Fleck. An der Unterseite folgt ein schwenkbares Objektiv dem Torverkehr, den Linienfähren und vorbeifliegenden Kurieren. Wer in Funkreichweite bleibt, hört mit, wie die Listenstelle zwei Menschen an einem Anschluss verbuchen soll. Die Durchsagen folgen der Funk-Einstellung im Tonmixer. [Doppel-A im Anflug](artifacts/sektorflug/doppel-a.jpg)
+
 Über Helios und dem Forschungs-Relais Theta patrouilliert eine AETHER-Fregatte mit einer Eskortkorvette. Vor der Bastion Morgenlicht fliegt eine zweite Korvette auf der anderen Flanke. Auf dem Vorschiff der knapp 79 m langen Fregatte stehen zwei gepanzerte Doppeltürme hintereinander. Über der Brücke tragen zwei gespreizte Pfeiler eine offene Kommandokrone mit roter Sensoriris. Die Korvetten erkennst du an ihren offenen Sichelflügeln, den seitlichen Scannerfenstern und dem roten Auge unter dem Kiel. Beide Klassen fliegen sauber: platingraue Panzerung über schwarzem Gürtel, verspiegelte Brücken und kalt erleuchtete Fenster. Gold tragen nur der Schnabel der Fregatte, die Vorderkanten und das Wappen, ein goldenes, gebrochenes A auf karminrotem Schild. An Bug und Brücke der Fregatte und unter dem Kiel der Korvette leuchten rote Abtaster. Richte im kampffreien Handelsflug den Blick auf ein Schiff. Bis 600 m zeigt das HUD Klasse, Zugehörigkeit und Entfernung. Der vorbeiziehende Verkehr ist Kulisse, du kannst durch die Schiffe hindurchfliegen. [Fregatte und Korvette](artifacts/sektorflug/aether-patrouille.webp)
 
 Vor Helios-IV und Kepler-07 beschlagnahmt AETHER nach einem örtlichen Fahrplan eine rund 85 m lange Schichtfähre. Die Fähre stoppt, die Fregatte hält Wache und die Korvette fährt eine Enterbrücke bis zur Passagierschleuse aus. Nach der Ummeldung blitzen beide Positionslichter rot. Die Brücke fährt ein und der Verband verschwindet durchs Tor. Im kampffreien Handelsflug empfängst du bis 850 m kurze Registermeldungen. Die Szene läuft auf der gespeicherten Weltzeit weiter und löst keinen Auftrag aus. [Kaperung bei Kepler-07 · 16 Sekunden im Zeitraffer](artifacts/sektorflug/aether-kaperung.webm)
@@ -117,7 +121,7 @@ Beim Start ist ein Frachter vor Kestrels Andockring zu sehen. Im Dock steht ein 
 
 Voss spricht auf Kestrel und über Fernleitung auf Kepler, Orlov meldet sich aus dem Schichtbüro von Helios. Auf Drift-9 funkt Kipper, auf Relais Theta Lind und auf Morgenlicht Vance. Der erste Ruf am jeweiligen Dock wartet auf eine freie Frequenz. Die Untertitel wechseln mit der Aufnahme. Im stummen Spiel bleibt der vollständige Wortlaut lesbar. Der Spielstand merkt sich abgeschlossene und übersprungene Rufe. Am Dock kannst du sie erneut abhören. [Funkporträts](public/assets/portraits/dock-radio.webp)
 
-Nach der Flugschule kannst du im Stationsanflug mit **G** einen Archivscan auslösen. Der Impuls erfasst beim Tastendruck alle Richtungen bis **350 m** um dein Schiff. Der RT-9-Demodulator erweitert den Radius auf **700 m**. Das Radar zeigt die Scanwelle. Ein Echo liefert Entfernung, einen Ausschnitt der Übertragung und beim ersten Fund einen Stack-Punkt. Bleibt das Echo aus, flieg ein Stück weiter und drücke erneut **G**.
+Nach der Flugschule empfängt **G** im Handelsflug das Außenband. Folge der violetten Peilung oder dem örtlichen Arbeitsverkehr. Am Außenort erfasst der Archivscan beim Tastendruck alle Richtungen bis **350 m** um dein Schiff. Der RT-9-Demodulator erweitert diesen Radius auf **700 m**. Das Radar zeigt die Scanwelle. Beim ersten Archivecho erhältst du einen Stack-Punkt. Für die genauere Untersuchung des Fundorts flieg näher heran und drücke erneut **G**.
 
 | Fundort | Quelle des Echos |
 |---|---|
@@ -231,7 +235,69 @@ Die **Universumskarte** öffnet sich mit **F7** im Handelsflug oder unter **Rout
 
 ### Asteroiden und Trümmerfelder
 
-In den Gürteln treiben 16 Asteroidenformen, darunter Eisplatten, Eisnadeln, Eisenblöcke und poröse Kohlenstoffbrocken. Die Dichte und der Erzanteil frisch erzeugter Felder unterscheiden sich je nach Sektor. Den Inhalt eines einzelnen Asteroiden erkennst du an den Kristallen, sobald er zerbricht.
+In den Feldern treiben 16 Asteroidenformen, darunter Eisplatten, Eisnadeln, Eisenblöcke und poröse Kohlenstoffbrocken. Jeder Sektor hat eine eigene Landschaft, die das Lagebild beim Einflug nennt:
+
+| Sektor | Landschaft |
+| --- | --- |
+| Haldens Ruh | Seitlich versetzter Erzgürtel, drei Startbrocken auf dem Weg nach Kestrel |
+| Neunte Sohle | Schlackestrom aus dunklem Gestein, der von der Hütte nach Südwesten zieht |
+| Zwölf Stimmen | Freie Liegeplätze, vereinzelte Treibnester abseits davon |
+| Kepler-07 und Theta | Asteroidenfreier Werft- und Horchraum |
+| Morgenlicht | Felswall am Sektorrand um eine offene Mitte |
+| Kaltstrom | Helle Eisnester mit dem reichsten Erz, weit verstreut |
+| Wracksaum | Rostiger Trümmerstrom, viel Deckung, wenig Erz |
+| Schleierpass | Wenige riesige Nebelbrocken, wandernde Staubbänke entlang der äußeren Zollroute |
+
+**Erz liegt in Nestern**, mindestens 450 m von der Station entfernt. Kestrel, Helios und Drift-9 haben je zwei Nester, Kaltstrom hat drei. In Werftraum und Horchraum gibt es kein Erz. Im Cockpit zeigen bernsteinfarbene Kreise die Nester mit Name, Entfernung und verbleibenden Erzadern. Den Inhalt eines einzelnen Asteroiden erkennst du beim Treffer.
+
+**Außenflüge.** In jedem der neun Sektoren liegt ein besonderer Fund rund 2,3–3,8 km vom Hafen entfernt. Am Dock nennt das Fundarchiv die örtliche Arbeitsroute. Unterwegs geben Schlepper, Messschiffe und Baken Hinweise über ihre Position und den Betriebsfunk. Mit **G** schaltest du die Peilung auf. Das Nahsignal lässt sich bis 155 m untersuchen. Am Resonanzring von Theta antwortet das herausgebrochene obere Segment aus 70 m. Der erste Außenfund an einem Ort bringt 210–560 CR. Die Prämie und der Bericht bleiben im Spielstand.
+
+In Kepler schleppen zwei Kutter ein Rumpfsegment zum Trockendock. Thetas Ring liefert eine Kreuzpeilung zur Eislinse in Kaltstrom. Deren Brechungsmuster weist weiter zum Prisma im Schleierpass. Zusammen ergeben die drei Artefakte eine Sternkarte mit einer einmaligen Forschungsprämie von 650 CR. Im Wracksaum lassen sich beim stummen Konvoi außerdem zwei Plasmakerne und ein Nav-Datensatz bergen.
+
+Im Wracksaum verrät ein kurzes Steuerfeuer die Stellung der Plünderer. Im Schleierpass unterscheidet sich die falsche Zollbake durch ihr Doppelblinken vom echten Einzelfeuer. Bei Morgenlicht bewegt sich das Patrouillenschiff auf einem sichtbaren Kreisbogen. Du kannst diese Kontakte umfliegen. Nach einem ausgelösten Hinterhalt bricht die Rotte die Verfolgung ab, sobald du mehr als 1,15 km vom Fundort entfernt bist.
+
+[Trockendock B im Anflug](artifacts/sektorflug/aussenflug-kepler.jpg) · [Resonanzring bei Theta](artifacts/sektorflug/aussenflug-theta.jpg) · [Konvoi im Wracksaum](artifacts/sektorflug/aussenflug-wracksaum.jpg)
+
+**Weitere Erkundungsziele.** Auf **F7** zeigt jeder Sektor zwei öffentlich bekannte Orte. Ein Ziel liegt etwa 1,5–1,8 km vom Hafen entfernt, das zweite etwa 3,7–4,2 km. Wähle am eigenen Standort **Im Cockpit peilen** für eine grüne Zielmarke. Bei einem entfernten Sektor setzt **Kurs setzen und peilen** auch den Sprungkurs. Im Vorbeiflug erscheinen die Orte ab 680 m von selbst. Die Karte vermerkt abgeschlossene Arbeiten und zeigt ihren Bericht.
+
+| Art | Was du am Ziel tust |
+| --- | --- |
+| Frachtdepot | Mit **G** aus höchstens 90 m die ganze Sendung verladen. Ohne genügend freien Laderaum bleibt sie bis zur Rückkehr eingelagert. |
+| Peilanlage | Erst den bernsteinfarbenen Westempfänger, dann den türkisfarbenen Ostempfänger aus höchstens 48 m mit **G** auslesen. Nach der ersten Messung schwenkt die Zielmarke zum zweiten Empfänger. |
+| Wartungsstelle | Auf höchstens 12 m/s bremsen und bis auf 90 m mit **G** ankoppeln. |
+| Messring | In beliebiger Richtung durch die Öffnung fliegen. Auch ein Durchflug mit Booster zählt. |
+
+Die einmaligen Honorare liegen zwischen 85 und 370 CR. Am Vorratslager Sieben bei Kestrel kommen drei Treibstoffzellen dazu, am Materialprahm Marga bei Kepler sechs Einheiten Titanschrott. Peilziel, erste Messung und abgeschlossene Arbeiten bleiben über Sprünge und Spielstände hinweg erhalten. [Keplers Nullmaß aus dem Cockpit](artifacts/sektorflug/keplers-nullmass.jpg)
+
+**Sehenswürdigkeiten.** Draußen im Sektor stehen Bauwerke mit eigenen Leuchtfeuern, die man schon von weitem sieht. Ab 700 m nennt das Cockpit ihren Namen. Viele Einsätze der Sektorlage finden dort statt.
+
+| Sektor | Sehenswürdigkeiten |
+| --- | --- |
+| Haldens Ruh | Zwei Bohrtürme auf Felsbrocken mit Kranarm und rotem Topplicht |
+| Neunte Sohle | Schlackemasten entlang des Stroms, ein Schlackebohrer |
+| Zwölf Stimmen | *Die zwölf Stimmen*: Notbojen im Ring, deren rote Lichter reihum laufen; eine Schürferplattform |
+| Kepler-07 | Zwei Rumpfskelette auf Kiel mit Portalkran |
+| Theta | Horchgitter aus neun Antennenschüsseln, Sperrbojen in AETHER-Cyan |
+| Morgenlicht | Zwei Abwehrplattformen |
+| Kaltstrom | Komet Raureif mit leuchtendem Schweif, der von der Sonne weg zeigt |
+| Wracksaum | Die zwei Hälften der »Langen Leine« mit glimmenden Bruchstellen, ein Bergungsbohrer |
+| Schleierpass | Zwei Reihen Zollbaken mit Wechselblinklicht |
+
+An jedem Erznest arbeiten zwei **Schürferschiffe**. Sie stehen vor einem Felsen am Rand des Nests und bohren mit einem orangen Strahl. Ist ihr Felsen zerstört, ziehen sie zum nächsten. Bauwerke und Schürfer sind Kulisse: Man kann durch sie hindurchfliegen.
+
+**Hafenkuriere** fliegen zwischen Außenanlage und Dock. Auf Kestrel warten die Schichtrollen an Seilwinde Vier, auf Drift-9 die Patientenpost in der Freien Krankenbucht. Folge dem türkisfarbenen Frachtsymbol, bremse am Funkbügel auf höchstens 18 m/s und halte drei Sekunden die Verbindung. Beim Andocken zahlt der örtliche Hafen einmalig 180–265 CR. Ein Datenpaket braucht keinen Frachtraum und bleibt unterwegs im Spielstand.
+
+**Sektorlage.** Nach 18 Sekunden ruhigem Handelsflug kommt der erste Einsatz, 34 Sekunden nach einem Abschluss der nächste. Der Funk wählt Art und Ort. Eine Markierung führt zum Ziel. Ein unbeantwortetes Signal wechselt nach 60–90 Sekunden. Ab Gefahrenstufe zwei können Piraten dabei außerhalb der geschützten Hafen-, Funkbügel- und Torbereiche auf dich zudrehen.
+
+- **Rettungskapsel.** Folge dem weißen Blitzlicht auf 65 m. Das Schiff stabilisiert die Kapsel für die Sanitätsfähre. Der Rettungsdienst zahlt je nach Sektor 150–255 CR.
+
+- **Notruf:** Piraten greifen Schürfer an einem Erznest an. Wer bis auf 320 m heranfliegt, löst den Kampf aus. Als Dank gibt es 70–160 CR und Reicherz.
+- **Kopfgeld:** Ein Piratenführer im Kanonenboot mit Begleitschutz. Die Prämie (250–400 CR) gibt es erst, wenn der ganze Verband gefallen ist. In den ruhigen Sektoren Haldens Ruh und Kaltstrom gibt es kein Kopfgeld.
+- **Treibgut:** Frachtcontainer mit Treibstoffzellen, Plasmakernen und Nav-Daten. In ruhigen Sektoren liegen sie unbewacht, sonst kommen Plünderer, sobald du die Ladung erreichst.
+
+Jeder Abschuss bringt 100 CR und Wrackgut. Ein Sprung bricht den örtlichen Einsatz ab. Beim Speichern und Laden im selben Sektor bleiben das offene Signal oder der laufende Kampf samt Prämie erhalten.
+
+Routine- und Fraktionsmeldungen kommen als kurzer Funkimpuls mit Text. Im Tonmixer kannst du **Funkmeldungen automatisch vorlesen** einschalten. Einzelne Aufnahmen lassen sich am Dock über **Abhören** starten.
 
 In **jedem Sektor** markieren bernsteinfarbene Kisten im Radar havarierte Frachter und Patrouillenschiffe; in Wracksaum und Schleierpass liegen je zwei. Flieg bis auf **65 m** heran und drücke **G**. Titanschrott belegt Frachtraum. Intakte Abfangraketen gehen in eine Reserve von bis zu sechs Stück und werden mit **J** verwendet, sobald das normale Magazin leer ist. Was gerade keinen Platz hat, bleibt im Wrack. Frachtraum, Waffenreserve und der Restbestand in jedem Wrack bleiben im Spielstand erhalten.
 
@@ -290,10 +356,13 @@ Eskorte. Der Abschluss ist ein Sieg; ein neuer Versuch beginnt ohne Aufrüstunge
   ruft zwei Eskorten. Ab der zweiten Phase feuern seine Seitenbatterien Fächer, in
   der dritten rückt es auf 170 m heran und feuert in kürzeren Abständen.
 - Jeder Gegnerabschuss gibt **100 Credits**. Punkte bleiben eine separate Flugwertung.
-- Rund ein Viertel der Asteroiden enthält Mineralien. Alle Asteroiden sehen vor dem
-  Treffer wie gewöhnliches Gestein aus: keine Erzfarbe, Kristalle oder Markierungen.
-  Der erste eigene Lasertreffer legt **2–5 Mineralien** frei; derselbe Stein gibt nur
-  einmal Beute. Gegnerfeuer und Rammkontakte erzeugen keine Beute, Splitter sind leer.
+- Im Handelsflug liegt Erz in den Erznestern der Sektoren (siehe *Asteroiden und
+  Trümmerfelder*). Alle Asteroiden sehen vor dem Treffer wie gewöhnliches Gestein aus.
+  Erzbrocken haben eine **Kruste**: Treffer schlagen orange Funken, und das Cockpit zeigt
+  „ERZKRUSTE … % · WEITERFEUERN“. Mit dem Kutterlaser brauchst du je nach Größe etwa
+  15 bis 20 Treffer (2–3 s Dauerfeuer). Danach liegen **1–4 Mineralien** frei; derselbe
+  Stein gibt nur einmal Beute. Gegnerfeuer und Rammkontakte erzeugen keine Beute,
+  Splitter sind leer.
 - Kristalle schweben als echte Objekte im Raum. Innerhalb von 55 m zieht der
   Schiffsmagnet sie an; blaue Kristalle liefern **1**, goldene **2 Einheiten Kryo-Erz**
   in den Frachtraum. Geld entsteht erst beim Verkauf. Bei voller Fracht bleiben

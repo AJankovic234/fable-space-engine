@@ -20,6 +20,17 @@ module CivilTrafficMeshes =
     let private alloy = MeshColor.metal 0.36 0.38 0.385
     let private smokedGlass = MeshColor.glass 0.028 0.04 0.048 0.10
 
+    let lifeboat () =
+        let b = MeshBuilder()
+        let rim z r = ProceduralMeshes.ring(12,0.,0.,z,r,r*0.87)
+        b.Loft([|rim -6. 1.8; rim -3.8 3.4; rim 3.7 3.4; rim 5.8 2.6|],true,true,ivory)
+        for z in [-3.5; 2.6] do b.Loft([|rim z 3.46;rim (z+0.85) 3.46|],false,false,ochre)
+        for side in [-1.;1.] do
+            b.Box(v (side*3.25) 0.3 -0.4,v 0.25 0.65 1.45,smokedGlass)
+            b.Box(v (side*2.9) -1.7 0.,v 0.55 0.45 4.8,rubber)
+        b.Box(v 0. 3. 0., v 0.48 0.48 0.7, MeshColor.glow 0.93 0.98 1. 1.)
+        b.Build()
+
     let private sleeve (b: MeshBuilder) start finish radius color =
         let direction = Vec3.normalize (finish-start)
         let reference = if abs direction.Y > 0.9 then Vec3.unitZ else Vec3.up

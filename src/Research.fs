@@ -66,12 +66,12 @@ module Research =
     let branchNames =
         [| "Werkstattbuch Jahr Null"
            "Stille Bänder"
-           "Lizenzleichen-Logistik" |]
+           "Gürtel-Praxis" |]
 
     let branchSources =
         [| "Waffen · Wissen der Orbitalwerft Kepler-07"
            "Felder & Schilde · Analogbänder von Relais Theta"
-           "Fracht & Bergung · Kniffe des Gürtel-Volks" |]
+           "Fracht & Bergung · Werkstattkniffe aus dem Gürtel" |]
 
     let labSectorId = "aether-relay"
     let labCredits = 900
@@ -106,40 +106,40 @@ module Research =
            { Id = HighEnergyOptics; Branch = 0; Tier = 1; TierLabel = "GRUNDLAGE"
              Name = "Trockendock-Optik"
              Source = "Werkstattbuch Kepler-07"
-             Summary = "+8 % Laserschaden für alle Schiffe. Linsensätze, geschliffen für ein Kolonieschiff, das nie gestartet ist."
-             Log = "WERKSTATTBUCH 03 AE · »Linsensatz B abgenommen. Einbau nach Startfreigabe Erde.« Die Freigabe steht seit 198 Jahren aus."
+             Summary = "+8 % Laserschaden für alle Schiffe. Eingelagerte Linsensätze aus Trockendock B."
+             Log = "WERKSTATTBUCH 03 AE: Linsensatz B abgenommen, Einbau nach Startfreigabe Erde. Die Zeile darunter ist leer geblieben."
              Credits = 350
              Materials = [| CommodityId.CryoOre, 3; CommodityId.TitaniumScrap, 2 |]
              Requires = [||]; Ports = hubs; Relic = -1 }
            { Id = CryoDisruptor; Branch = 0; Tier = 2; TierLabel = "PROTOTYP"
              Name = "Kryo-Disruptor"
              Source = "Ilka Tamm · Destille Raureif"
-             Summary = "Schaltet Waffen-Kit „Kryo-Disruptor“ frei: unterkühlte Treffer verlangsamen das aufgeschaltete Ziel und hemmen seine Schildregeneration."
-             Log = "Ilka Tamm · »Dieselbe Kälte, mit der wir Morgenlichts Pufferbänke kühlen. Diesmal geht die Rechnung nicht an Vance.«"
+             Summary = "Schaltet Waffen-Kit „Kryo-Disruptor“ frei: unterkühlte Treffer bremsen das Ziel ab und verzögern seine Schildladung."
+             Log = "Notiz von Ilka Tamm: Aus dem alten Raureif-Kreislauf ausgebaut. Die Düse klemmt ab und zu bei Dauerfeuer, aber es hält."
              Credits = 750
              Materials = [| CommodityId.CryoOre, 6; CommodityId.NavData, 3 |]
              Requires = [| HighEnergyOptics |]; Ports = hubs; Relic = -1 }
            { Id = CapacitorCooling; Branch = 0; Tier = 3; TierLabel = "SPEZIALISIERUNG"
              Name = "Null-Takt-Kühlung"
-             Source = "„Null-Takt“ Orlov · Helios-IV"
+             Source = "Orlov · Helios-IV"
              Summary = "+12 % Feuerrate auf alle Bordwaffen und −15 % Nachladezeit für Abfangraketen."
-             Log = "Orlov · »Ein Sprengmeister zählt keine Pause zwischen zwei Ladungen. Deine Kondensatoren ab heute auch nicht.«"
+             Log = "Orlov, Schacht 9: Wir haben die Rücklaufleitung einfach doppelt gelegt. Wird warm unterm Sitz, läuft aber sauber durch."
              Credits = 950
              Materials = [| CommodityId.CryoOre, 4; CommodityId.FuelCells, 3; CommodityId.PlasmaCores, 2 |]
              Requires = [| CryoDisruptor |]; Ports = hubs; Relic = -1 }
            { Id = PhaseRailgun; Branch = 0; Tier = 4; TierLabel = "DURCHBRUCH"
              Name = "Phasen-Railgun"
-             Source = "Continuity-Drohnenwerft · nur Kepler-07"
-             Summary = "Schaltet Waffen-Kit „Phasen-Railgun“ frei: 2× Projektiltempo, +115 % Schaden und panzerbrechende Durchschlagskraft. Die Schiene stammt aus einer Continuity-Drohne."
-             Log = "HAFTUNGSAUSSCHLUSS CS-7.3 §12 · »Beschleunigerschienen sind nur für zertifizierte Abfangaufgaben freigegeben.« Das Zertifikat ist seit einem Zyklus abgelaufen. Die Schiene nicht."
+             Source = "Drohnenwerft · nur Kepler-07"
+             Summary = "Schaltet Waffen-Kit „Phasen-Railgun“ frei: 2× Projektiltempo, +115 % Schaden und panzerbrechende Wirkung. Geborgene Schiene einer Abfangdrohne."
+             Log = "WERFTPROTOKOLL KEPLER: Beschleunigerschiene aus geborgener Continuity-Drohne. Prüfplakette abgelaufen, Führungsnuten noch maßhaltig."
              Credits = 1400
              Materials = [| CommodityId.PlasmaCores, 4; CommodityId.TitaniumScrap, 5; CommodityId.NavData, 3 |]
              Requires = [| CapacitorCooling |]; Ports = [| kepler |]; Relic = -1 }
            { Id = SwarmMissiles; Branch = 0; Tier = 5; TierLabel = "APEX"
              Name = "Single-Seat-Schwarm"
              Source = "Trockendock B · nur Kepler-07"
-             Summary = "J feuert eine 3er-Schwarmsalve wendiger Lenkraketen gleichzeitig, die sich auf nahe Gegner aufteilen. Alle drei senden dieselbe Kennung."
-             Log = "WERKSTATTBUCH 03 AE, Nachtrag in fremder Schrift · »Drei Lenkköpfe, eine Kennung. Das Gateway bucht nur einen. 2034 war das ein Fehler. Hier ist es die Bauanleitung.«"
+             Summary = "J feuert eine 3er-Salve wendiger Lenkraketen gleichzeitig, die sich auf nahe Ziele aufteilen."
+             Log = "WERKSTATTBUCH 03 AE, Randnotiz: Alle drei Suchköpfe senden mit derselben Kennung. Das Leitsystem bucht nur einen Flugkörper."
              Credits = 2200
              Materials = [| CommodityId.PlasmaCores, 6; CommodityId.NavData, 5; CommodityId.FuelCells, 6 |]
              Requires = [| PhaseRailgun; DeepSensors |]; Ports = [| kepler |]; Relic = 3 }
@@ -149,15 +149,15 @@ module Research =
              Name = "RT-9-Resonanzspulen"
              Source = "Dr. Mara Lind · Relais Theta"
              Summary = "+20 Schildkapazität für alle Schiffe. Analog gewickelt, ohne AETHER-Gateway dazwischen."
-             Log = "Mara Lind · »Die Spulen rauschen. Lass sie. Solange es rauscht, gehört das Feld noch dir.«"
+             Log = "Mara Lind: Von Hand gewickelt, ohne Gateway-Chip. Brummt ein bisschen auf dem Bordfunk, läuft dafür komplett autark."
              Credits = 350
              Materials = [| CommodityId.TitaniumScrap, 3; CommodityId.MedSupplies, 2 |]
              Requires = [||]; Ports = hubs; Relic = -1 }
            { Id = ShieldSiphon; Branch = 1; Tier = 2; TierLabel = "PROTOTYP"
              Name = "Puffer-Siphon"
-             Source = "Sera · Horch-Pod am Randnebel"
+             Source = "Sera · Relais Theta"
              Summary = "Jeder eigene Treffer auf einen Gegner lädt +3 Schildpunkte direkt nach."
-             Log = "Sera · »Ein Puffer sendet weiter, wenn an Bord keiner mehr atmet. Den Strom dafür holt er sich irgendwo. Jetzt holst du ihn dir zurück.«"
+             Log = "Sera: Die alten Relais ziehen bei jedem Impuls Restladung aus dem Zielkreis. Wenn man das umkehrt, fängt dein eigener Schild die Spitze ab."
              Credits = 800
              Materials = [| CommodityId.MedSupplies, 5; CommodityId.PlasmaCores, 3 |]
              Requires = [| ResonanceCoils |]; Ports = hubs; Relic = -1 }
@@ -165,7 +165,7 @@ module Research =
              Name = "Schlackefeld-Verbundpanzer"
              Source = "Schichtbund · Helios-IV"
              Summary = "+30 Hüllenkapazität und +10 % Wendigkeit für alle Schiffe deiner Flotte."
-             Log = "SCHICHTBUND, NEUNTE SOHLE · »Die Verwaltung führt die Legierung als Ausschuss. Ausschuss wird nicht gezählt. Also vermisst ihn auch keiner.«"
+             Log = "SCHICHTLISTE HELIOS, SOHLE 9: Zwei Tonnen Fehlcharge aus Ofen vier. Steht als Ausschuss in den Büchern, liegt hinten bei Tor zwei."
              Credits = 980
              Materials = [| CommodityId.TitaniumScrap, 5; CommodityId.PlasmaCores, 3; CommodityId.MedSupplies, 2 |]
              Requires = [| ShieldSiphon |]; Ports = hubs; Relic = -1 }
@@ -173,41 +173,41 @@ module Research =
              Name = "TG-4-Spoofingfilter"
              Source = "Band von 2034 · nur Relais Theta"
              Summary = "Booster-Zündung löst alle 12 s einen Abwehrimpuls aus, der feindliche Bolzen im 45-m-Umkreis vernichtet."
-             Log = "TG-4, 14.03.2034 · »Signal als Spoofing-Risiko eingestuft. Verworfen.« Lind hat die Regel umgedreht: Verworfen wird jetzt, was auf dich zufliegt."
+             Log = "ARCHIVBAND 14.03.2034: Signal als Spoofing verworfen. Lind hat die alte Filtertabelle umgeschrieben, damit anfliegende Ladungen am Bug abreißen."
              Credits = 1450
              Materials = [| CommodityId.CryoOre, 6; CommodityId.PlasmaCores, 4; CommodityId.NavData, 3 |]
              Requires = [| CompositeArmour |]; Ports = [| theta |]; Relic = -1 }
            { Id = AetherOvercharge; Branch = 1; Tier = 5; TierLabel = "APEX"
              Name = "Sleeve-7-Überladungskern"
              Source = "Wiederherstellungsakte Vance · nur Relais Theta"
-             Summary = "Waffen-Overdrive startet bereits ab 2× Kombo und hält +50 % länger. Die Freigabe dafür trägt Vances Unterschrift."
-             Log = "WIEDERHERSTELLUNGSAKTE, SLEEVE 7 · »Kernlast 150 % für Transfer freigegeben. Autorisierung: K. Vance.« Dieselbe Freigabe liegt jetzt auf deinem Waffenbus."
+             Summary = "Waffen-Overdrive startet bereits ab 2× Kombo und hält +50 % länger."
+             Log = "AKTE K. VANCE, SLEEVE 7: Überlast-Freigabe 150 % für Nottransfer. Liegt noch im selben Speicherblock wie die alte Schiffssteuerung."
              Credits = 2400
              Materials = [| CommodityId.PlasmaCores, 6; CommodityId.NavData, 6; CommodityId.MedSupplies, 5 |]
              Requires = [| PhaseReflector; CapacitorCooling |]; Ports = [| theta |]; Relic = 5 }
 
-           // --- Zweig 2: Lizenzleichen-Logistik (Fracht & Bergung) ---
+           // --- Zweig 2: Gürtel-Praxis (Fracht & Bergung) ---
            { Id = AiCargoRouting; Branch = 2; Tier = 1; TierLabel = "GRUNDLAGE"
              Name = "Voss’ Analogkurse"
              Source = "Voss · Bergbau-Depot Kestrel"
              Summary = "+8 m/s Reisetempo für alle Schiffe und +5 % Bonus auf positive Verkaufsmargen."
-             Log = "Voss · »Die Kurse stehen in keinem AETHER-Register. Deshalb stimmen sie noch.«"
+             Log = "Voss: Alte Papierkarten aus den siebziger Jahren. Die neuen AETHER-Bojen fehlen drauf, dafür stimmen die Abkürzungen."
              Credits = 320
              Materials = [| CommodityId.TitaniumScrap, 3; CommodityId.FuelCells, 3 |]
              Requires = [||]; Ports = hubs; Relic = -1 }
            { Id = QuantumHold; Branch = 2; Tier = 2; TierLabel = "PROTOTYP"
              Name = "Nicht spezifizierte Masse"
-             Source = "„Kipper“ Taro · Drift-9"
-             Summary = "Erhöht den Frachtraum der gesamten Flotte dauerhaft um +16 t über das Standardlimit hinaus."
-             Log = "SIN-REGISTER §4 · »Objekte ohne gültige Kennung gelten als nicht spezifizierte Masse.« Kipper: »Dann wiegt sie auch nichts. Sechzehn Tonnen, die es amtlich nicht gibt.«"
+             Source = "Kipper Taro · Drift-9"
+             Summary = "Erhöht den Frachtraum der gesamten Flotte dauerhaft um +16 t."
+             Log = "Kipper, Drift-9: Trennwand raus, Verstrebung nach hinten versetzt. Auf dem Papier bleibt es ein Standardrumpf, rein passen sechzehn Tonnen mehr."
              Credits = 700
              Materials = [| CommodityId.TitaniumScrap, 6; CommodityId.FuelCells, 5 |]
              Requires = [| AiCargoRouting |]; Ports = hubs; Relic = -1 }
            { Id = DeepSensors; Branch = 2; Tier = 3; TierLabel = "SPEZIALISIERUNG"
              Name = "Seras Horchantenne"
-             Source = "Sera · Horch-Pod am Randnebel"
+             Source = "Sera · Relais Theta"
              Summary = "+45 m Bergungs-Magnetreichweite und +150 m G-Scan-Radius auf Erz & Archive."
-             Log = "Sera · »Ich höre damit Namen, die AETHER gelöscht hat. Du wirst damit Erz finden. Hör trotzdem hin.«"
+             Log = "Sera: Eigentlich hab ich die Spule gebaut, um schwache Notrufe aus dem Nebel zu kriegen. Erzspuren im Fels schlagen darauf genauso an."
              Credits = 920
              Materials = [| CommodityId.NavData, 4; CommodityId.CryoOre, 4; CommodityId.FuelCells, 3 |]
              Requires = [| QuantumHold |]; Ports = hubs; Relic = -1 }
@@ -215,15 +215,15 @@ module Research =
              Name = "Letzte-Leine-Schleppfeld"
              Source = "Odo Karst · Schlepper 44"
              Summary = "+1 zusätzliche Wrackgut-Einheit pro Gegnerabschuss und insgesamt +180 m Sog auf Beute."
-             Log = "Odo Karst · »Wir kappen erst den Notruf, dann ziehen wir. Die Reihenfolge kannst du dir aussuchen. Das Feld zieht so oder so.«"
+             Log = "Odo Karst: Alte Spule von Schlepper 44. Zieht ordentlich Strom beim Anlaufen, holt dafür auch die kleinen Trümmer mit rein."
              Credits = 1300
              Materials = [| CommodityId.CryoOre, 6; CommodityId.NavData, 4; CommodityId.FuelCells, 4 |]
              Requires = [| DeepSensors |]; Ports = hubs; Relic = -1 }
            { Id = TradeMatrix; Branch = 2; Tier = 5; TierLabel = "APEX"
              Name = "Spiegelkennung Graue Wacht"
-             Source = "„Kipper“ Taro · nur Drift-9"
-             Summary = "Halbiert Geleitschutzgebühren dauerhaft (−50 %) und gewährt +20 % Extramarge bei Verkäufen. Du fliegst unter der Kennung, die den Geleitschutz verkauft."
-             Log = "Kipper · »Jemand verkauft die Spur der Grauen Wacht als Geleitschutz. Ich hab dir dieselbe Kennung geklebt. Halber Preis unter Kollegen. Wer der andere ist, fragst du mich nicht.«"
+             Source = "Kipper Taro · nur Drift-9"
+             Summary = "Halbiert Geleitschutzgebühren dauerhaft (−50 %) und gewährt +20 % Extramarge bei Verkäufen."
+             Log = "Kipper: Ich hab dir dieselbe Kennung geflasht, mit der hier oben gerade Geleitschutz abgerechnet wird. Frag nicht, woher ich die Datei hab."
              Credits = 2100
              Materials = [| CommodityId.NavData, 6; CommodityId.MedSupplies, 5; CommodityId.TitaniumScrap, 6 |]
              Requires = [| TractorField; ShieldSiphon |]; Ports = [| drift |]; Relic = 8 } |]
@@ -285,7 +285,7 @@ module Research =
             wallet.Credits <- wallet.Credits - labCredits
             consumeMaterials cargo labMaterials
             state.LabInstalled <- true
-            Ok "RT-9 Bord-Labor eingebaut. Der Bandleser läuft ohne AETHER-Gateway: Er rauscht, aber er lügt nicht."
+            Ok "RT-9 Bord-Labor eingebaut. Der Bandleser läuft lokal ohne AETHER-Gateway."
 
     let prerequisitesMet (state: ResearchState) (id: int) =
         id >= 0 && id < nodes.Length && (nodes.[id].Requires |> Array.forall (has state))

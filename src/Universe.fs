@@ -63,7 +63,7 @@ module Universe =
     let sectors: SectorDef[] =
         [| { Id = "outer-belt"
              Name = "HALDENS RUH"
-             Subtitle = "Hier liegt das Wrack der Kestrel-04. Erzreiches Randfeld, nur leichte Drohnen."
+             Subtitle = "Abgelegener Erzgürtel rund um Kestrel. Leichte Patrouillen, hier liegt das Wrack der Kestrel-04."
              DangerLevel = 1
              AsteroidDensity = 1.0
              OreRichness = 0.35
@@ -233,7 +233,7 @@ module Universe =
 
            { Id = "morgenlicht-bastion"
              Name = "SPERRZONE MORGENLICHT"
-             Subtitle = "Im Schatten der Finsternis hält Vance die Blockade. Knappe Vorräte, höchste Preise."
+             Subtitle = "Gesperrter Raum unter AETHER-Kontrolle. Patrouillen riegeln den Sektor ab, Vorräte sind knapp."
              DangerLevel = 4
              AsteroidDensity = 1.20
              OreRichness = 0.22

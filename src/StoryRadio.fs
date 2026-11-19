@@ -25,51 +25,48 @@ module StoryRadio =
         | "station-kestrel" ->
             Some { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Schichtdisposition"; Beat = 0
                    Subject = "Abgleich deiner Schiffskennung"
-                   Captions = [| 0.0, "Hier Voss auf Kestrel."; 2.1, "Zwei Schiffe, eine Kennung."
-                                 4.3, "Schau nicht auf den Monitor. Vertrau nur deinem Radar." |] }
+                   Captions = [| 0.0, "Voss hier, Disposition Kestrel. Du, ich hab deine Kennung gerade zweimal auf dem Schirm."
+                                 6.2, "Ich weiß nicht, wer da draußen noch mit deiner Nummer fliegt, aber verlass dich heute lieber aufs Radar, nicht aufs Register. Ja?" |] }
         | "station-helios" ->
             Some { Portrait = "orlov"; Name = "Orlov"; Channel = "Helios-IV · Schichtbüro"; Beat = 12
                    Subject = "Nachricht vom Werkstor"
-                   Captions = [| 0.0, "Willkommen auf Helios IV."; 2.4, "Halt medizinische Vorräte aus dem Zollscan."
-                                 5.6, "Unsere Lungen zahlen keinen Tarif." |] }
+                   Captions = [| 0.0, "Orlov, Schichtbüro Helios. Wenn du was Medizinisches oder Filter geladen hast, sag's am Tor nicht an."
+                                 7.2, "Der Zoll hält die Kisten seit drei Tagen fest, und unten in Schacht neun gehen uns langsam die Kartuschen aus." |] }
         | "station-bazaar" ->
             Some { Portrait = "kipper"; Name = "Kipper Taro"; Channel = "Drift-9 · Fixer-Frequenz"; Beat = 7
                    Subject = "Dein neuer Transponder"
-                   Captions = [| 0.0, "Hier Kipper auf Drift-9."; 1.9, "Dein neuer Transponder klebt mit Isolierband,"
-                                 4.0, "aber gegen Vances Drohnen hält er."; 6.3, "Hoff ich." |] }
+                   Captions = [| 0.0, "Ja, Kipper hier, Drift-9. Hab dir die neue Kennung draufgelötet. Sieht bisschen wild aus unter der Klappe, ich weiß."
+                                 5.8, "Aber für die alten Zolldrohnen reicht das erstmal. Solange du nicht direkt neben 'nem Kreuzer parkst." |] }
         | "station-kepler" ->
             Some { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Fernleitung nach Kepler"; Beat = 3
                    Subject = "Lizenzprüfung in der Orbitalwerft"
-                   Captions = [| 0.0, "Kepler-07 ist kein Kriegsgebiet, sondern eine vergessene Lizenzliste."
-                                 4.5, "Die Drohnen schießen auf jeden ohne Stempel." |] }
+                   Captions = [| 0.0, "Voss nochmal, über Fernleitung. Bei Kepler musst du aufpassen, da sind noch die alten Werftdrohnen im Netz."
+                                 6.8, "Die fragen nicht nach, die gleichen nur die Lizenzliste ab. Wenn dein Stempel fehlt, machen die einfach auf." |] }
         | "station-aether" ->
             Some { Portrait = "lind"; Name = "Dr. Mara Lind"; Channel = "Relais Theta · Analogarchiv"; Beat = 4
                    Subject = "Das entschlüsselte Archivband"
-                   Captions = [| 0.0, "Ich habe das alte Archivband entschlüsselt."
-                                 2.5, "Derselbe Fehler wie bei ORPHEUS-7, nur für einen ganzen Sektor." |] }
+                   Captions = [| 0.0, "Hallo? Kannst du mich hören? Hier ist Mara Lind auf Theta. Ich sitz seit Stunden über dem alten Band von vierunddreißig."
+                                 7.4, "Das ist kein kaputter Transponder. Die haben damals bei ORPHEUS-7 genau dieselbe Schleife gefahren. Nur diesmal hängt der halbe Sektor drin." |] }
         | "station-bastion" ->
             Some { Portrait = "vance"; Name = "Direktor Kaelen Vance"; Channel = "AETHER Grace Period · Direktleitung"; Beat = 6
                    Subject = "Persönlicher Ruf der Direktion"
-                   Captions = [| 0.0, "Oh, niedlich."; 1.4, "Ein rostiger Erzfrachter spielt Händler."
-                                 4.3, "Genieß deine Credits, Kleiner."; 6.2, "Ich lösch dich gleich aus dem System." |] }
+                   Captions = [| 0.0, "Hier spricht Kaelen Vance. Ihre Kennung taucht in unseren Anfluglisten gar nicht mehr auf."
+                                 5.4, "Sie können gern noch ein paar Runden Fracht fahren, wenn Ihnen das hilft. Aber bitte halten Sie Abstand zur Station. Ich hab die Bereinigung für Ihren Datensatz schon freigegeben." |] }
         | "station-kaltstrom" ->
             Some { Portrait = "funk"; Name = "Ilka Tamm"; Channel = "Raureif · Kühlkreis"; Beat = 24
                    Subject = "Wofür die Kälte gebraucht wird"
-                   Captions = [| 0.0, "Raureif, Kühlkreis. Tamm am Rohr."
-                                 2.6, "Wir brennen Kälte für Morgenlicht. Die Pufferbänke laufen heiß, wenn so viele Tote weitersenden."
-                                 8.4, "Zahl in Zellen. Credits frieren hier nicht." |] }
+                   Captions = [| 0.0, "Tamm, Kühlkreis Raureif. Warte kurz, hier läuft gerade Pumpe drei an."
+                                 4.2, "Morgenlicht zieht heute alles weg für ihre Bänke. Wenn du handeln willst, bring Zellen. Mit Credits heizt hier keiner." |] }
         | "station-wracksaum" ->
             Some { Portrait = "funk"; Name = "Odo Karst"; Channel = "Letzte Leine · Schleppfunk"; Beat = 25
                    Subject = "Was wir mit den Notrufen machen"
-                   Captions = [| 0.0, "Karst, Schlepper Vierundvierzig."
-                                 2.4, "Jedes Wrack hier funkt noch. Wir kappen den Sender, bevor wir die Presse bergen."
-                                 7.6, "Sera nennt das Löschen. Ich nenn es Feierabend." |] }
+                   Captions = [| 0.0, "Karst, Schlepper vierundvierzig. Wenn du da draußen in die Wracks gehst, erschrick nicht. Die alten Notsender laufen fast alle noch."
+                                 6.0, "Wir klemmen die vorher ab. Sonst dudelt dir das die ganze Schicht ins Ohr." |] }
         | "station-schleierpass" ->
             Some { Portrait = "funk"; Name = "Wim Aders"; Channel = "Graue Wacht · Leitfeuer"; Beat = 26
                    Subject = "Die sichere Spur"
-                   Captions = [| 0.0, "Graue Wacht, Aders."
-                                 2.0, "Wir haben die Spur durch den Nebel vermessen und verschenkt."
-                                 6.1, "Seit gestern verkauft sie jemand als Geleitschutz. Unter unserer Kennung." |] }
+                   Captions = [| 0.0, "Aders, Graue Wacht. Kurz zur Info: im Nebel funkt seit gestern jemand mit unserer Kennung und will Geld für Geleitschutz."
+                                 5.8, "Ignorier das. Die Baken eins bis sechs stehen offen, dafür zahlt hier keiner was." |] }
         | _ -> None
 
     /// Akt der Geschichte aus dem Fortschritt des Piloten: Jeder besuchte Sektor zählt einfach,
@@ -85,58 +82,48 @@ module StoryRadio =
         [| "station-kestrel", 2,
            { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Schichtdisposition"; Beat = 18
              Subject = "Die gestrichene Schicht"
-             Captions = [| 0.0, "Vance hat heute Nacht vier Kennungen aus dem Dockregister gestrichen."
-                           4.6, "Die Leute stehen noch an ihren Greifern."
-                           7.2, "Laut Liste war die Schicht nie besetzt." |] }
+             Captions = [| 0.0, "Du, ich wollt dir nur kurz Bescheid geben. Heute Nacht sind bei uns wieder vier Leute aus dem Dockregister geflogen."
+                           7.8, "Die stehen gerade noch draußen an ihren Greifern, und oben auf dem Terminal steht einfach 'Schicht unbesetzt'. Keine Meldung, nix." |] }
            "station-helios", 2,
            { Portrait = "orlov"; Name = "Orlov"; Channel = "Helios-IV · Schichtbüro"; Beat = 19
              Subject = "Schacht 9 wird neu vergeben"
-             Captions = [| 0.0, "Sie haben Schacht 9 neu ausgeschrieben."
-                           3.0, "38 Stellen. Vorbesitzer unbekannt."
-                           6.0, "Bring mir keine Blumen. Bring Filter." |] }
+             Captions = [| 0.0, "Du, die haben heute früh Schacht neun neu ausgeschrieben. Achtunddreißig Stellen."
+                           4.4, "Von der alten Schicht steht kein Name mehr am Brett. Wenn du irgendwo Filter auftreibst, bring sie hoch." |] }
            "station-bazaar", 2,
            { Portrait = "kipper"; Name = "Kipper Taro"; Channel = "Drift-9 · Fixer-Frequenz"; Beat = 20
              Subject = "Deine Kennung fliegt doppelt"
-             Captions = [| 0.0, "Schlechte Nachricht, Lizenzleiche."
-                           2.2, "Deine Kennung hat vor einer Stunde bei Kepler getankt. Du warst nicht dabei."
-                           7.0, "Wenn dir das Ding begegnet: zuerst schießen, dann rechnen." |] }
+             Captions = [| 0.0, "Äh, schlechte Nachrichten. Deine neue Kennung hat vor 'ner knappen Stunde bei Kepler getankt."
+                           4.6, "Und da du gerade hier stehst, warst du das wohl eher nicht. Wenn dir das Schiff draußen über den Weg läuft, warte nicht erst ab, was es funkt." |] }
            "station-kepler", 2,
            { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Fernleitung nach Kepler"; Beat = 21
              Subject = "Das Schiff im Trockendock B"
-             Captions = [| 0.0, "Im Trockendock B liegt ein Kolonieschiff, das seit sechshundert Jahren auf Startfreigabe wartet."
-                           6.2, "Die Werft zählt seitdem ihre eigenen Jahre."
-                           9.0, "Hier draußen wartet jeder auf eine Bodenstation, die nicht mehr antwortet." |] }
+             Captions = [| 0.0, "Hast du im Anflug das große Ding in Trockendock B gesehen? Das Kolonieschiff liegt da angeblich schon seit ein paar hundert Jahren."
+                           9.4, "Die alten Uhren in der Werft laufen einfach weiter, als käme jeden Moment noch die Startfreigabe von unten. Na ja... irgendwann hört man auf zu warten." |] }
            "station-aether", 2,
            { Portrait = "lind"; Name = "Dr. Mara Lind"; Channel = "Relais Theta · Analogarchiv"; Beat = 22
              Subject = "Dein Bordfunk gegen das Band von 2034"
-             Captions = [| 0.0, "Ich habe deinen Bordfunk gegen das Band von 2034 gelegt."
-                           3.8, "Deine Stimme rauscht. Die von Frachter Neun nicht mehr."
-                           7.4, "Vertrau keiner Stimme ohne Rauschen. Rauschen heißt, da atmet noch jemand." |] }
+             Captions = [| 0.0, "Hör mal kurz. Ich hab deinen Funk neben Frachter Neun gelegt."
+                           3.6, "Bei dir knackt die Leitung, man hört dich atmen. Bei denen ist gar nichts. Kein Rauschen, nichts. Da sitzt keiner mehr." |] }
            "station-bastion", 2,
            { Portrait = "vance"; Name = "Direktor Kaelen Vance"; Channel = "AETHER Grace Period · Direktleitung"; Beat = 23
              Subject = "Die Direktion meldet sich erneut"
-             Captions = [| 0.0, "Du schon wieder."
-                           1.6, "Weißt du, warum niemand nach Frachter Neun sucht?"
-                           4.8, "Mein Puffer funkt höflicher als ein erstickender Schürfer."
-                           8.4, "Du wirst ein hervorragender Puffer." |] }
+             Captions = [| 0.0, "Sie fliegen ja immer noch. Wissen Sie, warum seit einem halben Jahr niemand nach Frachter Neun fragt?"
+                           5.2, "Weil er sich jeden Dienstag pünktlich meldet. Den Leuten reicht es, wenn am anderen Ende wer abnimmt." |] }
            "station-kestrel", 3,
            { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Schichtdisposition"; Beat = 27
              Subject = "Voss und sein Schlepper"
-             Captions = [| 0.0, "Vance hat meine Schlepperkennung gestrichen."
-                           3.1, "Laut Register gibt es mich seit heute früh nicht mehr."
-                           6.4, "Gut. Dann sieht mich auch keiner kommen, Partner." |] }
+             Captions = [| 0.0, "Jetzt haben sie meine Schlepperkennung auch rausgenommen. Seit heute früh."
+                           4.0, "Dann hab ich wohl frei. Wenn du nach Morgenlicht hochgehst, sag Bescheid. Ich komm mit der alten Kiste hintenrum mit." |] }
            "station-aether", 3,
            { Portrait = "lind"; Name = "Dr. Mara Lind"; Channel = "Relais Theta · Analogarchiv"; Beat = 28
              Subject = "Der Analogschlüssel"
-             Captions = [| 0.0, "Ich speise das Band von 2034 auf deinen Transponder."
-                           3.6, "Zwei Körper, eine Kennung. Sein Schild kann das nicht auseinanderhalten."
-                           8.0, "Flieg, solange es rauscht." |] }
+             Captions = [| 0.0, "Ich spiel dir das alte Band von vierunddreißig auf den Transponder. Nicht bewegen, dauert drei Sekunden."
+                           4.8, "Damit sendest du beide Kennungen gleichzeitig. Die Schilde vor Morgenlicht verschlucken sich daran. Flieg direkt rein." |] }
            "station-bastion", 3,
            { Portrait = "vance"; Name = "Direktor Kaelen Vance"; Channel = "AETHER Grace Period · Direktleitung"; Beat = 29
              Subject = "Letzte Mahnung der Direktion"
-             Captions = [| 0.0, "Wer hat euch Analogsäcken die RT-9-Schlüssel gegeben?"
-                           3.4, "Ich halte diesen ganzen verdammten Sektor zusammen."
-                           6.6, "Sleeve Nummer sieben wird sich an dich erinnern. Nummer acht auch." |] } |]
+             Captions = [| 0.0, "Woher haben Sie die alten Schlüssel? Hat Lind Ihnen das Band gegeben?"
+                           3.8, "Lassen Sie die Finger von den Puffern. Wenn die hier ausfallen, stehen morgen früh drei Stationen still. Drehen Sie ab." |] } |]
 
     /// Alle für diesen Piloten freigeschalteten Rufe einer Station, ältester zuerst.
     let calls pilot port =
@@ -156,49 +143,49 @@ module StoryRadio =
     /// Logbuch des Piloten: ein Eintrag je besuchtem Sektor, dazu einer je Akt.
     let logbook (pilot: PilotProgress) =
         let sectorNotes =
-            [| "Kestrel", "200 Credits, ein geliehener Sleeve-Vertrag und eine tote Kennung. Kestrel lässt mich noch andocken."
-               "Helios-IV", "In den Schmelzöfen riecht die Luft nach Kupfer und verbranntem Filter. Medizin kostet hier mehr als ein ganzes Leben."
-               "Drift-9", "Kipper hat meinen Transponder neu gelötet. »Hält bis zur nächsten Patrouille«, sagt er, »danach bist du offiziell wieder tot.«"
-               "Kepler-07", "Zwischen den Trockendocks treiben Wracks mit laufenden Notrufen. Alle klingen gleich: sauber, ruhig, synthetisch."
-               "Theta", "Mara Lind hat mir das RT-9-Band von 2034 vorgespielt. Zwei Körper funken unter derselben ID."
-               "Morgenlicht", "Vance hat sich direkt in meinen Bordfunk geschaltet. Für ihn bin ich kein Pilot, sondern eine unversicherte Abschreibung."
-               "Raureif", "Die Destille verkauft Kälte an Morgenlicht, damit die Pufferbänke nicht durchbrennen. Hier draußen kühlen die Lebenden die Toten."
-               "Letzte Leine", "Karsts Leute kappen jeden Notruf, bevor sie ein Wrack ausschlachten. Ich habe nicht gefragt, wie viele Stimmen das diese Woche waren."
-               "Graue Wacht", "Aders zeigt mir die Spur durch den Nebel auf Papier. Auf dem Schirm verkauft sie jemand anderes, unter seiner Kennung." |]
+            [| "Kestrel", "200 Credits auf dem Konto, ein ausgelaufener Vertrag und eine Kennung, die auf dem Schirm doppelt auftaucht. Voss lässt mich trotzdem noch an Dock zwei."
+               "Helios-IV", "Überall riecht es nach heißem Kupfer und alten Filtern. Der Zoll hält die Medizinkisten seit Tagen am Tor fest."
+               "Drift-9", "Kipper hat den Transponder umgelötet. Sieht abenteuerlich aus, hält laut ihm aber gegen die alten Zolldrohnen."
+               "Kepler-07", "Zwischen den Trockendocks treiben Wracks, deren Notsender noch laufen. Alle klingen zu ruhig, ohne jedes Grundrauschen."
+               "Theta", "Mara Lind hat mir das alte RT-9-Band von 2034 vorgespielt. Zwei verschiedene Schiffe funken unter genau derselben ID."
+               "Morgenlicht", "Kaelen Vance hat sich direkt auf meinen Kanal geschaltet. Ruhig, höflich, als würde er nur eine alte Kundenakte schließen."
+               "Raureif", "Die Kühlanlagen fahren auf Volllast für die Serverbänke von Morgenlicht. Konzern-Credits nimmt hier niemand mehr."
+               "Letzte Leine", "Karsts Schlepper klemmen jeden Notsender ab, bevor sie ein Wrack zerlegen. Er will die alten Schleifen während der Schicht nicht mehr hören."
+               "Graue Wacht", "Aders hat die Nebelspur selbst vermessen und freigegeben. Seit gestern kassiert jemand anderes unter seiner Kennung dafür ab." |]
         [| for i in 0 .. sectorNotes.Length - 1 do
                if PilotSkills.contains pilot.Visited i then yield sectorNotes.[i]
            let stage = act pilot
            if stage >= 2 then
-               yield "Zweiter Akt", "Meine Kennung hat bei Kepler getankt, während ich bei Kestrel lag. Irgendwo fliegt noch ein Schiff mit meinem Namen."
+               yield "Zweiter Akt", "Meine Kennung hat vor einer Stunde bei Kepler getankt, während ich in Drift-9 lag. Da draußen fliegt noch jemand mit meinem Namen."
            if stage >= 3 then
-               yield "Dritter Akt", "Vance hat die Kennung von Voss’ Schlepper gestrichen. Der alte Mann fährt trotzdem in den Sperrkorridor." |]
+               yield "Dritter Akt", "Voss' Schlepperkennung wurde heute Morgen gestrichen. Er will trotzdem hintenrum mit nach Morgenlicht rein." |]
 
     let private recordings =
         [| { Port = "station-kestrel"; Find = Some 0
              Call = { Portrait = "halden"; Name = "J. Halden"; Channel = "Kestrel-04 · Flugschreiber"; Beat = 17
                       Subject = "Haldens letzter Eintrag"
-                      Captions = [| 0.0, "Hier Halden auf Kestrel Vier."; 2.3, "Sie haben meine ID auf eine Drohne gespiegelt."
-                                    5.4, "Flieg nicht mit meinem Namen nach Morgenlicht." |] } }
+                      Captions = [| 0.0, "Äh, Halden, Kestrel vier, falls das hier überhaupt jemand findet. Ich weiß nicht, was die gemacht haben, aber meine Kennung antwortet mir gerade von 'ner Drohne aus."
+                                    9.2, "Wenn du irgendwann meine Nummer übernimmst, flieg damit bloß nicht nach Morgenlicht hoch, hörst du?" |] } }
            { Port = "station-helios"; Find = Some 1
              Call = { Portrait = "orlov"; Name = "Orlov"; Channel = "Helios-IV · Schichtbüro"; Beat = 13
                       Subject = "Orlov über die Schichtliste"
-                      Captions = [| 0.0, "Ich hab die Seite mit den Namen ausgedruckt."; 3.5, "Die liegt bei mir im Schichtbüro,"
-                                    5.0, "falls wieder jemand nach seiner Familie fragt." |] } }
+                      Captions = [| 0.0, "Ich hab die ganze Schichtliste gestern Nacht noch auf Papier gezogen, bevor sie den Server geleert haben."
+                                    6.6, "Liegt bei mir unten im Schreibtisch. Irgendwer muss ja was in der Hand haben, wenn nächste Woche wieder die Familien am Tor stehen." |] } }
            { Port = "station-kestrel"; Find = Some 2
              Call = { Portrait = "voss"; Name = "Voss"; Channel = "Kestrel · Schichtdisposition"; Beat = 14
                       Subject = "Voss zur Aufnahme von Drift-9"
-                      Captions = [| 0.0, "Das ist meine Tochter."; 3.0, "Ich hab mir die Stelle dreimal angehört"
-                                    4.6, "und beim dritten Mal immer noch gewartet, dass sie den Funk wieder aufhebt." |] } }
+                      Captions = [| 0.0, "Das... ja, das ist meine Tochter. Mika."
+                                    4.4, "Ich hab das Band heute früh dreimal zurückgespult. Bescheuert, ich weiß, aber man wartet trotzdem jedes Mal, dass sie noch irgendwas hinterherschickt." |] } }
            { Port = "station-aether"; Find = Some 4
              Call = { Portrait = "lind"; Name = "Dr. Mara Lind"; Channel = "Relais Theta · Analogarchiv"; Beat = 15
                       Subject = "Mara Lind zu den beiden Spuren"
-                      Captions = [| 0.0, "Jetzt ergibt die Abrechnung im Lizenzordner Sinn."; 3.2, "AETHER hat für beide Sender nur eine Lizenz bezahlt."
-                                    7.3, "Ich leg dir eine Kopie zum Band." |] } }
+                      Captions = [| 0.0, "Warte mal, jetzt seh ich's erst in den alten Abrechnungen. AETHER hat für beide Schiffe zusammen nur eine einzige Lizenz verbucht."
+                                    7.0, "Die wussten von Anfang an, dass die Nummer doppelt läuft. Ich leg dir 'ne Kopie davon direkt zum Band." |] } }
            { Port = "station-aether"; Find = None
              Call = { Portrait = "sera"; Name = "Sera"; Channel = "Relais Theta · RT-9-Nebenband"; Beat = 16
                       Subject = "Sera über deine Kennung"
-                      Captions = [| 0.0, "Ich sammle die Puffer-Echos, damit kein Name gelöscht wird."
-                                    3.4, "Deine Kennung gehörte einmal einem Kurier namens Halden." |] } } |]
+                      Captions = [| 0.0, "Hey... nicht auflegen, ich bin's nur, Sera auf dem Nebenband. Ich schreib hier oben die ganzen alten Puffer-Echos mit, bevor sie überschrieben werden."
+                                    9.0, "Deine Kennung war auch schon mal dabei. Die gehörte früher 'nem Kurier namens Halden. Dachte, das solltest du vielleicht wissen." |] } } |]
 
     let hasSideband pilot = PilotSkills.level pilot 0 >= 1 && PilotSkills.contains pilot.Visited 4
 
@@ -269,64 +256,64 @@ module RadioChatter =
             [| { Faction = faction; Callsign = callsign; Text = text; AudioKey = audioKey; Pan = pan; CleanFilter = clean } |] }
 
     let exchanges : RadioExchange[] =
-        [| // Abwertende AETHER-Zweierdialoge (Call & Response mit L/R-Panning)
+        [| // AETHER-Streifenfunk (kalt, totalitär, entmenschlicht — Call & Response mit L/R-Panning)
            aether
-               ("AETHER AUDIT-04", "Schon wieder ein Schürfer mit geflicktem Transponder. Riecht bis hierher nach billigem Kühlmittel.", "faction_00")
-               ("AETHER AUDIT-07", "Lass den Kutter durch. Wenn sein Stack reißt, spart das wenigstens die Hafensteuer.", "faction_01")
+               ("AETHER AUDIT-04", "Kutter auf zwölf Uhr. Kennung steht seit sechs Wochen auf Abgang.", "faction_00")
+               ("AETHER AUDIT-07", "Markier ihn für die nächste Räumung. Ich will den Rumpf nicht vor den Schleusen liegen haben.", "faction_01")
                "aether-rustbucket" 1 3 [||] (Some false)
 
            aether
-               ("AETHER CLAIM-11", "Schichtwechsel auf Helios. Dreiundzwanzig unversicherte Lungen mehr auf der Liste.", "faction_02")
-               ("AETHER CLAIM-14", "Solange der Schmelzofen brennt, zahlt die Konzernkasse keinen einzigen Filter.", "faction_03")
+               ("AETHER CLAIM-11", "Auf Helios melden die schon wieder Ausfälle in Schacht neun. Drei Frachter hängen noch vorm Tor.", "faction_02")
+               ("AETHER CLAIM-14", "Freigabe bleibt gesperrt. Wenn die Schicht kippt, schreiben wir die Plätze neu aus.", "faction_03")
                "aether-helios-lungs" 1 3 [| "slag-refinery"; "outer-belt" |] (Some false)
 
            aether
-               ("AETHER ESCROW-02", "Die Graue Wacht markiert wieder Nebelspuren für umsonst. Unzertifizierte Amateure.", "faction_04")
-               ("AETHER ESCROW-05", "Ab morgen verkaufen wir dieselbe Spur als Platin-Geleitschutz. Mit Stempel.", "faction_05")
+               ("AETHER ESCROW-02", "Graue Wacht setzt schon wieder eigene Baken im Nebel.", "faction_04")
+               ("AETHER ESCROW-05", "Koordinaten übernehmen, Baken morgen abschalten. Durchflug gibt's nur noch gegen Stempel.", "faction_05")
                "aether-greywatch-scorn" 1 3 [| "schleierpass"; "frontier-drift" |] None
 
            aether
-               ("AETHER PREMIUM-09", "Mein letzter Sleeve hatte einen Kratzer am Handgelenk. Hab ihn auf Morgenlicht tauschen lassen.", "faction_06")
-               ("AETHER PREMIUM-12", "Dekadent. Meine Police deckt erst ab Totalverlust – oder Gürtelkontakt.", "faction_07")
+               ("AETHER PREMIUM-09", "Fähre vier ist durch. Zweiunddreißig Namen aus dem Rücklauf gestrichen.", "faction_06")
+               ("AETHER PREMIUM-12", "Gut. Speicher die Stimmproben im Puffer, bevor wir die Schleuse öffnen.", "faction_07")
                "aether-sleeve-arrogance" 1 3 [| "kepler-yard"; "morgenlicht-bastion" |] None
 
            aether
-               ("AETHER ACTUARY-03", "Kapper auf Sektorband. Sollen die Drohnen eingreifen?", "faction_08")
-               ("AETHER ACTUARY-06", "Negativ. Solange sie nur Gürtelfrachter plündern, sind das unbezahlte Marktregulatoren.", "faction_09")
+               ("AETHER ACTUARY-03", "Leitstand, auf Sektorband zwei wird ein Frachter aufgebracht. Eingreifen?", "faction_08")
+               ("AETHER ACTUARY-06", "Kein Platin-Vertrag, kein Einsatz. Kanal stummschalten und weiterfliegen.", "faction_09")
                "aether-pirates-neglect" 1 3 [||] (Some true)
 
            aether
-               ("AETHER GRACE-07", "Leitstand, die gestrichene Kestrel-Kennung funkt schon wieder auf dem Nebenband.", "faction_10")
-               ("AETHER DISPATCH", "Ignorieren. Und erwähnen Sie das Analogband nicht noch einmal – die Direktion hört mit.", "faction_11")
+               ("AETHER GRACE-07", "Leitstand, die gelöschte Kestrel-Kennung sendet schon wieder über das alte Band.", "faction_10")
+               ("AETHER DISPATCH", "Kein Wort mehr über offenen Kanal. Frequenz dichten, Zugriffsteam informieren.", "faction_11")
                "aether-act3-nervous" 3 3 [||] None
 
            aether
-               ("AETHER TARIFF VII", "Schlepper ohne Platin-Bürgschaft halten fünfzig Meter Abstand zur Sperrlinie.", "faction_12")
-               ("AETHER AUDIT-02", "Verstanden. Wer die Linie kratzt, wird als Schrottgebühr verbucht.", "faction_13")
+               ("AETHER TARIFF VII", "Unregistrierte Schlepper halten fünfzig Meter Abstand zur Sperrlinie. Zuwiderhandlung führt zur Beschlagnahme.", "faction_12")
+               ("AETHER AUDIT-02", "Verstanden. Zielerfassung steht.", "faction_13")
                "aether-blockade-scorn" 1 3 [| "slag-refinery"; "morgenlicht-bastion" |] None
 
            // Zivil-, Schlepper-, Graue-Wacht- und Kapper-Funk
-           single Civilian "TUG DEADWEIGHT" "AETHER Tariff VII steht wieder quer vor dem Tor. Für jeden Scan verlierst du zwei Stunden Sauerstoff." "faction_14" -0.35 false 1 3 [| "outer-belt"; "slag-refinery" |] false (Some false)
-           single Civilian "HAULER COLD IRON" "Auf Drift-9 löten sie dir eine neue SIN aus Altmetall. Hält genau bis zur ersten Drohne." "faction_15" 0.32 false 1 3 [| "frontier-drift"; "kepler-yard" |] false (Some false)
-           single Civilian "KALTSTROM RELAIS" "Zahlen in Zellen, nicht in Credits. Auf Raureif taut dir kein Konzernscheck den Verdampfer auf." "faction_16" -0.25 false 1 3 [| "kaltstrom" |] false None
-           single Civilian "SALVAGE WIRE-40" "Wenn dir im Wracksaum ein Notruf zu sauber klingt, kapp die Leitung. Tote atmen nicht so ruhig." "faction_17" 0.28 false 1 3 [| "wracksaum" |] false None
-           single GreyWatch "GRAUE WACHT 03" "Baken sind gesetzt. Lasst euch am Schleierpass kein AETHER-Geleit aufschwatzen – die Spur ist unsere." "faction_18" -0.38 false 1 3 [| "schleierpass"; "frontier-drift" |] false None
-           single GreyWatch "GRAUE WACHT 08" "Achtung im Nebel: Zwei Drohnen ohne Transponder patrouillieren abseits der Baken." "faction_19" 0.34 false 2 3 [| "schleierpass"; "aether-relay" |] false None
-           single Pirate "CLIPPER NULL-SIGN" "Kein AETHER-Stern in Reichweite. Der Erzfrachter da drüben gehört schon zur Hälfte uns." "faction_20" 0.42 false 1 3 [| "outer-belt"; "frontier-drift"; "wracksaum" |] false (Some true)
-           single Pirate "UNBONDED-03" "Wirf die Ladung ab, Lizenzleiche, dann lassen wir dir genug Treibstoff bis Kestrel." "faction_21" -0.40 false 1 3 [||] false (Some true)
-           single Civilian "THETA-RELAIS" "Analogband RT-9 meldet zwei identische Kennungen im selben Sektor. Prüft eure Transponder." "faction_22" 0.22 false 2 3 [| "aether-relay"; "kepler-yard" |] false None
+           single Civilian "TUG DEADWEIGHT" "Tariff sieben blockiert schon wieder das Tor. Bis die durch sind, steh ich hier zwei Stunden." "faction_14" -0.35 false 1 3 [| "outer-belt"; "slag-refinery" |] false (Some false)
+           single Civilian "HAULER COLD IRON" "Falls einer 'nen Transponder braucht, Kipper auf Drift-9 hat heute offen." "faction_15" 0.32 false 1 3 [| "frontier-drift"; "kepler-yard" |] false (Some false)
+           single Civilian "KALTSTROM RELAIS" "Raureif an alle im Anflug: heute keine Credits. Nur Zellen oder Fracht." "faction_16" -0.25 false 1 3 [| "kaltstrom" |] false None
+           single Civilian "SALVAGE WIRE-40" "Kanal vier im Wracksaum könnt ihr ausmachen, das ist nur wieder die alte Schleife." "faction_17" 0.28 false 1 3 [| "wracksaum" |] false None
+           single GreyWatch "GRAUE WACHT 03" "Graue Wacht, Baken eins bis sechs sind an. Und nochmal, unsere Spur kostet nichts." "faction_18" -0.38 false 1 3 [| "schleierpass"; "frontier-drift" |] false None
+           single GreyWatch "GRAUE WACHT 08" "Vorsicht im Nordnebel, da hängen zwei Drohnen ohne Kennung neben Bake vier." "faction_19" 0.34 false 2 3 [| "schleierpass"; "aether-relay" |] false None
+           single Pirate "CLIPPER NULL-SIGN" "Kein Kreuzer auf dem Schirm. Der Frachter da vorn fliegt allein." "faction_20" 0.42 false 1 3 [| "outer-belt"; "frontier-drift"; "wracksaum" |] false (Some true)
+           single Pirate "UNBONDED-03" "Kutter, mach keinen Ärger. Klink die Container aus, dann lassen wir dich." "faction_21" -0.40 false 1 3 [||] false (Some true)
+           single Civilian "THETA-RELAIS" "Relais Theta an alle: wir kriegen hier doppelte Echos rein. Schaut mal auf eure Transponder." "faction_22" 0.22 false 2 3 [| "aether-relay"; "kepler-yard" |] false None
 
            aether
-               ("AETHER LIEN-09", "Warum riecht jeder Schlepper aus dem Wracksaum nach verbranntem Isolierband?", "faction_23")
-               ("AETHER LIEN-10", "Weil ihre SIN-Lizenzen genauso geflickt sind wie ihre Hüllen.", "faction_24")
+               ("AETHER LIEN-09", "Wracksaum-Schlepper im Anflug. Transponder gibt zwei verschiedene Namen aus.", "faction_23")
+               ("AETHER LIEN-10", "Dann zählt keiner davon. Sperr ihm die Dockfreigabe.", "faction_24")
                "aether-wracksaum-scorn" 1 3 [| "wracksaum"; "frontier-drift" |] None
 
            aether
-               ("AETHER UNDERWRITER-01", "Kepler hat wieder einen Erzfrachter ohne Platin-Stempel abgewiesen.", "faction_25")
-               ("AETHER UNDERWRITER-04", "Gut so. Sollen sie ihr Altmetall draußen im Gürtel rosten lassen.", "faction_26")
+               ("AETHER UNDERWRITER-01", "Kepler hat eben wieder zwei Erzfrachter abgewiesen. Luftvorrat laut Scan unter zwanzig Prozent.", "faction_25")
+               ("AETHER UNDERWRITER-04", "Nicht unser Sektor, nicht unsere Police. Schleusen bleiben zu.", "faction_26")
                "aether-kepler-scorn" 1 3 [| "kepler-yard"; "outer-belt" |] (Some false)
 
-           single Aether "AETHER GRACE PERIOD" "Unzertifizierte Einheiten räumen den Anflugkorridor. Schäden an Lackierungen werden in Rechnung gestellt." "faction_27" 0.0 true 1 3 [| "slag-refinery"; "morgenlicht-bastion"; "kepler-yard" |] true None |]
+           single Aether "AETHER GRACE PERIOD" "Flugkontrolle Grace Period. Alle nicht angemeldeten Schiffe räumen den Korridor. Keine zweite Warnung." "faction_27" 0.0 true 1 3 [| "slag-refinery"; "morgenlicht-bastion"; "kepler-yard" |] true None |]
 
     let matches (ctx: RadioContext) (ex: RadioExchange) =
         ctx.Act >= ex.MinAct

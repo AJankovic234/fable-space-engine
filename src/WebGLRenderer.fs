@@ -255,6 +255,8 @@ type Renderer =
       Program: WebGLProgram
       UViewProj: WebGLUniformLocation
       UCameraPos: WebGLUniformLocation
+      UVeil: WebGLUniformLocation
+      mutable VeilDensity: float
       USunDir: WebGLUniformLocation
       USunColor: WebGLUniformLocation
       UAmbient: WebGLUniformLocation
@@ -381,6 +383,7 @@ flat in float vScale;
 flat in float vSurface;
 
 uniform vec3 uCameraPos;
+uniform float uVeil;
 uniform vec3 uSunDir;      // normalisiert, zeigt ZUR Sonne
 uniform vec3 uSunColor;
 uniform vec3 uAmbient;
@@ -638,7 +641,9 @@ void main() {
     // Kosmischer Distanznebel laesst weit entfernte Asteroiden und Stationen weich in die dunkle Sektorfarbe abtauchen.
     float camDist = length(uCameraPos - vWorldPos);
     float fogFactor = smoothstep(700.0, 2600.0, camDist);
-    color = mix(color, uAmbient * 0.14, fogFactor * 0.85);
+    // Arbeitslichter und selbstleuchtende Fremdmaterialien bleiben auf Außenpeilung lesbar.
+    color = mix(color, uAmbient * 0.14, fogFactor * mix(0.85, 0.32, vColor.a));
+    color = mix(color, vec3(0.12,0.075,0.17), uVeil * smoothstep(80.0, 860.0, camDist) * 0.77);
 
     outColor = vec4(uHdr ? color : displayColor(color), 1.0);
 }
@@ -1215,6 +1220,8 @@ module Renderer =
           Program = program
           UViewProj = uniform "uViewProj"
           UCameraPos = uniform "uCameraPos"
+          UVeil = uniform "uVeil"
+          VeilDensity = 0.
           USunDir = uniform "uSunDir"
           USunColor = uniform "uSunColor"
           UAmbient = uniform "uAmbient"
@@ -1415,6 +1422,7 @@ module Renderer =
         gl.uniformMatrix4fv (renderer.UViewProj, false, renderer.ViewProj.Data)
         renderer.ViewProjState <- 0
         gl.uniform3fv (renderer.UCameraPos, renderer.CameraPos)
+        gl.uniform1f (renderer.UVeil, renderer.VeilDensity)
         gl.uniform3fv (renderer.USunDir, lights.SunDirection)
         gl.uniform3fv (renderer.USunColor, lights.SunColor)
         gl.uniform3fv (renderer.UAmbient, lights.Ambient)

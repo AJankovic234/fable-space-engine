@@ -179,17 +179,17 @@ module WreckVoices =
 
     let calls =
         Map.ofList
-            [ "haldens-kurier", call "Kurier »Kestrel-09«" "Pilotin Enna Ruck" "Kestrel Neun. Meine Kennung antwortet schon ohne mich. Voss, streich mich nicht."
-              "sohle-tanker", call "Filtertanker »Atemzug«" "Maschinist Pavel Dorn" "Filter für Schacht 9 an Bord. Der Zoll hält uns fest. Wir treiben seit der Frühschicht."
-              "stimmen-schuerfer", call "Schürfer »Dreizehnte Stimme«" "Schürferin Mika Voss" "Zwölf rufen schon. Ich bin die dreizehnte. Hört das einer, der noch atmet?"
-              "jahrnull-schlepper", call "Werftschlepper »Feierabend«" "Schleppführer Tomas Erl" "Dock B, wir haben die Startfreigabe immer noch nicht. Ich frag morgen wieder."
-              "baender-horchpod", call "Horch-Pod »Ohr Vier«" "Funkwächter Jost Abel" "Sera, ich hab noch drei Namen für dich. Schreib mit, bevor das Band reißt."
-              "finsternis-stoerer", call "Störschlepper »Alte Schuld«" "Schlepper ohne Kennung" "Sperrkorridor erreicht. Kennung gestrichen. Egal, ich war sowieso nie hier."
-              "kaltstrom-zellen", call "Zellenfrachter »Erster Winter«" "Zahlmeisterin Gerte Lohm" "Pumpen laufen auf Reserve. Wenn Helios nicht liefert, wird es auf dem Schlafdeck kalt."
-              "wracksaum-konvoi", call "Erzfrachter »Mittagsschicht«" "Lademeisterin Brit Sommer" "Die Presse läuft noch. Wenn ihr die holt, nehmt die Kapseln mit. Bitte bestätigen."
-              "wracksaum-eskorte", call "Eskorte »Zaunkönig«" "Leutnant Aki Brandt" "Hier Zaunkönig. Der Konvoi ist durch. Ich bleib noch, bis einer das quittiert."
-              "schleierpass-wache", call "Wachschiff »Graue Sieben«" "Wachführer Leo Aders" "Die Spur ist frei, wir haben sie selbst vermessen. Wer schießt da auf uns?"
-              "schleierpass-depot", call "Versorger »Tante Mila«" "Proviantmeister Ole Rask" "Vierzig Zellen für Raureif an Bord. Sagt denen, es wird später." ]
+            [ "haldens-kurier", call "Kurier »Kestrel-09«" "Pilotin Enna Ruck" "Kestrel Neun, hört mich wer? Meine eigene Kennung meldet sich gerade auf dem Sektorband. Voss, nimm mich nicht aus der Liste, ich bin noch hier."
+              "sohle-tanker", call "Filtertanker »Atemzug«" "Maschinist Pavel Dorn" "Hier Tanker Atemzug, wir haben die Filter für Schacht neun geladen. Der Zoll lässt uns seit heute früh einfach vor dem Tor hängen."
+              "stimmen-schuerfer", call "Schürfer »Mika-04«" "Schürferin Mika Voss" "Hallo? Ist da noch jemand auf dem alten Band? Ich krieg hier nur noch Endlosschleifen rein... Papa, wenn du das hörst, ich treib ab."
+              "jahrnull-schlepper", call "Werftschlepper »Feierabend«" "Schleppführer Tomas Erl" "Dock B, hier Erl. Wir warten immer noch auf die Freigabe zum Abdocken. Meldet euch mal, sobald oben wieder wer sitzt."
+              "baender-horchpod", call "Horch-Pod »Ohr Vier«" "Funkwächter Jost Abel" "Sera, schreib kurz mit. Ich hab noch drei alte Kennungen aus dem Puffer gefischt, bevor mir hier der Saft ausgeht."
+              "finsternis-stoerer", call "Störschlepper »Alte Schuld«" "Schlepper ohne Kennung" "Bin im Sperrkorridor. Transponder ist eh gesperrt. Wenn sie mich suchen, finden sie mich zumindest nicht mehr im Register."
+              "kaltstrom-zellen", call "Zellenfrachter »Erster Winter«" "Zahlmeisterin Gerte Lohm" "Pumpen laufen seit zwei Stunden auf Reserve. Wenn aus Helios heute keine Zellen mehr kommen, müssen wir das Schlafdeck abklemmen."
+              "wracksaum-konvoi", call "Erzfrachter »Mittagsschicht«" "Lademeisterin Brit Sommer" "Antrieb ist tot, die Erzpresse läuft aber noch. Falls uns jemand einsammelt, die Rettungskapseln hängen an Backbord. Bitte kurz bestätigen."
+              "wracksaum-eskorte", call "Eskorte »Zaunkönig«" "Leutnant Aki Brandt" "Hier Zaunkönig, der Konvoi sollte raus sein. Meine Steuerdüsen sind hin. Ich bleib auf dem Kanal, bis das jemand quittiert."
+              "schleierpass-wache", call "Wachschiff »Graue Sieben«" "Wachführer Leo Aders" "Wir sind genau auf der vermessenen Spur, Baken stehen. Warte mal, da kommt was ohne Kennung aus dem Nebel, die schießen auf uns!"
+              "schleierpass-depot", call "Versorger »Tante Mila«" "Proviantmeister Ole Rask" "Vierzig Zellen für Raureif sind noch an Bord, aber der Antrieb nimmt kein Gas mehr an. Sagt denen Bescheid, es wird später." ]
 
     let private order = WreckFields.stocks |> Array.map (fun stock -> stock.Id)
     let private slot id = Array.findIndex ((=) id) order

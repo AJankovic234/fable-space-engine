@@ -38,12 +38,15 @@ module Sound =
         let muted = false;
 
         const AUDIO_KEY = "space2601.audio";
+        const VOICES_KEY = "space2601.autoRadioVoice";
+        let autoRadioVoice = false;
         function clamp01(v) {
             const n = Number(v);
             return Number.isFinite(n) ? Math.max(0.0, Math.min(1.0, n)) : 1.0;
         }
         const vol = { master: 1.0, sfx: 1.0, radio: 1.0, ambience: 1.0 };
         try {
+            autoRadioVoice = win.localStorage?.getItem(VOICES_KEY) === "on";
             const raw = win.localStorage && win.localStorage.getItem(AUDIO_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw);
@@ -87,14 +90,16 @@ module Sound =
         let musicBus = null;
         let musicCalmGain = null;
         let musicCombatGain = null;
-        let musicDriveCurve = null;
+        let musicAetherGain = null;
+        let musicCalmSrc = null;
+        let musicCombatSrc = null;
+        let musicAetherSrc = null;
         let musicCombat = false;
-        let musicCalmStep = 0;
-        let musicCalmNext = 0;
-        let musicCombatStep = 0;
-        let musicCombatNext = 0;
+        let musicAether = false;
         let lastRadioAt = -99;
         let radioVoiceEndsAt = 0;
+        let waitingFactionKey = null;
+        let factionReadAt = 0;
         let radioSource = null;
         let contactSource = null;
         let activeBeat = -1;
@@ -231,20 +236,28 @@ module Sound =
             faction_25:         "/assets/sfx/faction_25.mp3",
             faction_26:         "/assets/sfx/faction_26.mp3",
             faction_27:         "/assets/sfx/faction_27.mp3",
+            daa_sicht:          "/assets/sfx/daa_sicht.mp3",
+            daa_zwei:           "/assets/sfx/daa_zwei.mp3",
+            daa_blatt:          "/assets/sfx/daa_blatt.mp3",
+            daa_standbild:      "/assets/sfx/daa_standbild.mp3",
+            daa_gestern:        "/assets/sfx/daa_gestern.mp3",
+            daa_heute:          "/assets/sfx/daa_heute.mp3",
+            daa_kurier:         "/assets/sfx/daa_kurier.mp3",
+            daa_frei:           "/assets/sfx/daa_frei.mp3",
             comm_wave_start:    "/assets/sfx/comm_wave_start.mp3",
             comm_wave_clear:    "/assets/sfx/comm_wave_clear.mp3",
             comm_upgrade_ready: "/assets/sfx/comm_upgrade_ready.mp3",
             comm_trade_profit:  "/assets/sfx/comm_trade_profit.mp3",
             comm_jump_ready:    "/assets/sfx/comm_jump_ready.mp3",
             comm_auto_turret:   "/assets/sfx/comm_auto_turret.mp3",
-            story_act1_voss:    "/assets/sfx/story_act1_voss.mp3",
+            story_act1_voss:    "/assets/sfx/story_act1_voss.wav",
             story_act1_tg9:     "/assets/sfx/story_act1_tg9.mp3",
             story_act2_lind:    "/assets/sfx/story_act2_lind.mp3",
-            story_act2_voss:    "/assets/sfx/story_act2_voss.mp3",
-            story_act3_lind:    "/assets/sfx/story_act3_lind.mp3",
+            story_act2_voss:    "/assets/sfx/story_act2_voss.wav",
+            story_act3_lind:    "/assets/sfx/story_act3_lind.wav",
             story_act3_tg9:     "/assets/sfx/story_act3_tg9.mp3",
-            story_vance_intro:  "/assets/sfx/story_vance_intro.mp3",
-            story_kipper_drift: "/assets/sfx/story_kipper_drift.mp3",
+            story_vance_intro:  "/assets/sfx/story_vance_intro.wav",
+            story_kipper_drift: "/assets/sfx/story_kipper_drift.wav",
             story_vance_taunt:  "/assets/sfx/story_vance_taunt.mp3",
             story_climax_voss:  "/assets/sfx/story_climax_voss.mp3",
             story_climax_vance_rage: "/assets/sfx/story_climax_vance_rage.mp3",
@@ -267,16 +280,16 @@ module Sound =
             ecm_jam_0:               "/assets/sfx/ecm_jam_0.ogg",
             ecm_jam_1:               "/assets/sfx/ecm_jam_1.ogg",
             hull_creak:              "/assets/sfx/hull_creak.ogg",
-            story_helios_orlov:      "/assets/sfx/story_helios_orlov.mp3",
-            story_letter_orlov:      "/assets/sfx/story_letter_orlov.mp3",
-            story_letter_voss:       "/assets/sfx/story_letter_voss.mp3",
-            story_letter_lind:       "/assets/sfx/story_letter_lind.mp3",
-            story_sera_ghosts:       "/assets/sfx/story_sera_ghosts.mp3",
-            story_halden_blackbox:   "/assets/sfx/story_halden_blackbox.mp3",
-            story_act2_kestrel_voss: "/assets/sfx/story_act2_kestrel_voss.mp3",
+            story_helios_orlov:      "/assets/sfx/story_helios_orlov.wav",
+            story_letter_orlov:      "/assets/sfx/story_letter_orlov.wav",
+            story_letter_voss:       "/assets/sfx/story_letter_voss.wav",
+            story_letter_lind:       "/assets/sfx/story_letter_lind.wav",
+            story_sera_ghosts:       "/assets/sfx/story_sera_ghosts.wav",
+            story_halden_blackbox:   "/assets/sfx/story_halden_blackbox.wav",
+            story_act2_kestrel_voss: "/assets/sfx/story_act2_kestrel_voss.wav",
             story_act2_helios_orlov: "/assets/sfx/story_act2_helios_orlov.mp3",
-            story_act2_drift_kipper: "/assets/sfx/story_act2_drift_kipper.mp3",
-            story_act2_kepler_voss:  "/assets/sfx/story_act2_kepler_voss.mp3",
+            story_act2_drift_kipper: "/assets/sfx/story_act2_drift_kipper.wav",
+            story_act2_kepler_voss:  "/assets/sfx/story_act2_kepler_voss.wav",
             story_act2_theta_lind:   "/assets/sfx/story_act2_theta_lind.mp3",
             story_act2_bastion_vance:"/assets/sfx/story_act2_bastion_vance.mp3",
             story_kaltstrom_tamm:    "/assets/sfx/story_kaltstrom_tamm.mp3",
@@ -284,7 +297,10 @@ module Sound =
             story_schleierpass_aders:"/assets/sfx/story_schleierpass_aders.mp3",
             story_act3_kestrel_voss: "/assets/sfx/story_act3_kestrel_voss.mp3",
             story_act3_theta_lind:   "/assets/sfx/story_act3_theta_lind.mp3",
-            story_act3_bastion_vance:"/assets/sfx/story_act3_bastion_vance.mp3"
+            story_act3_bastion_vance:"/assets/sfx/story_act3_bastion_vance.mp3",
+            music_calm:              "/assets/sfx/music_calm_lyria.mp3",
+            music_combat:            "/assets/sfx/music_combat_lyria.mp3",
+            music_aether:            "/assets/sfx/music_aether.wav"
         };
 
         const STATION_COMM_KEYS = {
@@ -515,21 +531,48 @@ module Sound =
                 gateHumFilter.connect(gateHumGain);
                 gateHumGain.connect(ambienceBus);
 
-                // Funk-Filter-Bus (360-2850 Hz Cockpit-Bandpass + dezenter Raumanteil)
+                // Funk-Filter-Bus (340-2950 Hz Cockpit-Bandpass + Broadcast-Kompressor + sanfte Mikrofon-Saettigung)
+                const radioComp = ctx.createDynamicsCompressor();
+                radioComp.threshold.value = -22;
+                radioComp.knee.value = 12;
+                radioComp.ratio.value = 6;
+                radioComp.attack.value = 0.004;
+                radioComp.release.value = 0.12;
+
                 const radioHp = ctx.createBiquadFilter();
                 radioHp.type = "highpass";
-                radioHp.frequency.value = 360;
+                radioHp.frequency.value = 340;
                 radioHp.Q.value = 0.85;
+                const radioMid = ctx.createBiquadFilter();
+                radioMid.type = "peaking";
+                radioMid.frequency.value = 1520;
+                radioMid.Q.value = 1.15;
+                if (radioMid.gain) radioMid.gain.value = 4.2;
                 const radioLp = ctx.createBiquadFilter();
                 radioLp.type = "lowpass";
-                radioLp.frequency.value = 2850;
+                radioLp.frequency.value = 2950;
                 radioLp.Q.value = 1.05;
                 const radioGain = ctx.createGain();
-                radioGain.gain.value = 0.92;
+                radioGain.gain.value = 1.05;
                 radioOut = ctx.createGain();
                 radioOut.gain.value = vol.radio;
-                radioHp.connect(radioLp);
-                radioLp.connect(radioGain);
+                radioHp.connect(radioMid);
+                if (typeof ctx.createWaveShaper === "function") {
+                    const micGrit = ctx.createWaveShaper();
+                    const n = 256;
+                    const curve = new Float32Array(n);
+                    for (let i = 0; i < n; i++) {
+                        const x = (i * 2) / n - 1;
+                        curve[i] = ((3 + 9) * x * 20 * (Math.PI / 180)) / (Math.PI + 9 * Math.abs(x));
+                    }
+                    micGrit.curve = curve;
+                    radioMid.connect(micGrit);
+                    micGrit.connect(radioLp);
+                } else {
+                    radioMid.connect(radioLp);
+                }
+                radioLp.connect(radioComp);
+                radioComp.connect(radioGain);
                 radioGain.connect(radioOut);
                 radioOut.connect(master);
                 const radioEcho = ctx.createGain();
@@ -539,44 +582,38 @@ module Sound =
                 radioBus = radioHp;
                 radioLevel = radioGain;
 
-                // Klarerer Platin-/AETHER-Funkbus (220-4400 Hz, weniger verrauscht als Guertel-Analogfunk)
+                // Klarerer Platin-/AETHER-Funkbus (220-4600 Hz, klinische Bruecken-Sprechanlage ohne Rauschen)
                 const cleanHp = ctx.createBiquadFilter();
                 cleanHp.type = "highpass";
                 cleanHp.frequency.value = 220;
                 cleanHp.Q.value = 0.7;
+                const cleanPres = ctx.createBiquadFilter();
+                cleanPres.type = "peaking";
+                cleanPres.frequency.value = 2450;
+                cleanPres.Q.value = 1.0;
+                if (cleanPres.gain) cleanPres.gain.value = 3.0;
                 const cleanLp = ctx.createBiquadFilter();
                 cleanLp.type = "lowpass";
-                cleanLp.frequency.value = 4400;
+                cleanLp.frequency.value = 4600;
                 cleanLp.Q.value = 0.85;
-                cleanHp.connect(cleanLp);
-                cleanLp.connect(radioGain);
+                cleanHp.connect(cleanPres);
+                cleanPres.connect(cleanLp);
+                cleanLp.connect(radioComp);
                 radioCleanBus = cleanHp;
 
-                // Dynamischer nordischer Musik-Bus (entspannte Erkundung <-> treibende Gefechts-Kriegstrommeln)
-                if (typeof ctx.createOscillator === "function" && typeof ctx.createWaveShaper === "function") {
-                    musicBus = ctx.createGain();
-                    musicBus.gain.value = 0.0;
-                    musicBus.connect(ambienceBus);
-                    const musicVerb = ctx.createGain();
-                    musicVerb.gain.value = 0.30;
-                    musicBus.connect(musicVerb);
-                    musicVerb.connect(echoSend);
-
-                    musicCalmGain = ctx.createGain();
-                    musicCalmGain.gain.value = 0.0;
-                    musicCalmGain.connect(musicBus);
-
-                    musicCombatGain = ctx.createGain();
-                    musicCombatGain.gain.value = 0.0;
-                    musicCombatGain.connect(musicBus);
-
-                    const n = 256;
-                    musicDriveCurve = new Float32Array(n);
-                    for (let i = 0; i < n; i++) {
-                        const x = (i * 2) / n - 1;
-                        musicDriveCurve[i] = ((3 + 38) * x * 20 * (Math.PI / 180)) / (Math.PI + 38 * Math.abs(x));
-                    }
-                }
+                // Dynamischer Musik-Bus (Nahtlos-Loops: music_calm <-> music_aether <-> music_combat)
+                musicBus = ctx.createGain();
+                musicBus.gain.value = 0.0;
+                musicBus.connect(ambienceBus);
+                musicCalmGain = ctx.createGain();
+                musicCalmGain.gain.value = 0.0;
+                musicCalmGain.connect(musicBus);
+                musicCombatGain = ctx.createGain();
+                musicCombatGain.gain.value = 0.0;
+                musicCombatGain.connect(musicBus);
+                musicAetherGain = ctx.createGain();
+                musicAetherGain.gain.value = 0.0;
+                musicAetherGain.connect(musicBus);
 
                 // Dauerquellen und häufiges erstes Feedback vorbereiten. Alle anderen Samples lädt ihr Ereignis.
                 for (const key of ["engine", "space_amb", "hangar_amb", "hangar_comp", "nebula_drone", "cockpit_hum",
@@ -728,15 +765,39 @@ module Sound =
             if (radioSource) radioSource.stop();
             radioSource = null;
             radioVoiceEndsAt = 0;
+            waitingFactionKey = null;
             lastRadioAt = -99;
+        }
+
+        function openCarrier(c, bus, level, pan, clean) {
+            const buf = buffers.radio_squelch;
+            if (!buf) return;
+            const now = c.currentTime;
+            const duration = clean ? 0.095 : 0.19;
+            const src = c.createBufferSource();
+            src.buffer = buf;
+            src.playbackRate.value = clean ? 1.22 : 0.90;
+            const env = c.createGain();
+            env.gain.value = 0;
+            env.gain.setTargetAtTime(level, now, 0.004);
+            env.gain.setTargetAtTime(0, now + duration * 0.32, duration * 0.13);
+            src.connect(env);
+            if (pan && c.createStereoPanner) {
+                const panner = c.createStereoPanner();
+                panner.pan.value = Math.max(-0.85, Math.min(0.85, pan));
+                env.connect(panner);
+                panner.connect(bus);
+            } else env.connect(bus);
+            src.start(now, 0, Math.min(duration, buf.duration));
         }
 
         function playRadioClip(key, vol, pan, squelchVol, beat = -1, cleanFilter = false, minGap = 5.0) {
             const c = ensure();
             const buf = buffers[key];
             const bus = cleanFilter && radioCleanBus ? radioCleanBus : radioBus;
-            if (!c || !bus || buf === null) return 0;
-            if (!buf) {
+            const voiced = autoRadioVoice || beat >= 0;
+            if (!c || !bus || (voiced && buf === null)) return 0;
+            if (voiced && !buf) {
                 loadBuffer(key);
                 return 0;
             }
@@ -750,14 +811,31 @@ module Sound =
                 }
             }
 
+            openCarrier(c, bus, squelchVol, pan, cleanFilter);
+            if (beat < 0) lastRadioAt = now;
+            if (!voiced) return 0.19;
             if (beat < 0) {
-                lastRadioAt = now;
                 radioVoiceEndsAt = Math.max(radioVoiceEndsAt, now + 0.14 + buf.duration);
                 duckUntil = Math.max(duckUntil, now + Math.min(6.0, buf.duration + 0.30));
             }
             if (spaceGain) spaceGain.gain.setTargetAtTime(0.022, now, 0.06);
 
-            playSample("radio_squelch", squelchVol, jitter(0.04), 3600, pan || 0.08, 0.12, 0.0);
+            // Subtiles analoges Traegerrauschen nur fuer Guertel-/Analogfunk (Platin-AETHER bleibt steril-still)
+            let hissSrc = null;
+            if (!cleanFilter && buf.duration > 0.25 && typeof c.createBuffer === "function") {
+                const hissLen = Math.min(c.sampleRate * 8, Math.floor(c.sampleRate * (buf.duration + 0.08)));
+                const hissBuf = c.createBuffer(1, Math.max(1, hissLen), c.sampleRate);
+                const hd = hissBuf.getChannelData(0);
+                for (let i = 0; i < hd.length; i++) hd[i] = (Math.random() * 2 - 1) * 0.5;
+                hissSrc = c.createBufferSource();
+                hissSrc.buffer = hissBuf;
+                const hissGain = c.createGain();
+                hissGain.gain.value = 0.015;
+                hissSrc.connect(hissGain);
+                hissGain.connect(bus);
+                hissSrc.start(now + 0.12);
+                hissSrc.stop(now + 0.16 + buf.duration);
+            }
 
             const src = c.createBufferSource();
             src.buffer = buf;
@@ -778,27 +856,25 @@ module Sound =
                 activeBeat = beat;
                 interruptedBeats.delete(beat);
                 contactSource = src;
-                src.onended = () => {
-                    if (contactSource === src) {
-                        contactSource = null;
-                        activeBeat = -1;
-                    }
-                };
             } else {
                 radioSource = src;
-                src.onended = () => {
-                    if (radioSource === src) radioSource = null;
-                };
             }
+            src.onended = () => {
+                if (hissSrc) hissSrc.stop();
+                if (contactSource !== src && radioSource !== src) return;
+                if (beat >= 0) { contactSource = null; activeBeat = -1; }
+                else radioSource = null;
+                openCarrier(c, bus, squelchVol * 0.52, pan, true);
+            };
             return 0.14 + buf.duration;
         }
 
         function requestRadioClip(key, vol, pan, squelchVol) {
             const c = ensure();
-            if (!c || buffers[key] === null) return;
-            if (buffers[key]) {
+            if (!c) return;
+            if (!autoRadioVoice || buffers[key]) {
                 playRadioClip(key, vol, pan, squelchVol);
-            } else {
+            } else if (buffers[key] !== null) {
                 const generation = audioGeneration;
                 loadBuffer(key).then(() => {
                     if (generation === audioGeneration) playRadioClip(key, vol, pan, squelchVol);
@@ -924,251 +1000,57 @@ module Sound =
             }
         }
 
-        const MUSIC_ROOTS = [1.0, 0.8909, 1.1225]; // D-Dorisch, C-Dorisch, E-Dorisch je Sektor
-        const CALM_LYRE_A = { 0: 293.66, 6: 220.0, 10: 261.63, 16: 293.66, 22: 349.23, 28: 329.63 };
-        const CALM_LYRE_B = { 0: 293.66, 4: 349.23, 10: 392.0, 16: 329.63, 22: 293.66, 28: 220.0 };
-        const BATTLE_OST_A = { 0: [146.83, 0.28], 4: [146.83, 0.20], 6: [174.61, 0.22], 8: [196.0, 0.26], 10: [174.61, 0.20], 12: [164.81, 0.22], 14: [130.81, 0.20], 16: [146.83, 0.28], 20: [146.83, 0.20], 22: [174.61, 0.22], 24: [220.0, 0.28], 26: [196.0, 0.20], 28: [174.61, 0.22], 30: [164.81, 0.22] };
-        const BATTLE_OST_B = { 0: [146.83, 0.28], 4: [174.61, 0.22], 6: [196.0, 0.22], 8: [220.0, 0.28], 10: [196.0, 0.20], 12: [174.61, 0.22], 14: [164.81, 0.22], 16: [146.83, 0.28], 20: [130.81, 0.22], 22: [146.83, 0.22], 24: [174.61, 0.26], 26: [164.81, 0.20], 28: [146.83, 0.24], 30: [130.81, 0.20] };
-
-        function musicPan(dest, pan) {
-            if (pan && Math.abs(pan) > 0.01 && typeof ctx.createStereoPanner === "function") {
-                const p = ctx.createStereoPanner();
-                p.pan.value = pan;
-                p.connect(dest);
-                return p;
-            }
-            return dest;
-        }
-
-        function playMusicDrum(dest, t, accent, deep, pan) {
-            const out = musicPan(dest, pan);
-            const osc = ctx.createOscillator();
-            const g = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(deep ? 118 : 158, t);
-            osc.frequency.exponentialRampToValueAtTime(deep ? 44 : 88, t + (deep ? 0.14 : 0.09));
-            g.gain.setValueAtTime((deep ? 0.44 : 0.24) * accent, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + (deep ? 0.40 : 0.19));
-            osc.connect(g);
-            g.connect(out);
-            osc.start(t);
-            osc.stop(t + (deep ? 0.42 : 0.21));
-
-            const len = Math.floor(ctx.sampleRate * (deep ? 0.048 : 0.032));
-            const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * (deep ? 0.011 : 0.008)));
-            const src = ctx.createBufferSource();
-            src.buffer = buf;
-            const bp = ctx.createBiquadFilter();
-            bp.type = "bandpass";
-            bp.frequency.value = deep ? 320 : 920;
-            bp.Q.value = 1.2;
-            const ng = ctx.createGain();
-            ng.gain.setValueAtTime((deep ? 0.24 : 0.16) * accent, t);
-            ng.gain.exponentialRampToValueAtTime(0.001, t + (deep ? 0.045 : 0.03));
-            src.connect(bp);
-            bp.connect(ng);
-            ng.connect(out);
-            src.start(t);
-        }
-
-        function playMusicRim(dest, t, accent, pan) {
-            const out = musicPan(dest, pan);
-            const len = Math.floor(ctx.sampleRate * 0.028);
-            const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.005));
-            const src = ctx.createBufferSource();
-            src.buffer = buf;
-            const bp = ctx.createBiquadFilter();
-            bp.type = "bandpass";
-            bp.frequency.value = 1920;
-            bp.Q.value = 3.0;
-            const g = ctx.createGain();
-            g.gain.setValueAtTime(0.20 * accent, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.026);
-            src.connect(bp);
-            bp.connect(g);
-            g.connect(out);
-            src.start(t);
-        }
-
-        function playMusicRattle(dest, t, accent) {
-            const len = Math.floor(ctx.sampleRate * 0.055);
-            const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((i / len) * Math.PI);
-            const src = ctx.createBufferSource();
-            src.buffer = buf;
-            const bp = ctx.createBiquadFilter();
-            bp.type = "bandpass";
-            bp.frequency.value = 5100;
-            bp.Q.value = 1.1;
-            const g = ctx.createGain();
-            g.gain.setValueAtTime(0.08 * accent, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.052);
-            src.connect(bp);
-            bp.connect(g);
-            g.connect(dest);
-            src.start(t);
-        }
-
-        function playMusicDrone(dest, t, freq, dur, vol) {
-            for (const [mul, amp] of [[1.0, 1.0], [1.498, 0.38]]) {
-                const osc = ctx.createOscillator();
-                const lp = ctx.createBiquadFilter();
-                const g = ctx.createGain();
-                osc.type = "sawtooth";
-                osc.frequency.setValueAtTime(freq * mul, t);
-                lp.type = "lowpass";
-                lp.Q.value = 1.4;
-                lp.frequency.setValueAtTime(220, t);
-                lp.frequency.linearRampToValueAtTime(380, t + dur * 0.4);
-                lp.frequency.exponentialRampToValueAtTime(140, t + dur);
-                g.gain.setValueAtTime(0.001, t);
-                g.gain.linearRampToValueAtTime(vol * amp, t + 0.12);
-                g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                osc.connect(lp);
-                lp.connect(g);
-                g.connect(dest);
-                osc.start(t);
-                osc.stop(t + dur + 0.04);
-            }
-        }
-
-        function playMusicLyre(dest, t, freq, dur, vol, pan) {
-            const out = musicPan(dest, pan);
-            const osc = ctx.createOscillator();
-            const lp = ctx.createBiquadFilter();
-            const g = ctx.createGain();
-            osc.type = "triangle";
-            osc.frequency.setValueAtTime(freq, t);
-            lp.type = "lowpass";
-            lp.frequency.setValueAtTime(1650, t);
-            lp.frequency.exponentialRampToValueAtTime(220, t + dur);
-            g.gain.setValueAtTime(0.001, t);
-            g.gain.linearRampToValueAtTime(vol, t + 0.009);
-            g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-            osc.connect(lp);
-            lp.connect(g);
-            g.connect(out);
-            osc.start(t);
-            osc.stop(t + dur + 0.04);
-        }
-
-        function playMusicTagelharpa(dest, t, freq, dur, vol, octave) {
-            const sum = ctx.createGain();
-            const muls = octave ? [1.0, 1.0045, 0.9955, 2.0] : [1.0, 1.0045, 0.9955];
-            const oscs = muls.map((m, idx) => {
-                const o = ctx.createOscillator();
-                o.type = "sawtooth";
-                o.frequency.setValueAtTime(freq * m, t);
-                const og = ctx.createGain();
-                og.gain.value = idx === 3 ? 0.28 : 0.44;
-                o.connect(og);
-                og.connect(sum);
-                return o;
-            });
-            const shaper = ctx.createWaveShaper();
-            shaper.curve = musicDriveCurve;
-            const b1 = ctx.createBiquadFilter();
-            b1.type = "bandpass";
-            b1.frequency.value = 510;
-            b1.Q.value = 1.8;
-            const b2 = ctx.createBiquadFilter();
-            b2.type = "bandpass";
-            b2.frequency.value = 1360;
-            b2.Q.value = 2.2;
-            const env = ctx.createGain();
-            env.gain.setValueAtTime(0.001, t);
-            env.gain.linearRampToValueAtTime(vol, t + 0.024);
-            env.gain.setValueAtTime(vol * 0.85, t + Math.max(0.04, dur * 0.65));
-            env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-            sum.connect(shaper);
-            shaper.connect(b1);
-            shaper.connect(b2);
-            b1.connect(env);
-            b2.connect(env);
-            env.connect(dest);
-            for (const o of oscs) {
-                o.start(t);
-                o.stop(t + dur + 0.04);
-            }
-        }
+        const MUSIC_SECTOR_RATES = [1.0, 0.9439, 1.0595]; // D-Dorisch, Cis-Dorisch, Dis-Dorisch (+/- 1 Halbton je Sektor)
 
         function updateMusic(t, mode, active) {
-            if (!musicBus || !musicCalmGain || !musicCombatGain) return;
+            if (!musicBus || !musicCalmGain || !musicCombatGain || !musicAetherGain) return;
             const silent = muted || mode === 0 || ctx.state !== "running";
             const radioBusy = t < radioVoiceEndsAt || !!contactSource || !!receiverChannels;
-            const masterScale = silent ? 0.0 : (mode === 2 ? 0.28 : (mode === 3 ? 0.36 : 0.72)) * (radioBusy ? 0.38 : 1.0);
-            musicBus.gain.setTargetAtTime(masterScale, t, silent ? 0.14 : 0.30);
+            const masterScale = silent ? 0.0 : (mode === 2 ? 0.24 : (mode === 3 ? 0.34 : 0.78)) * (radioBusy ? 0.34 : 1.0);
+            musicBus.gain.setTargetAtTime(masterScale, t, silent ? 0.16 : 0.32);
+
+            const aetherPresent = !silent && (musicAether || flightCtx.cruiserNear);
+            if (!silent) {
+                if (!musicCalmSrc) {
+                    if (buffers.music_calm) musicCalmSrc = startAmbienceLoop("music_calm", musicCalmGain);
+                    else if (buffers.music_calm === undefined) loadBuffer("music_calm");
+                }
+                if (!musicCombatSrc && (active || musicCombat)) {
+                    if (buffers.music_combat) musicCombatSrc = startAmbienceLoop("music_combat", musicCombatGain);
+                    else if (buffers.music_combat === undefined) loadBuffer("music_combat");
+                }
+                if (!musicAetherSrc && aetherPresent) {
+                    if (buffers.music_aether) musicAetherSrc = startAmbienceLoop("music_aether", musicAetherGain);
+                    else if (buffers.music_aether === undefined) loadBuffer("music_aether");
+                }
+            }
 
             const battleActive = !silent && active && mode === 1 && musicCombat;
-            musicCalmGain.gain.setTargetAtTime(battleActive ? 0.0 : (silent ? 0.0 : 0.44), t, battleActive ? 0.85 : 1.8);
-            musicCombatGain.gain.setTargetAtTime(battleActive ? 0.56 : 0.0, t, battleActive ? 0.65 : 1.9);
+            const aetherActive = !silent && !battleActive && mode === 1 && aetherPresent;
+            const calmTarget = silent || battleActive || aetherActive ? 0.0 : 0.20;
+            const aetherTarget = aetherActive ? 0.24 : 0.0;
+            const combatTarget = battleActive ? (flightCtx.cruiserNear ? 0.30 : 0.26) : 0.0;
+            musicCalmGain.gain.setTargetAtTime(calmTarget, t, battleActive ? 0.75 : 1.4);
+            musicAetherGain.gain.setTargetAtTime(aetherTarget, t, aetherActive ? 0.9 : 1.5);
+            musicCombatGain.gain.setTargetAtTime(combatTarget, t, battleActive ? 0.55 : 1.8);
 
-            if (silent) {
-                musicCalmNext = 0;
-                musicCombatNext = 0;
-                return;
-            }
-            const rootMul = MUSIC_ROOTS[(flightCtx.sector || 0) % MUSIC_ROOTS.length];
-
-            // 1) Entspannte nordische Weltraum-Musik (86 BPM)
-            if (!battleActive) {
-                const calmStepDur = (60 / 86) / 4;
-                if (musicCalmNext < t - 0.5 || musicCalmNext === 0) musicCalmNext = t + 0.05;
-                while (musicCalmNext < t + 0.16) {
-                    const st = musicCalmStep % 32;
-                    const phraseB = ((musicCalmStep >> 5) & 1) === 1;
-                    const nt = musicCalmNext;
-                    if (st === 0 || st === 16) playMusicDrone(musicCalmGain, nt, 73.42 * rootMul, calmStepDur * 15.5, 0.16);
-                    if (st === 0 || st === 14 || st === 16) playMusicDrum(musicCalmGain, nt, st === 14 ? 0.42 : 0.62, true, 0.0);
-                    if (st === 8 || st === 24) playMusicRattle(musicCalmGain, nt, 0.45);
-                    const lyre = phraseB ? CALM_LYRE_B[st] : CALM_LYRE_A[st];
-                    if (lyre) playMusicLyre(musicCalmGain, nt, lyre * rootMul, 1.35, 0.14, (st % 16 < 8) ? -0.32 : 0.32);
-                    musicCalmNext += calmStepDur;
-                    musicCalmStep++;
-                }
-            } else {
-                musicCalmNext = 0;
-            }
-
-            // 2) Treibende nordische Gefechtsmusik (124 BPM, RAVNIR-Style ohne Vocals)
-            if (battleActive) {
-                const combatStepDur = (60 / 124) / 4;
-                if (musicCombatNext < t - 0.5 || musicCombatNext === 0) musicCombatNext = t + 0.04;
-                while (musicCombatNext < t + 0.16) {
-                    const st = musicCombatStep % 32;
-                    const phraseB = ((musicCombatStep >> 5) & 1) === 1;
-                    const nt = musicCombatNext;
-                    const boss = !!flightCtx.cruiserNear;
-                    if (st === 0 || st === 6 || st === 10 || st === 16 || st === 22 || st === 26 || st === 28 || (boss && (st === 4 || st === 20))) {
-                        playMusicDrum(musicCombatGain, nt, (st === 0 || st === 16) ? 1.0 : 0.76, true, 0.0);
-                    }
-                    if (st === 2 || st === 8 || st === 14 || st === 18 || st === 24 || st === 30) {
-                        playMusicDrum(musicCombatGain, nt, 0.72, false, (st % 8 < 4) ? -0.45 : 0.45);
-                    }
-                    if (st === 4 || st === 12 || st === 20 || st === 28) {
-                        playMusicRim(musicCombatGain, nt, 0.78, (st % 16 < 8) ? 0.38 : -0.38);
-                    }
-                    if (st % 2 === 0) playMusicRattle(musicCombatGain, nt, st % 4 === 2 ? 0.85 : 0.45);
-                    if (st === 0 || st === 16) playMusicDrone(musicCombatGain, nt, 73.42 * rootMul, combatStepDur * 15.0, 0.22);
-                    const ost = phraseB ? BATTLE_OST_B[st] : BATTLE_OST_A[st];
-                    if (ost) playMusicTagelharpa(musicCombatGain, nt, ost[0] * rootMul, ost[1], 0.14, boss);
-                    musicCombatNext += combatStepDur;
-                    musicCombatStep++;
-                }
-            } else {
-                musicCombatNext = 0;
-            }
+            const rate = MUSIC_SECTOR_RATES[(flightCtx.sector || 0) % MUSIC_SECTOR_RATES.length];
+            if (musicCalmSrc) musicCalmSrc.playbackRate.setTargetAtTime(rate, t, 1.2);
+            if (musicCombatSrc) musicCombatSrc.playbackRate.setTargetAtTime(flightCtx.cruiserNear ? rate * 1.02 : rate, t, 0.8);
+            if (musicAetherSrc) musicAetherSrc.playbackRate.setTargetAtTime(1.0, t, 0.8);
         }
 
         return {
             ensure,
             setReceiver,
             clearRadio,
+            getAutoRadioVoice() { return autoRadioVoice; },
+            setAutoRadioVoice(enabled) {
+                if (autoRadioVoice === enabled) return;
+                autoRadioVoice = enabled;
+                clearRadio();
+                try { win.localStorage.setItem(VOICES_KEY, enabled ? "on" : "off"); } catch {}
+            },
             setVolumes(m, s, r, a) {
                 vol.master = clamp01(m);
                 vol.sfx = clamp01(s);
@@ -1199,6 +1081,9 @@ module Sound =
             },
             setMusicCombat(inCombat) {
                 musicCombat = !!inCombat;
+            },
+            setMusicAether(present) {
+                musicAether = !!present;
             },
             setMuted(m) {
                 muted = !!m;
@@ -1371,15 +1256,22 @@ module Sound =
                 if (!c || c.state !== "running") return 0;
                 if (receiverChannels || contactSource || c.currentTime < radioVoiceEndsAt) return -1;
                 const squelch = cleanFilter ? 0.06 : 0.12;
-                if (audioKey && FILES[audioKey]) {
-                    if (buffers[audioKey]) {
-                        return playRadioClip(audioKey, 0.54, pan || 0.0, squelch, -1, !!cleanFilter, 1.2);
-                    }
-                    if (buffers[audioKey] === undefined) loadBuffer(audioKey);
-                }
                 if (c.currentTime - lastRadioAt < 1.2) return -1;
+                if (autoRadioVoice && audioKey && FILES[audioKey] && buffers[audioKey] !== null) {
+                    if (buffers[audioKey]) {
+                        waitingFactionKey = null;
+                        return playRadioClip(audioKey, 0.54, pan, squelch, -1, cleanFilter, 1.2);
+                    }
+                    if (waitingFactionKey !== audioKey) {
+                        waitingFactionKey = audioKey;
+                        factionReadAt = c.currentTime + 1.5;
+                        loadBuffer(audioKey);
+                    }
+                    if (c.currentTime < factionReadAt) return -1;
+                }
+                waitingFactionKey = null;
                 lastRadioAt = c.currentTime;
-                playSample("radio_squelch", squelch, jitter(0.05), cleanFilter ? 4200 : 3200, pan || 0.0, 0.10, 0.0);
+                openCarrier(c, cleanFilter ? radioCleanBus : radioBus, squelch, pan, cleanFilter);
                 return 0;
             },
             tryContactBeat(beat) {
@@ -1719,6 +1611,12 @@ module Sound =
     [<Emit("$0 ? $0.getVolumes() : [1, 1, 1, 1]")>]
     let private emitGetVolumes (_h: obj) : float[] = jsNative
 
+    [<Emit("!!($0 && $0.getAutoRadioVoice())")>]
+    let private emitGetAutoRadioVoice (_h: obj) : bool = jsNative
+
+    [<Emit("$0 && $0.setAutoRadioVoice($1)")>]
+    let private emitSetAutoRadioVoice (_h: obj) (_enabled: bool) : unit = jsNative
+
     [<Emit("$0 && $0.setListener($1, $2, $3, $4, $5, $6, $7, $8, $9)")>]
     let private emitSetListener (_h: obj) (_px: float) (_py: float) (_pz: float) (_rx: float) (_ry: float) (_rz: float) (_fx: float) (_fy: float) (_fz: float) : unit = jsNative
 
@@ -1730,6 +1628,9 @@ module Sound =
 
     [<Emit("$0 && $0.setMusicCombat($1)")>]
     let private emitSetMusicCombat (_h: obj) (_inCombat: bool) : unit = jsNative
+
+    [<Emit("$0 && $0.setMusicAether($1)")>]
+    let private emitSetMusicAether (_h: obj) (_present: bool) : unit = jsNative
 
     [<Emit("$0 && $0.laserAt($1, $2, $3, $4, $5, $6, $7, $8)")>]
     let private emitLaserAt (_h: obj) (_isPlayer: bool) (_x: float) (_y: float) (_z: float) (_overdrive: bool) (_laserLevel: int) (_kit: int) (_enemyRole: int) : unit = jsNative
@@ -2018,6 +1919,9 @@ module Sound =
     let getVolumes (s: SoundEngine) =
         try emitGetVolumes s.Handle with _ -> [| 1.0; 1.0; 1.0; 1.0 |]
 
+    let autoRadioVoice (s: SoundEngine) = emitGetAutoRadioVoice s.Handle
+    let setAutoRadioVoice (s: SoundEngine) enabled = emitSetAutoRadioVoice s.Handle enabled
+
     let setListener (s: SoundEngine) (pos: Vec3) (rot: Quat) =
         let r = Quat.right rot
         let f = Quat.forward rot
@@ -2032,6 +1936,10 @@ module Sound =
     /// Schaltet zwischen entspannter nordischer Flugmusik (false) und treibender War-Drum-Gefechtsmusik (true).
     let setMusicCombat (s: SoundEngine) (inCombat: bool) =
         try emitSetMusicCombat s.Handle inCombat with _ -> ()
+
+    /// Blendet bei AETHER-Präsenz im Sektor in den kalten D-Moll-Konzernmarsch (music_aether) über.
+    let setMusicAether (s: SoundEngine) (present: bool) =
+        try emitSetMusicAether s.Handle present with _ -> ()
 
     let laserAt (s: SoundEngine) (isPlayer: bool) (pos: Vec3) (overdrive: bool) (laserLevel: int) (kit: int) (enemyRole: int) =
         if not s.Muted then

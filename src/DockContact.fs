@@ -23,7 +23,7 @@ type DockContact =
           mutable Home: Transmission option
           mutable Current: Transmission option
           mutable Requested: Transmission option
-          mutable ArchiveState: (string * int * int * int * bool * bool) option
+          mutable ArchiveState: (string * int * int * int * bool * bool * int option) option
           mutable Phase: ContactPhase
           mutable NextAttempt: float
           mutable Deadline: float
@@ -50,7 +50,7 @@ module DockContact =
                 if active then
                     match ui.Phase with
                     | Tuning -> "Verbindung abbrechen"
-                    | TextOnly -> "Gelesen"
+                    | TextOnly -> if ui.Sound.Muted then "Gelesen" else "Abhören"
                     | _ -> "Wiedergabe beenden"
                 elif ui.Sound.Muted then (if seen then "Erneut lesen" else "Lesen")
                 elif seen then "Erneut abhören"
@@ -64,7 +64,7 @@ module DockContact =
             match phase with
             | Tuning -> "tuning", "Verbindungsaufbau", "Überspringen"
             | OnAir -> "live", "Auf Sendung", "Funk beenden"
-            | TextOnly -> "reading", "Textempfang", "Gelesen"
+            | TextOnly -> "reading", "Textempfang", (if ui.Sound.Muted then "Gelesen" else "Abhören")
             | OnFile ->
                 let seen = ui.Current |> Option.exists (fun call -> PilotSkills.contains ui.Heard call.Beat)
                 let label = if ui.Sound.Muted then "Erneut lesen" elif seen then "Erneut abhören" else "Abhören"
@@ -106,7 +106,8 @@ module DockContact =
         setPhase ui OnFile
 
     let private toggle ui call =
-        if (ui.Current |> Option.exists (fun active -> active.Beat = call.Beat)) && ui.Phase <> OnFile then
+        let playing = ui.Phase = OnAir || ui.Phase = Tuning || (ui.Phase = TextOnly && ui.Sound.Muted)
+        if playing && (ui.Current |> Option.exists (fun active -> active.Beat = call.Beat)) then
             finish ui call
         else
             select ui call
@@ -141,9 +142,9 @@ module DockContact =
         details.appendChild button |> ignore
         parent.appendChild details |> ignore
 
-    let refreshArchive ui pilot =
+    let refreshArchive ui pilot outerFinds =
         let hasReveal = PilotSkills.level pilot 2 = 3 && PilotSkills.contains pilot.Relics 0
-        let key = Some (ui.Port, pilot.Relics, pilot.Visited, WreckVoices.saved (), StoryRadio.hasSideband pilot, hasReveal)
+        let key = Some (ui.Port, pilot.Relics, pilot.Visited, WreckVoices.saved (), StoryRadio.hasSideband pilot, hasReveal, outerFinds)
         if ui.ArchiveState <> key then
             ui.ArchiveState <- key
             let clips = StoryRadio.archive pilot
@@ -171,7 +172,22 @@ module DockContact =
                     for clip in clips do
                         if clip.Find = Some i then appendRecording ui log clip.Call)
             if pilot.Relics = 0 then
-                log.textContent <- "Drücke im Stationsanflug G, um nach Aufzeichnungen zu suchen. Der Scanner erreicht 350 m rings um dein Schiff. Mit dem RT-9-Demodulator sind es 700 m."
+                log.textContent <- "G scannt nach Aufzeichnungen. Ein Archivsender antwortet bis 350 m, mit RT-9 bis 700 m."
+            match outerFinds with
+            | Some finds ->
+                let entry text =
+                    let p = document.createElement "p"
+                    p.textContent <- text
+                    log.appendChild p |> ignore
+                let heading = document.createElement "strong"
+                heading.textContent <- sprintf "Außenfunde · %d/%d" (PilotSkills.count finds) OuterRoutes.sites.Length
+                log.appendChild heading |> ignore
+                Universe.sectors |> Array.iteri (fun i sector ->
+                    let site = OuterRoutes.sites.[i]
+                    if OuterRoutes.has finds i then entry (site.Name + " · " + site.Report)
+                    elif sector.Outpost.Id = ui.Port then entry (site.Guide + " · " + site.Hint + " Im Flug mit G peilen."))
+                if OuterRoutes.chartComplete finds then entry ("Fremde Sternkarte · " + OuterRoutes.chartReport)
+            | None -> ()
             for clip in clips do
                 if clip.Find.IsNone then appendRecording ui log clip.Call
             if hasReveal then
@@ -208,11 +224,11 @@ module DockContact =
                 for call in voices do
                     line (call.Speaker + ", " + call.Ship + " · ") ("„" + call.Line + "“")
                 if voices.Length > 0 then
-                    line "Sera · " (if voices.Length >= 4 then "„Du bringst mehr Namen heim als mancher Konvoi Fracht. Ich lese sie jeden Abend einmal laut.“"
-                                    else "„Jeder Name, den du mitbringst, ist einer weniger, den Vance löschen kann.“")
+                    line "Sera · " (if voices.Length >= 4 then "„Danke. So viele Aufzeichnungen hat hier oben seit Monaten keiner mehr reingebracht. Ich trag sie alle in die Liste ein.“"
+                                    else "„Gut, ich hab den Namen auf Band. Den können sie da oben nicht mehr einfach rausstreichen.“")
                 if cut > 0 then
-                    line "Karst · " (if cut >= 4 then "„Du kappst sauberer als meine eigenen Leute. Sag Bescheid, wenn du einen Platz auf dem Schlepper willst.“"
-                                     else "„Ein stilles Wrack ist ein ehrliches Wrack. Der Schrott war gut.“")
+                    line "Karst · " (if cut >= 4 then "„Du arbeitest schneller als meine eigene Crew. Wenn du mal keine Lust mehr auf Kurierflüge hast, sag Bescheid.“"
+                                     else "„Vernünftig. Der Sender war eh durch, und den Schrott können wir brauchen.“")
             refreshButtons ui
 
     let leave ui =
@@ -231,15 +247,16 @@ module DockContact =
 
     let heard ui = ui.Heard
 
-    let dock ui port pilot =
+    let dock ui port pilot outerFinds =
         leave ui
         ui.Port <- port
         ui.Home <- StoryRadio.contact pilot port
-        refreshArchive ui pilot
+        refreshArchive ui pilot outerFinds
         ui.Home |> Option.iter (fun call ->
             select ui call
             if PilotSkills.contains ui.Heard call.Beat then setPhase ui OnFile
-            else tune ui 1.8)
+            elif Sound.autoRadioVoice ui.Sound then tune ui 1.8
+            else read ui)
 
     let onMuteChanged ui =
         match ui.Phase with

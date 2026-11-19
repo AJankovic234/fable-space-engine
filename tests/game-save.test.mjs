@@ -41,6 +41,28 @@ function fixture() {
 }
 function read(value) { const result=decode(typeof value==='string'?value:json(value));assert.equal(result.tag,0,result.fields[0]);return result.fields[0]; }
 
+test('POI jobs preserve completed sites, partial readings and remote bearings in trade saves', () => {
+  const data=JSON.parse(json(snapshot(fixture())));
+  assert.equal(read(data).Run.Poi, undefined);
+  const Poi={Done:1, WestFix:1<<4, Pinned:17};
+  data.Run.Poi=Poi;
+  assert.deepEqual(read(data).Run.Poi,Poi);
+  for (const bad of [{Done:1<<18},{Done:1.5},{WestFix:1},{Done:1<<4},{Pinned:18},{Pinned:-1}]) {
+    assert.equal(decode(json({...data,Run:{...data.Run,Poi:{...Poi,...bad}}})).tag,1);
+  }
+});
+
+test('exterior discoveries, bearings and ambushes round-trip alongside legacy saves', () => {
+  const data = JSON.parse(json(snapshot(fixture())));
+  assert.equal(read(data).Run.OuterFlight,undefined);
+  const log = {Finds:17,Sprung:1<<7,Tracking:true,Engaged:false};
+  data.Run.OuterFlight=log;
+  assert.deepEqual(read(data).Run.OuterFlight,log);
+  for (const change of [{Finds:512},{Sprung:2},{Tracking:1},{Engaged:true}]) {
+    assert.equal(decode(json({...data, Run:{...data.Run,OuterFlight:{...log,...change}}})).tag,1);
+  }
+});
+
 test('legacy saves near the berth and inside overlapping Helios decks restore without damage', () => {
   const port = sectors[1].Outpost.Position;
   const near = new Vec3(port.X,port.Y,port.Z+30);

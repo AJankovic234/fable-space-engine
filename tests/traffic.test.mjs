@@ -48,7 +48,9 @@ test('sector services fit their draw and exhaust batches and the Bastion retains
     assert.ok(flights.length <= capacity && drives <= driveCapacity && drives+2*flights.length <= lampCapacity);
     for (const flight of flights) classes.add(flight.Class);
   }
-  assert.equal(classes.size, models.length);
+  // Doppel-A uses a single intersector duty roster; the remaining classes fly local timetables.
+  assert.deepEqual([...classes].sort(), [0,1,2,3,4]);
+  assert.equal(models[5].Name, 'D/AA · Doppel-A');
   const bastion = manifests[sectors.findIndex(s => s.Id === 'morgenlicht-bastion')];
   const [lead, port, starboard] = bastion.filter(f => models[f.Class].Aether);
   assert.ok(port.WingOffset.X < 0 && starboard.WingOffset.X > 0);

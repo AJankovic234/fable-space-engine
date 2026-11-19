@@ -14,7 +14,12 @@ type SavedRun =
       CourseTarget: string option; CourseVia: string option
       WreckSalvage: WreckStock[] option; SalvagedMissiles: int option
       /// Zwei Bit je Wrack (WreckVoices): gesicherte und gekappte Notrufe.
-      WreckVoices: int option }
+      WreckVoices: int option
+      PortPackets: int option
+      Operation: SavedOp option
+      Watch: Attendance.Log option
+      OuterFlight: OuterRoutes.FlightLog option
+      Poi: SectorPoi.Log option }
 
 type SavedShip =
     { Position: float[]; Rotation: float[]; Velocity: float[]
@@ -135,6 +140,26 @@ module GameSave =
         && Option.forall (fun stocks -> r.Trading && validWreckSalvage stocks) r.WreckSalvage
         && Option.forall (fun reserve -> r.Trading && intRange 0 Missiles.ReserveCapacity reserve) r.SalvagedMissiles
         && Option.forall (fun voices -> r.Trading && intRange 0 WreckVoices.maxMask voices && WreckVoices.valid voices) r.WreckVoices
+        && Option.forall (fun mask -> r.Trading && integer (box mask) && PortWork.valid mask) r.PortPackets
+        && Option.forall (fun (log: SectorPoi.Log) ->
+            r.Trading && intRange 0 SectorPoi.allMask log.Done && intRange 0 SectorPoi.receiverMask log.WestFix
+            && (log.WestFix &&& SectorPoi.receiverMask) = log.WestFix && (log.WestFix &&& log.Done) = 0
+            && Option.forall (intRange 0 (SectorPoi.sites.Length-1)) log.Pinned) r.Poi
+        && Option.forall (fun (log: OuterRoutes.FlightLog) ->
+            let sector = Universe.sectors |> Array.findIndex (fun sector -> sector.Id = r.SectorId)
+            r.Trading && intRange 0 ((1 <<< Universe.sectors.Length)-1) log.Finds
+            && intRange 0 OuterRoutes.trapMask log.Sprung && (log.Sprung &&& OuterRoutes.trapMask) = log.Sprung
+            && bool log.Tracking && bool log.Engaged
+            && (not log.Engaged || (OuterRoutes.has log.Sprung sector && r.Phase = 1 &&
+                r.Operation.IsNone && r.Patrol = (OuterRoutes.defenders sector |> Array.map int)))) r.OuterFlight
+        && Option.forall (fun (w: Attendance.Log) -> r.Trading && intRange 1 1000000 w.Seed
+                                                    && intRange 0 50000000 w.Heard) r.Watch
+        && Option.forall (fun (op: SavedOp) ->
+            let sector = Universe.sectors |> Array.findIndex (fun sector -> sector.Id = r.SectorId)
+            r.Trading && intRange 0 60003 op.Ticket && intRange 0 ((SectorOps.places sector).Length-1) op.Site
+            && range 0.0 90.0 op.Remaining && bool op.Active && bool op.Inbound
+            && (not op.Inbound || (op.Active && SectorOps.kindFor Universe.sectors.[sector].DangerLevel op.Ticket = Bounty))
+            && (not op.Active || (r.Phase = 1 && r.Patrol = (SectorOps.roster (SectorOps.kindFor Universe.sectors.[sector].DangerLevel op.Ticket) Universe.sectors.[sector].DangerLevel |> Array.map int)))) r.Operation
         && (r.School |> Option.forall (fun school ->
             intRange 0 FlightSchool.Dock school.Step && intRange 0 2 school.PaidTargets && r.Trading &&
             (school.Step = FlightSchool.Off ||
