@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Anchor, arrange, around, radarOffset, rect, targetBox } from "../build/HudLayout.js";
 import { Mat4Module_create as createMatrix, Vec3 } from "../build/Math3D.js";
-import { HudModule_create as createHud, HudModule_drawStation as drawStation } from "../build/HUD.js";
+import { HudModule_create as createHud, HudModule_drawStation as drawStation, HudModule_drawJumpGates as drawGates } from "../build/HUD.js";
 import { Universe_sectorByIndex as sectorByIndex } from "../build/Universe.js";
 
 const intersects = (a, b) =>
@@ -90,4 +90,25 @@ test("radar altitude has a signed stalk and distant bearings stay on the disc", 
   assert.ok(above[2] < above[1] && below[2] > below[1]);
   assert.equal(level[1], level[2]);
   assert.ok(Math.hypot(level[0] / 74, level[1] / 30) <= 0.941);
+});
+
+test("the delivery gate has a distinct crate while other gates retain their normal markers", () => {
+  const hud = createHud({ getContext: () => ({}) });
+  hud.Width = 960;
+  hud.Height = 540;
+  const sector = sectorByIndex(0);
+  const view = createMatrix();
+  view[0] = view[5] = 0.001;
+  hud.FreightGate = sector.Gates[0].TargetSectorId;
+  hud.InCombat = true;
+  drawGates(hud, view, sector, sector.Outpost.Position);
+  const [delivery, other] = hud.Markers;
+  assert.match(delivery.Title, /Frachtkurs.*Helios/);
+  assert.ok(delivery.Priority > other.Priority);
+  assert.notEqual(delivery.Glyph.tag, other.Glyph.tag);
+  assert.ok(delivery.Quiet && other.Quiet, "both labels yield to combat information");
+  hud.FreightGate = undefined;
+  hud.Markers.length = 0;
+  drawGates(hud, view, sector, sector.Outpost.Position);
+  assert.ok(hud.Markers.every(m => m.Glyph.tag === other.Glyph.tag));
 });

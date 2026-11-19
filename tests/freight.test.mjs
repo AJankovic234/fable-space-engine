@@ -1,14 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FreightAction, Freight_apply as act, Freight_valid as valid} from '../build/Freight.js';
+import {FreightAction, Freight_apply as act, Freight_valid as valid, Freight_hint as dockHint,
+  Freight_flightHint as flightHint, Freight_nextGate as nextGate} from '../build/Freight.js';
 import {TradeSystem_createCargo as hold, TradeSystem_freeVolume as free, TradeSystem_loadSalvage as load,
   TradeSystem_createUniverseMarkets as markets, TradeSystem_sellAll as sell, TradeSystem_buyGood as buy} from '../build/TradeSystem.js';
 import {ShipCatalog_create as fleet, ShipCatalog_equip as equip, RefitOrder} from '../build/ShipCatalog.js';
 import {DeckCargo_iter as deck, DeckCargo_sealedIndex as sealed} from '../build/ProceduralMeshes.js';
 import {TradeRoutes_nextHop as hop, TradeRoutes_neighbors as neighbors} from '../build/TradeRoutes.js';
+import {Universe_sectors as sectors} from '../build/Universe.js';
 
 const accept = (to, tonnes) => new FreightAction(0,[to,tonnes]);
 const deliver = new FreightAction(1,[]), giveBack = new FreightAction(2,[]);
+
+test('the flight follows the next physical gate, the dock offers travel and the destination requests delivery', () => {
+  const cargo = hold(16);
+  act(cargo, 0, accept(1, 8));
+  const job = cargo.Freight;
+  assert.match(dockHint(0, job), /Am Dock.*Helios/);
+  assert.match(flightHint(0, job), /Frachtkurs.*Sprungtor.*Helios/);
+  assert.equal(nextGate(0, job), sectors[1].Id);
+  const detour = 5;
+  const next = nextGate(detour, job);
+  const gate = sectors[detour].Gates.find(g => g.TargetSectorId === next);
+  assert.ok(gate);
+  assert.notEqual(next, sectors[1].Id);
+  assert.ok(flightHint(detour, job).includes(gate.Label));
+  assert.equal(nextGate(1, job), undefined);
+  assert.match(flightHint(1, job), /am Handelsmarkt abliefern/);
+});
 
 test('sealed cargo occupies real space, never enters a market sale and pays once at its destination', () => {
   const cargo=hold(16), stations=markets();

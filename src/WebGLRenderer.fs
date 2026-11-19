@@ -8,7 +8,8 @@ namespace SpaceEngine
 //  und kostet genau einen Draw-Call - egal ob 1 Spielerschiff oder 2000 Partikel.
 //
 //  Vertex-Layout (pro Vertex, 10 Floats):  location 0 = Position, 1 = Normale,
-//                                           location 2 = vec4 (RGB, Emissive 0..1)
+//                                           location 2 = vec4 (RGB, Emissive 0..1;
+//                                           negativ = Oberflaechenklasse, siehe Materials)
 //  Instanz-Layout (pro Instanz, 20 Floats): location 3..6 = mat4 Modellmatrix,
 //                                           location 7 = vec4 (RGB, Emissive 0..1)
 //
@@ -16,9 +17,10 @@ namespace SpaceEngine
 //  ein Mesh eigene Farbzonen tragen (Cockpit, Triebwerksgluehen) und trotzdem pro
 //  Instanz eingefaerbt werden.
 //
-//  Beleuchtung: Blinn-Phong mit einem Directional Light (Sonne), Ambient und bis
-//  zu 8 Point Lights (Triebwerke, Explosionen). Emissive = 1 schaltet die
-//  Beleuchtung fuer die Instanz ab (Laser, Sterne, Partikel).
+//  Beleuchtung: physikalisch basiert (GGX, Smith, Schlick) mit Sonne, Himmelslicht
+//  des Sektors (SkyLight) und bis zu 32 Point Lights, von denen Lights pro Frame die
+//  wichtigsten waehlt (LightSelection). Emissive = 1 schaltet die Beleuchtung fuer
+//  die Instanz ab (Laser, Sterne, Partikel).
 //
 //  Der Frame-Pfad (beginFrame / InstanceBatch.push* / draw) allokiert nichts:
 //  alle Puffer und Uniform-Arrays werden beim Setup angelegt.
@@ -114,16 +116,13 @@ module Layout =
     let InstanceColorOffset = 16
 
     /// Obergrenze der gleichzeitig aktiven Point Lights (muss zum Shader passen).
+    /// Wie viele davon ein Frame nutzt, bestimmt Lights.setBudget.
     [<Literal>]
-    let MaxPointLights = 8
+    let MaxPointLights = 32
 
-    /// Stufen der Bloom-Kette (muss zum Composite-Shader passen).
+    /// Anzahl der Bloom-Eingänge des Composite-Shaders.
     [<Literal>]
-    let BloomLevels = 3
-
-    /// Kantenlaenge der Schattenkarte in Texeln (muss zum Fragment-Shader passen).
-    [<Literal>]
-    let ShadowSize = 2048
+    let MaxBloomLevels = 3
 
     /// Halbe Kantenlaenge des beschatteten Wuerfels um den Spieler im freien Flug (Meter).
     /// Nahe grosser Bauwerke waehlt der Aufrufer einen groesseren Wert.
@@ -177,7 +176,7 @@ type InstanceBatch =
       /// true = Positionen sind relativ zur Kamera (Himmel): der Batch wird ohne
       /// Kamera-Translation gezeichnet und wirkt dadurch unendlich weit entfernt.
       mutable CameraRelative: bool
-      /// Blinn-Phong-Exponent (groesser = kleineres, schaerferes Glanzlicht).
+      /// Glanzexponent (groesser = kleineres, schaerferes Glanzlicht); der Shader macht daraus die GGX-Rauheit.
       mutable Shininess: float
       /// Staerke des Glanzlichts (0 = matt).
       mutable Specular: float
@@ -189,12 +188,25 @@ type Lights =
     { /// Normalisierte Richtung ZUR Sonne (Weltkoordinaten).
       SunDirection: JS.Float32Array
       SunColor: JS.Float32Array
+      /// Flacher Sektorwert: Nebelfarbe und Grundpegel des Himmelslichts.
       Ambient: JS.Float32Array
-      /// Pro Licht: xyz = Position, w = Reichweite.
+      /// Himmelslicht als L1-Kugelflaechenfunktion (Irradianz in Shader-Einheiten):
+      /// 4 x RGB = Konstante, dann die Anteile entlang x, y und z.
+      SkySh: JS.Float32Array
+      /// Pro Licht: xyz = Position, w = Reichweite. Die in beginFrame gewaehlten Lichter.
       PointPosRange: JS.Float32Array
       /// Pro Licht: rgb = Farbe * Intensitaet, w ungenutzt.
       PointColor: JS.Float32Array
-      mutable PointCount: int }
+      mutable PointCount: int
+      /// Kandidaten dieses Frames (LightSelection.Capacity), gleiches Layout wie oben.
+      CandidatePosRange: JS.Float32Array
+      CandidateColor: JS.Float32Array
+      mutable CandidateCount: int
+      /// Hoechstzahl aktiver Lichter pro Frame (1 .. Layout.MaxPointLights).
+      mutable Budget: int
+      /// Scratch der Auswahl.
+      Scores: float[]
+      Order: int[] }
 
 /// Offscreen-Renderziel (4x MSAA, aufgeloest in SceneTex) + dreistufige Bloom-Kette
 /// (1/4, 1/8, 1/16 der Aufloesung, je ein Ping-Pong-Paar; keine Frame-Allokationen).
@@ -204,13 +216,15 @@ type PostProcess =
       SceneTex: WebGLTexture
       SceneDepth: WebGLRenderbuffer
       /// Multisample-Ziel, in das die Szene gezeichnet wird, solange Msaa = true.
-      MsaaFbo: WebGLFramebuffer
-      MsaaColor: WebGLRenderbuffer
-      MsaaDepth: WebGLRenderbuffer
+      mutable MsaaFbo: WebGLFramebuffer
+      mutable MsaaColor: WebGLRenderbuffer
+      mutable MsaaDepth: WebGLRenderbuffer
       MsaaSamples: int
       mutable Msaa: bool
-      /// false, nachdem das Schutznetz die Kantenglaettung abgeschaltet hat.
       mutable MsaaAllowed: bool
+      mutable BloomLevels: int
+      BlackTex: WebGLTexture
+      mutable NeedsResize: bool
       BloomFboA: WebGLFramebuffer[]
       BloomTexA: WebGLTexture[]
       BloomFboB: WebGLFramebuffer[]
@@ -250,6 +264,7 @@ type Renderer =
       UShininess: WebGLUniformLocation
       USpecular: WebGLUniformLocation
       UMaterial: WebGLUniformLocation
+      USkySh: WebGLUniformLocation
       UHdr: WebGLUniformLocation
       // --- Sonnenschatten: eine orthografische Tiefenkarte um den Spieler ---
       UShadowMatrix: WebGLUniformLocation
@@ -262,7 +277,8 @@ type Renderer =
       /// Welt -> Clipraum der Sonne; dieselbe Matrix zeichnet und liest die Karte.
       ShadowMatrix: Mat4
       /// false, wenn die Tiefenkarte nicht angelegt werden konnte.
-      ShadowSupported: bool
+      mutable ShadowSupported: bool
+      mutable ShadowSize: int
       mutable ShadowsOn: bool
       Lights: Lights
       /// Scratch: Projektion * View des aktuellen Frames (auch vom HUD nutzbar).
@@ -280,6 +296,9 @@ type Renderer =
       mutable Height: int
       /// Verhaeltnis physische Pixel / CSS-Pixel des aktuellen Frames.
       mutable PixelRatio: float
+      mutable RenderScale: float
+      mutable DprLimit: float
+      MaxTargetSize: float
       /// Aktiver Blend-Zustand: 0 = Opaque, 1 = Additive (vermeidet redundante GL-Calls).
       mutable BlendState: int
       /// Aktive uViewProj-Matrix: 0 = Welt, 1 = kamerarelativ.
@@ -323,6 +342,7 @@ out vec3 vNormal;
 out vec4 vColor;
 out vec3 vLocalPos;
 flat out float vScale;
+flat out float vSurface;   // Materials: 0 Lack, 1 Metall, 2 Glas, 3 Gummi
 
 void main() {
     vec4 world = iModel * vec4(aPosition, 1.0);
@@ -337,7 +357,11 @@ void main() {
     vNormal = m * (aNormal / scaleSq);
     vScale = sqrt(scaleSq.x);
 
-    vColor = vec4(aColor.rgb * iColor.rgb, max(aColor.a, iColor.a));
+    // Negativer Emissive-Kanal = -(Oberflaechenklasse + Eigenleuchten), siehe Materials.encode.
+    float channel = aColor.a;
+    vSurface = channel < 0.0 ? floor(-channel) : 0.0;
+    float glow = channel < 0.0 ? -channel - vSurface : channel;
+    vColor = vec4(aColor.rgb * iColor.rgb, max(glow, iColor.a));
     gl_Position = uViewProj * world;
 }
 """
@@ -346,13 +370,15 @@ void main() {
         """#version 300 es
 precision highp float;
 
-#define MAX_POINT_LIGHTS 8
+#define MAX_POINT_LIGHTS 32
+#define PI 3.14159265
 
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec4 vColor;
 in vec3 vLocalPos;
 flat in float vScale;
+flat in float vSurface;
 
 uniform vec3 uCameraPos;
 uniform vec3 uSunDir;      // normalisiert, zeigt ZUR Sonne
@@ -364,6 +390,8 @@ uniform vec4 uPointColor[MAX_POINT_LIGHTS];    // rgb = Farbe * Intensitaet
 uniform float uShininess;
 uniform float uSpecular;
 uniform float uMaterial;
+uniform vec3 uSkySh[4];   // Himmelslicht (L1): Konstante, Anteile entlang x, y, z
+
 uniform bool uHdr;
 uniform mat4 uShadowMatrix;
 uniform highp sampler2DShadow uShadowMap;
@@ -404,6 +432,43 @@ float grain(vec3 p) {
                mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
                    mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
+// Himmelslicht aus der L1-Naeherung des Sektorhimmels (SkyLight): diffuse Irradianz ...
+vec3 skyIrradiance(vec3 n) {
+    return max(uSkySh[0] + uSkySh[1] * n.x + uSkySh[2] * n.y + uSkySh[3] * n.z, uSkySh[0] * 0.2);
+}
+// ... und gespiegelte Strahldichte: Der Verlauf ist dort 1,5-mal staerker als in der
+// Irradianz, raue Flaechen sehen nur den geglaetteten Verlauf.
+vec3 skyRadiance(vec3 r, float rough) {
+    vec3 grad = uSkySh[1] * r.x + uSkySh[2] * r.y + uSkySh[3] * r.z;
+    return max(uSkySh[0] + grad * mix(1.5, 1.0, rough), uSkySh[0] * 0.15);
+}
+// Umgebungs-BRDF (Karis' analytische Naeherung des Split-Sum-Integrals): Faktor und Versatz fuer F0.
+vec2 envBrdf(float rough, float NdotV) {
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = rough * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
+}
+// Ein Licht: GGX-Verteilung, hoehenkorrelierter Smith-Term, Schlick-Fresnel. `irradiance`
+// in Shader-Einheiten wie bisher (Lambert = Albedo * E * NdotL); was das Fresnel spiegelt,
+// fehlt dem Diffusanteil.
+void shade(vec3 L, vec3 irradiance, vec3 N, vec3 V, float NdotV, float a2, vec3 f0, inout vec3 diff, inout vec3 spec) {
+    float NdotL = dot(N, L);
+    if (NdotL <= 0.0) return;
+    vec3 H = normalize(L + V);
+    float NdotH = max(dot(N, H), 0.0);
+    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    float D = a2 / (PI * d * d);
+    float gv = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
+    float gl = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
+    // Im Streiflicht waechst der Term stark an; ebene Facetten brennen sonst ganz aus.
+    float vis = min(0.5 / max(gv + gl, 1e-5), 0.6);
+    vec3 F = f0 + (1.0 - f0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+    vec3 E = irradiance * NdotL;
+    diff += E * (1.0 - F);
+    spec += E * F * (PI * D * vis);
+}
 
 void main() {
     vec3 albedo = vColor.rgb;
@@ -417,7 +482,13 @@ void main() {
     vec3 faceN = N;
     vec3 V = normalize(uCameraPos - vWorldPos);
     float specScale = 1.0;
+    float plateVar = 0.5;   // Streuung der Rauheit je Platte (blankes Metall)
     bool ice = uMaterial > 1.5 && uMaterial < 2.5;
+    // Oberflaechenklasse aus dem Vertex; Gestein und Eis haben eigene Zweige.
+    float surface = uMaterial > 0.5 ? 0.0 : vSurface;
+    bool metal = surface > 0.5 && surface < 1.5;
+    bool glass = surface > 1.5 && surface < 2.5;
+    bool rubber = surface > 2.5;
 
     if (uMaterial > 0.5) {
         // Das Mesh hat Radius 1, das Muster wuechse also mit dem Brocken mit. Grosse
@@ -477,6 +548,7 @@ void main() {
         float microSeam = smoothstep(0.465, 0.495, microEdge) * detailFade * 0.45;
 
         float panelTone = mix(0.92, 1.08, hash31(cell));
+        plateVar = mix(0.5, hash31(cell + 13.0), detailFade);
         albedo *= mix(1.0, panelTone, 0.80 * detailFade);
         albedo *= 1.0 - seam * 0.24 - microSeam * 0.14;
         albedo += vec3(0.05, 0.07, 0.09) * edgeWear;
@@ -489,57 +561,79 @@ void main() {
         N = normalize(N + seamAxis * (edgeWear - seam * 0.65) * 0.16);
     }
 
-    vec3 diffuse = uAmbient * mix(vec3(0.55, 0.66, 0.86), vec3(1.15, 1.28, 1.45), N.y * 0.5 + 0.5);
-    vec3 specular = vec3(0.0);
-
-    // Directional Light (Sonne), Blinn-Phong
-    float sunNdotL = max(dot(N, uSunDir), 0.0);
-    float sunVis = (sunNdotL > 0.0 || dot(N, uSunDir) > -0.25) ? sunVisibility(faceN) : 0.0;
-    if (sunNdotL > 0.0) {
-        vec3 H = normalize(uSunDir + V);
-        vec3 sun = uSunColor * sunVis;
-        diffuse += sun * sunNdotL;
-        specular += sun * pow(max(dot(N, H), 0.0), uShininess);
+    // Physikalisch basierte Parameter: Der Blinn-Phong-Exponent des Batches wird zur
+    // GGX-Rauheit, Panellinien, Kantenabnutzung und Gestein (specScale) rauen auf oder
+    // glaetten. uSpecular 0,5 entspricht dem Lack-F0 von 0,04.
+    float rough = clamp(1.25 * sqrt(sqrt(2.0 / (uShininess + 2.0))) * inversesqrt(max(specScale, 0.25)), 0.08, 1.0);
+    // Metalliclack: Flocken toenen den Glanz leicht in die Lackfarbe.
+    vec3 specTint = (uMaterial <= 0.5) ? mix(vec3(1.0), albedo / max(max(albedo.r, albedo.g), max(albedo.b, 0.04)), 0.18) : vec3(1.0);
+    vec3 f0 = vec3(0.08 * uSpecular) * specTint;
+    float kd = 1.0;
+    if (metal) {
+        // Blankes Metall: Die Farbe ist die Reflexionsfarbe, kein Diffusanteil.
+        f0 = min(albedo * 1.1 + 0.04, vec3(0.92));
+        kd = 0.0;
+        // Gewalztes, nicht poliertes Metall mit Platten unterschiedlicher Abnutzung: Ein
+        // gleichmaessiger Glanz waere auf grossen ebenen Facetten nur ganz weiss oder schwarz.
+        rough = clamp(rough * mix(0.75, 1.35, plateVar), 0.3, 1.0);
+    } else if (glass) {
+        f0 = vec3(0.07);
+        rough = 0.07;
+    } else if (rubber) {
+        f0 = vec3(0.028);
+        rough = max(rough, 0.8);
     }
+    float a = rough * rough;
+    // Direkte Lichter nicht schaerfer als Rauheit 0,14 (Glas 0,2): Sonst flimmert der
+    // Glanzpunkt auf Facetten oder trifft nur bei exakt passendem Winkel.
+    float aDirect = max(rough, glass ? 0.2 : 0.14);
+    aDirect *= aDirect;
+    float NdotV = max(dot(N, V), 1e-3);
+
+    vec3 diff = vec3(0.0);
+    vec3 spec = vec3(0.0);
+    float sunVis = dot(N, uSunDir) > -0.25 ? sunVisibility(faceN) : 0.0;
+    shade(uSunDir, uSunColor * sunVis, N, V, NdotV, aDirect * aDirect, f0, diff, spec);
 
     // Point Lights mit weichem, endlichem Abfall
     for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
         if (i >= uPointCount) break;
         vec3 toLight = uPointPosRange[i].xyz - vWorldPos;
-        float dist = length(toLight);
         float range = uPointPosRange[i].w;
-        if (dist < range) {
-            vec3 L = toLight / max(dist, 1e-4);
+        float d2 = dot(toLight, toLight);
+        if (d2 < range * range) {
+            float dist = sqrt(d2);
             float falloff = 1.0 - dist / range;
-            falloff *= falloff;
-            float ndotl = max(dot(N, L), 0.0);
-            if (ndotl > 0.0) {
-                vec3 H = normalize(L + V);
-                vec3 radiance = uPointColor[i].rgb * falloff;
-                diffuse += radiance * ndotl;
-                specular += radiance * pow(max(dot(N, H), 0.0), uShininess);
-            }
+            shade(toLight / max(dist, 1e-4), uPointColor[i].rgb * (falloff * falloff), N, V, NdotV, aDirect * aDirect, f0, diff, spec);
         }
     }
 
-    // Cool reflected nebula light separates the unlit silhouettes from space, tinted gently by the sector ambient.
-    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-    float fresnel = 0.12 + 0.88 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    // Himmelslicht: diffus aus der Irradianz, Glanz als Spiegelung des Himmelsverlaufs.
+    // Die Hemisphaeren-Verdunkelung nach unten bleibt als grobe Umgebungsverdeckung.
+    vec2 env = envBrdf(rough, NdotV);
+    vec3 envF = f0 * env.x + env.y;
     float hemiAo = (uMaterial <= 0.5) ? mix(0.68, 1.0, N.y * 0.5 + 0.5) : mix(0.84, 1.06, N.y * 0.5 + 0.5);
-    vec3 fillColor = mix(vec3(0.08, 0.20, 0.27), uAmbient * 0.95 + vec3(0.02, 0.05, 0.07), 0.45);
-    vec3 fillLight = fillColor * max(dot(N, normalize(vec3(-0.8, 0.3, -0.4))), 0.0);
-    vec3 specTint = (uMaterial <= 0.5) ? mix(vec3(1.0), albedo, 0.32) : vec3(1.0);
-    vec3 lit = albedo * (diffuse + fillLight) * hemiAo + specular * specTint * uSpecular * specScale * (0.5 + fresnel);
-    if (ice) lit += albedo * vec3(0.05, 0.14, 0.20) * (0.40 + 0.60 * rim);
+    vec3 ambient = skyIrradiance(N) * hemiAo * (1.0 - envF);
+    // Glas sieht zusaetzlich Sterne und Nebeldetail, die der glatte Verlauf nicht enthaelt.
+    vec3 reflection = skyRadiance(reflect(-V, N), rough) * envF * (glass ? 1.8 : mix(hemiAo, 1.0, 0.5));
+    vec3 base = albedo * kd * (diff + ambient);
+    vec3 gloss = (spec + reflection) * clamp(specScale, 0.3, 1.0);
+
+    // Cool reflected nebula light separates the unlit silhouettes from space, tinted gently by the sector ambient.
+    float rim = pow(1.0 - NdotV, 3.0);
+    vec3 rims = vec3(0.0);
+    if (ice) rims += albedo * vec3(0.05, 0.14, 0.20) * (0.40 + 0.60 * rim);
     vec3 rimTint = mix(vec3(0.055, 0.15, 0.21), uAmbient * 0.80 + vec3(0.02, 0.04, 0.06), 0.45);
-    lit += rimTint * rim * (uMaterial > 0.5 ? 0.22 : 0.62);
+    rims += rimTint * rim * (uMaterial > 0.5 ? 0.22 : 0.40);
     // Sonnenseitiger Streiflicht-Saum fuer klare Silhouetten gegen den Weltraum.
     float sunRim = rim * smoothstep(-0.22, 0.72, dot(N, uSunDir)) * sunVis;
-    lit += uSunColor * sunRim * (uMaterial > 0.5 ? 0.14 : 0.30);
+    rims += uSunColor * sunRim * (uMaterial > 0.5 ? 0.14 : 0.20);
 
     // Emissive blendet von "beleuchtet" zu "selbstleuchtend" und pusht Leuchtteile leicht ueber 1.0 fuer sattere Highlights.
+    // Glas spiegelt vor dem Kabinenlicht: Seine Spiegelung liegt ueber dem Leuchten.
     vec3 emissiveGlow = albedo * (1.0 + vColor.a * 0.45);
-    vec3 color = mix(lit, emissiveGlow, vColor.a);
+    vec3 color = glass ? mix(base + rims, emissiveGlow, vColor.a) + gloss
+                       : mix(base + gloss + rims, emissiveGlow, vColor.a);
 
     // Kosmischer Distanznebel laesst weit entfernte Asteroiden und Stationen weich in die dunkle Sektorfarbe abtauchen.
     float camDist = length(uCameraPos - vWorldPos);
@@ -687,6 +781,9 @@ void main() {
 
 [<RequireQualifiedAccess>]
 module Lights =
+    /// Aktive Punktlichter pro Frame, solange niemand setBudget aufruft (Stufe "Hoch").
+    [<Literal>]
+    let DefaultBudget = 16
 
     let create () : Lights =
         let f32 (n: int) = JS.Constructors.Float32Array.Create n
@@ -700,9 +797,16 @@ module Lights =
         { SunDirection = sunDir
           SunColor = sunColor
           Ambient = f32 3
+          SkySh = f32 12
           PointPosRange = f32 (Layout.MaxPointLights * 4)
           PointColor = f32 (Layout.MaxPointLights * 4)
-          PointCount = 0 }
+          PointCount = 0
+          CandidatePosRange = f32 (LightSelection.Capacity * LightSelection.Stride)
+          CandidateColor = f32 (LightSelection.Capacity * LightSelection.Stride)
+          CandidateCount = 0
+          Budget = DefaultBudget
+          Scores = Array.zeroCreate LightSelection.Capacity
+          Order = Array.zeroCreate LightSelection.Capacity }
 
     /// Richtung ZUR Sonne (wird normalisiert) und ihre Farbe/Intensitaet.
     let setSun (l: Lights) (dx: float) (dy: float) (dz: float) (r: float) (g: float) (b: float) =
@@ -715,15 +819,45 @@ module Lights =
         l.SunColor.[1] <- float32 g
         l.SunColor.[2] <- float32 b
 
+    /// Himmelslicht als L1-Koeffizienten (12 Werte: Konstante, x, y, z je RGB), siehe SkyLight.
+    let setSky (l: Lights) (coefficients: float[]) =
+        for i in 0 .. 11 do
+            l.SkySh.[i] <- float32 coefficients.[i]
+
+    /// Flacher Sektorwert (Nebel, Saum). Setzt zugleich ein Standard-Himmelslicht wie vor
+    /// dem Himmelslicht: oben heller als unten, dazu ein kuehler Fuelllicht-Anteil von
+    /// links vorn. SkyLight.apply ersetzt es durch den Himmel des Sektors.
     let setAmbient (l: Lights) (r: float) (g: float) (b: float) =
         l.Ambient.[0] <- float32 r
         l.Ambient.[1] <- float32 g
         l.Ambient.[2] <- float32 b
+        let ambient = [| r; g; b |]
+        let low = [| 0.55; 0.66; 0.86 |]
+        let high = [| 1.15; 1.28; 1.45 |]
+        let cool = [| 0.08; 0.20; 0.27 |]
+        let lift = [| 0.02; 0.05; 0.07 |]
+        let dirLen = sqrt (0.8 * 0.8 + 0.3 * 0.3 + 0.4 * 0.4)
+        let dir = [| -0.8 / dirLen; 0.3 / dirLen; -0.4 / dirLen |]
+        for c in 0 .. 2 do
+            let fill = cool.[c] * 0.55 + (ambient.[c] * 0.95 + lift.[c]) * 0.45
+            // Ein geklemmter Kosinus hat die L1-Anteile 1/4 (konstant) und 1/2 (Richtung).
+            l.SkySh.[c] <- float32 (ambient.[c] * 0.5 * (low.[c] + high.[c]) + fill * 0.25)
+            l.SkySh.[3 + c] <- float32 (fill * 0.5 * dir.[0])
+            l.SkySh.[6 + c] <- float32 (ambient.[c] * 0.5 * (high.[c] - low.[c]) + fill * 0.5 * dir.[1])
+            l.SkySh.[9 + c] <- float32 (fill * 0.5 * dir.[2])
+
+    /// Hoechstzahl aktiver Punktlichter ab dem naechsten Frame (0 .. Layout.MaxPointLights).
+    let setBudget (l: Lights) (n: int) =
+        l.Budget <- System.Math.Max(0, System.Math.Min(Layout.MaxPointLights, n))
 
     /// Entfernt alle Point Lights (einmal pro Frame vor addPoint aufrufen).
-    let inline clearPoints (l: Lights) = l.PointCount <- 0
+    let inline clearPoints (l: Lights) =
+        l.CandidateCount <- 0
+        l.PointCount <- 0
 
-    /// Fuegt ein Point Light hinzu. Ist das Limit erreicht, wird es ignoriert.
+    /// Meldet ein Point Light fuer diesen Frame. Welche Lichter der Shader bekommt,
+    /// entscheidet select nach Wichtigkeit; die Reihenfolge der Aufrufe spielt keine Rolle.
+    /// Sind alle Kandidatenplaetze belegt, ersetzt ein staerkeres Licht das schwaechste.
     let addPoint
         (l: Lights)
         (x: float)
@@ -735,17 +869,49 @@ module Lights =
         (b: float)
         (intensity: float)
         =
-        if l.PointCount < Layout.MaxPointLights then
-            let o = l.PointCount * 4
-            l.PointPosRange.[o] <- float32 x
-            l.PointPosRange.[o + 1] <- float32 y
-            l.PointPosRange.[o + 2] <- float32 z
-            l.PointPosRange.[o + 3] <- float32 range
-            l.PointColor.[o] <- float32 (r * intensity)
-            l.PointColor.[o + 1] <- float32 (g * intensity)
-            l.PointColor.[o + 2] <- float32 (b * intensity)
-            l.PointColor.[o + 3] <- 0.0f
-            l.PointCount <- l.PointCount + 1
+        if range > 0.0 && intensity > 0.0 then
+            let mutable slot = -1
+
+            if l.CandidateCount < LightSelection.Capacity then
+                slot <- l.CandidateCount
+                l.CandidateCount <- l.CandidateCount + 1
+            else
+                let mutable weakest = LightSelection.power r g b * intensity * range
+
+                for i in 0 .. LightSelection.Capacity - 1 do
+                    let o = i * LightSelection.Stride
+                    let s =
+                        LightSelection.power (float l.CandidateColor.[o]) (float l.CandidateColor.[o + 1]) (float l.CandidateColor.[o + 2])
+                        * float l.CandidatePosRange.[o + 3]
+                    if s < weakest then
+                        weakest <- s
+                        slot <- i
+
+            if slot >= 0 then
+                let o = slot * LightSelection.Stride
+                l.CandidatePosRange.[o] <- float32 x
+                l.CandidatePosRange.[o + 1] <- float32 y
+                l.CandidatePosRange.[o + 2] <- float32 z
+                l.CandidatePosRange.[o + 3] <- float32 range
+                l.CandidateColor.[o] <- float32 (r * intensity)
+                l.CandidateColor.[o + 1] <- float32 (g * intensity)
+                l.CandidateColor.[o + 2] <- float32 (b * intensity)
+                l.CandidateColor.[o + 3] <- 0.0f
+
+    /// Uebernimmt die nach LightSelection wichtigsten Kandidaten (hoechstens Budget) in die
+    /// Shader-Puffer. Laeuft in beginFrame mit der Kameraposition.
+    let select (l: Lights) (cx: float) (cy: float) (cz: float) =
+        let n = LightSelection.selectInto l.CandidatePosRange l.CandidateColor l.CandidateCount cx cy cz l.Budget l.Scores l.Order
+
+        for k in 0 .. n - 1 do
+            let src = l.Order.[k] * LightSelection.Stride
+            let dst = k * 4
+
+            for c in 0 .. 3 do
+                l.PointPosRange.[dst + c] <- l.CandidatePosRange.[src + c]
+                l.PointColor.[dst + c] <- l.CandidateColor.[src + c]
+
+        l.PointCount <- n
 
 // -------------------------------------------------------------------------------------
 //  Instanz-Batches
@@ -892,8 +1058,11 @@ module Renderer =
         gl.allocDepth24 (1, 1)
         gl.bindFramebuffer (gl.FRAMEBUFFER, sceneFbo)
         gl.framebufferRenderbuffer (gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, sceneDepth)
-        let bloomA = Array.init Layout.BloomLevels (fun _ -> createColorTarget gl)
-        let bloomB = Array.init Layout.BloomLevels (fun _ -> createColorTarget gl)
+        let bloomA = Array.init Layout.MaxBloomLevels (fun _ -> createColorTarget gl)
+        let bloomB = Array.init Layout.MaxBloomLevels (fun _ -> createColorTarget gl)
+        // Nicht aktive Composite-Eingänge lesen transparentes Schwarz (WebGL null-init).
+        let blackFbo, blackTex = createColorTarget gl
+        gl.deleteFramebuffer blackFbo
         // Multisample-Ziel: Speicher folgt in resizePostProcess.
         let msaaFbo = gl.createFramebuffer ()
         let msaaColor = gl.createRenderbuffer ()
@@ -916,6 +1085,9 @@ module Renderer =
           MsaaSamples = samples
           Msaa = false
           MsaaAllowed = true
+          BloomLevels = Layout.MaxBloomLevels
+          BlackTex = blackTex
+          NeedsResize = true
           BloomFboA = bloomA |> Array.map fst
           BloomTexA = bloomA |> Array.map snd
           BloomFboB = bloomB |> Array.map fst
@@ -928,7 +1100,7 @@ module Renderer =
           UBlurDir = gl.getUniformLocation (blurProg, "uDir")
           CompositeProg = compProg
           UCompScene = gl.getUniformLocation (compProg, "uScene")
-          UCompBloom = Array.init Layout.BloomLevels (fun i -> gl.getUniformLocation (compProg, "uBloom" + string i))
+          UCompBloom = Array.init Layout.MaxBloomLevels (fun i -> gl.getUniformLocation (compProg, "uBloom" + string i))
           UCompBoost = gl.getUniformLocation (compProg, "uBoost")
           UCompHit = gl.getUniformLocation (compProg, "uHitFlash")
           UCompHdr = gl.getUniformLocation (compProg, "uHdr")
@@ -936,12 +1108,12 @@ module Renderer =
           Hdr = false
           BoostEffect = 0.0
           HitEffect = 0.0
-          BloomW = Array.create Layout.BloomLevels 1
-          BloomH = Array.create Layout.BloomLevels 1
+          BloomW = Array.create Layout.MaxBloomLevels 1
+          BloomH = Array.create Layout.MaxBloomLevels 1
           Ready = false }
 
     let private resizePostProcess (gl: WebGL2RenderingContext) (post: PostProcess) (width: int) (height: int) =
-        for level in 0 .. Layout.BloomLevels - 1 do
+        for level in 0 .. post.BloomLevels - 1 do
             post.BloomW.[level] <- max 1 (width / (4 <<< level))
             post.BloomH.[level] <- max 1 (height / (4 <<< level))
         gl.bindRenderbuffer (gl.RENDERBUFFER, post.SceneDepth)
@@ -955,7 +1127,7 @@ module Renderer =
             gl.getError () = gl.NO_ERROR && gl.checkFramebufferStatus gl.FRAMEBUFFER = gl.FRAMEBUFFER_COMPLETE
         let allocateTargets hdr =
             let mutable ok = allocate hdr post.SceneTex post.SceneFbo width height
-            for level in 0 .. Layout.BloomLevels - 1 do
+            for level in 0 .. post.BloomLevels - 1 do
                 ok <- ok
                       && allocate hdr post.BloomTexA.[level] post.BloomFboA.[level] post.BloomW.[level] post.BloomH.[level]
                       && allocate hdr post.BloomTexB.[level] post.BloomFboB.[level] post.BloomW.[level] post.BloomH.[level]
@@ -1019,7 +1191,8 @@ module Renderer =
         gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
         gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
         gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-        gl.allocShadowTexture Layout.ShadowSize
+        let initial = GraphicsQuality.preset GraphicsQuality.High
+        gl.allocShadowTexture initial.ShadowSize
         let shadowFbo = gl.createFramebuffer ()
         gl.bindFramebuffer (gl.FRAMEBUFFER, shadowFbo)
         gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0.0)
@@ -1051,6 +1224,7 @@ module Renderer =
           UShininess = uniform "uShininess"
           USpecular = uniform "uSpecular"
           UMaterial = uniform "uMaterial"
+          USkySh = uniform "uSkySh[0]"
           UHdr = uniform "uHdr"
           UShadowMatrix = uniform "uShadowMatrix"
           UShadowStrength = uniform "uShadowStrength"
@@ -1061,6 +1235,7 @@ module Renderer =
           ShadowTex = shadowTex
           ShadowMatrix = Mat4.create ()
           ShadowSupported = shadowSupported
+          ShadowSize = initial.ShadowSize
           ShadowsOn = shadowSupported
           Lights = Lights.create ()
           ViewProj = Mat4.create ()
@@ -1071,6 +1246,9 @@ module Renderer =
           Width = 0
           Height = 0
           PixelRatio = 1.0
+          RenderScale = initial.RenderScale
+          DprLimit = initial.DprLimit
+          MaxTargetSize = min (unbox<float> (gl.getParameter gl.MAX_TEXTURE_SIZE)) (unbox<float> (gl.getParameter gl.MAX_RENDERBUFFER_SIZE))
           BlendState = 0
           ViewProjState = 0
           DrawCalls = 0
@@ -1166,24 +1344,27 @@ module Renderer =
           Specular = 0.5
           Material = 0.0 }
 
-    /// Gleicht den Drawing Buffer an die CSS-Groesse des Canvas an (inkl.
-    /// devicePixelRatio, gedeckelt auf 2 gegen unnoetige Fuellrate auf 4K-Displays).
+    /// Gleicht den Drawing Buffer an CSS-Groesse, Gerät und aktuelle Renderskala an.
     /// Liefert true, wenn sich die Groesse geaendert hat. Pro Frame aufrufbar.
     let resize (renderer: Renderer) : bool =
-        let ratio = System.Math.Min(System.Math.Max(window.devicePixelRatio, 1.0), 2.0)
-        let width = int (System.Math.Max(1.0, floor (renderer.Canvas.clientWidth * ratio)))
-        let height = int (System.Math.Max(1.0, floor (renderer.Canvas.clientHeight * ratio)))
+        let cssWidth = renderer.Canvas.clientWidth
+        let cssHeight = renderer.Canvas.clientHeight
+        let targetRatio = min (max 1.0 window.devicePixelRatio) renderer.DprLimit * renderer.RenderScale
+        let ratio = min targetRatio (renderer.MaxTargetSize / max 1.0 (max cssWidth cssHeight))
+        let width = max 1 (int (cssWidth * ratio))
+        let height = max 1 (int (cssHeight * ratio))
         renderer.PixelRatio <- ratio
 
-        if width <> renderer.Width || height <> renderer.Height then
+        let resized = width <> renderer.Width || height <> renderer.Height
+        if resized then
             renderer.Canvas.width <- float width
             renderer.Canvas.height <- float height
             renderer.Width <- width
             renderer.Height <- height
+        if resized || renderer.Post.NeedsResize then
             resizePostProcess renderer.Gl renderer.Post width height
-            true
-        else
-            false
+            renderer.Post.NeedsResize <- false
+        resized
 
     /// Seitenverhaeltnis des Drawing Buffers.
     let inline aspect (renderer: Renderer) =
@@ -1237,6 +1418,9 @@ module Renderer =
         gl.uniform3fv (renderer.USunDir, lights.SunDirection)
         gl.uniform3fv (renderer.USunColor, lights.SunColor)
         gl.uniform3fv (renderer.UAmbient, lights.Ambient)
+        gl.uniform3fv (renderer.USkySh, lights.SkySh)
+        // Die wichtigsten gemeldeten Punktlichter aus Sicht dieser Kamera.
+        Lights.select lights cameraPosition.X cameraPosition.Y cameraPosition.Z
         gl.uniform1i (renderer.UPointCount, float lights.PointCount)
         gl.uniform4fv (renderer.UPointPosRange, lights.PointPosRange)
         gl.uniform4fv (renderer.UPointColor, lights.PointColor)
@@ -1336,7 +1520,7 @@ module Renderer =
         let uz = lx * ry - ly * rx
         let depth = Layout.ShadowDepth
         // Mittelpunkt auf das Texelraster legen, sonst flimmern die Schattenkanten im Flug.
-        let texel = 2.0 * radius / float Layout.ShadowSize
+        let texel = 2.0 * radius / float renderer.ShadowSize
         let snap (v: float) = floor (v / texel) * texel
         let cr = snap (rx * center.X + ry * center.Y + rz * center.Z)
         let cu = snap (ux * center.X + uy * center.Y + uz * center.Z)
@@ -1364,7 +1548,7 @@ module Renderer =
 
         if renderer.ShadowsOn then
             gl.bindFramebuffer (gl.FRAMEBUFFER, renderer.ShadowFbo)
-            gl.viewport (0.0, 0.0, float Layout.ShadowSize, float Layout.ShadowSize)
+            gl.viewport (0.0, 0.0, float renderer.ShadowSize, float renderer.ShadowSize)
             gl.disable gl.BLEND
             gl.depthMask true
             renderer.BlendState <- 0
@@ -1402,10 +1586,65 @@ module Renderer =
         gl.bindTexture (gl.TEXTURE_2D, renderer.ShadowTex)
         gl.activeTexture gl.TEXTURE0
 
-    /// Schaltet die Sonnenschatten um; liefert den neuen Zustand.
+    let private setShadows (renderer: Renderer) enabled size =
+        if renderer.ShadowsOn <> enabled || renderer.ShadowSize <> size then
+            let gl = renderer.Gl
+            gl.activeTexture (gl.TEXTURE0 + float Layout.ShadowUnit)
+            gl.bindTexture (gl.TEXTURE_2D, renderer.ShadowTex)
+            gl.bindFramebuffer (gl.FRAMEBUFFER, renderer.ShadowFbo)
+            // texImage2D ersetzt den alten Speicher. Auch ohne Schatten braucht
+            // sampler2DShadow eine vollständige Tiefentextur.
+            gl.allocShadowTexture (if enabled then size else 1)
+            let ready = gl.getError () = gl.NO_ERROR && gl.checkFramebufferStatus gl.FRAMEBUFFER = gl.FRAMEBUFFER_COMPLETE
+            renderer.ShadowSupported <- ready
+            renderer.ShadowsOn <- enabled && ready
+            renderer.ShadowSize <- size
+            if not ready then gl.allocShadowTexture 1
+            gl.bindFramebuffer (gl.FRAMEBUFFER, unbox null)
+            gl.activeTexture gl.TEXTURE0
+
     let toggleShadows (renderer: Renderer) : bool =
-        renderer.ShadowsOn <- renderer.ShadowSupported && not renderer.ShadowsOn
+        setShadows renderer (not renderer.ShadowsOn) renderer.ShadowSize
         renderer.ShadowsOn
+
+    let applyQuality (renderer: Renderer) (preset: GraphicsQuality.Preset) scale =
+        let gl = renderer.Gl
+        let post = renderer.Post
+        renderer.RenderScale <- max 0.5 (min scale preset.RenderScale)
+        renderer.DprLimit <- preset.DprLimit
+        setShadows renderer preset.Shadows (min preset.ShadowSize (int renderer.MaxTargetSize))
+        if preset.Msaa <> post.MsaaAllowed then
+            post.MsaaAllowed <- preset.Msaa
+            if preset.Msaa then
+                post.MsaaFbo <- gl.createFramebuffer ()
+                post.MsaaColor <- gl.createRenderbuffer ()
+                post.MsaaDepth <- gl.createRenderbuffer ()
+            else
+                gl.deleteFramebuffer post.MsaaFbo
+                gl.deleteRenderbuffer post.MsaaColor
+                gl.deleteRenderbuffer post.MsaaDepth
+                post.MsaaFbo <- unbox null
+                post.MsaaColor <- unbox null
+                post.MsaaDepth <- unbox null
+                post.Msaa <- false
+            post.NeedsResize <- true
+        if preset.BloomLevels <> post.BloomLevels then
+            let setLevels (fbos: WebGLFramebuffer[]) (textures: WebGLTexture[]) =
+                for i in preset.BloomLevels .. post.BloomLevels - 1 do
+                    gl.deleteFramebuffer fbos.[i]
+                    gl.deleteTexture textures.[i]
+                    fbos.[i] <- unbox null
+                    textures.[i] <- unbox null
+                for i in post.BloomLevels .. preset.BloomLevels - 1 do
+                    let fbo, tex = createColorTarget gl
+                    fbos.[i] <- fbo
+                    textures.[i] <- tex
+            setLevels post.BloomFboA post.BloomTexA
+            setLevels post.BloomFboB post.BloomTexB
+            gl.bindFramebuffer (gl.FRAMEBUFFER, unbox null)
+            gl.bindTexture (gl.TEXTURE_2D, unbox null)
+            post.BloomLevels <- preset.BloomLevels
+            post.NeedsResize <- true
 
     /// Schliesst den Frame ab: MSAA aufloesen, Bright-Pass, dreistufige Bloom-Kette
     /// und Composite-Pass auf den Default-Framebuffer.
@@ -1435,7 +1674,7 @@ module Renderer =
             //    zweiten Stufe die fertige groessere Stufe und halbiert sie dabei.
             gl.useProgram post.BlurProg
             gl.uniform1i (post.UBlurTex, 0.0)
-            for level in 0 .. Layout.BloomLevels - 1 do
+            for level in 0 .. post.BloomLevels - 1 do
                 let dx = 1.0 / float post.BloomW.[level]
                 let dy = 1.0 / float post.BloomH.[level]
                 gl.viewport (0.0, 0.0, float post.BloomW.[level], float post.BloomH.[level])
@@ -1458,16 +1697,16 @@ module Renderer =
             gl.useProgram post.CompositeProg
             gl.bindTexture (gl.TEXTURE_2D, post.SceneTex)
             gl.uniform1i (post.UCompScene, 0.0)
-            for level in 0 .. Layout.BloomLevels - 1 do
+            for level in 0 .. Layout.MaxBloomLevels - 1 do
                 gl.activeTexture (gl.TEXTURE1 + float level)
-                gl.bindTexture (gl.TEXTURE_2D, post.BloomTexA.[level])
+                gl.bindTexture (gl.TEXTURE_2D, (if level < post.BloomLevels then post.BloomTexA.[level] else post.BlackTex))
                 gl.uniform1i (post.UCompBloom.[level], float (1 + level))
             gl.uniform1i (post.UCompHdr, if post.Hdr then 1.0 else 0.0)
             gl.uniform1f (post.UCompBoost, post.BoostEffect)
             gl.uniform1f (post.UCompHit, post.HitEffect)
             gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
 
-            for level in 0 .. Layout.BloomLevels - 1 do
+            for level in 0 .. Layout.MaxBloomLevels - 1 do
                 gl.activeTexture (gl.TEXTURE1 + float level)
                 gl.bindTexture (gl.TEXTURE_2D, unbox null)
             gl.activeTexture gl.TEXTURE0
@@ -1478,13 +1717,7 @@ module Renderer =
             gl.depthMask true
             gl.useProgram renderer.Program
             renderer.BlendState <- 0
-            renderer.DrawCalls <- renderer.DrawCalls + 4 + 2 * Layout.BloomLevels
-
-    /// Schaltet die Kantenglaettung fuer diese Sitzung ab (Schutznetz fuer Grafiktreiber,
-    /// auf denen das Multisample-Ziel die Bildrate einbrechen laesst).
-    let disableMsaa (renderer: Renderer) =
-        renderer.Post.MsaaAllowed <- false
-        renderer.Post.Msaa <- false
+            renderer.DrawCalls <- renderer.DrawCalls + 4 + 2 * post.BloomLevels
 
     /// Setzt dynamische Post-Processing-Effekte (Boost-Aberration + Treffer-Randimpuls).
     let setEffects (renderer: Renderer) (boost: float) (hitFlash: float) =

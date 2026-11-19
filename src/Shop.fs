@@ -20,9 +20,13 @@ type ShopUi =
       Owned: HTMLElement[]
       SellAll: HTMLButtonElement
       Expand: HTMLButtonElement
+      RepairCredits: HTMLButtonElement
+      RepairScrap: HTMLButtonElement
+      RepairStatus: HTMLElement
       Next: HTMLButtonElement
       mutable Purchase: int
       mutable TradeAction: int
+      mutable RepairAction: int
       mutable TravelAction: int
       mutable Depart: bool
       mutable Advance: bool
@@ -62,9 +66,13 @@ module Shop =
               Owned = Array.init 6 (fun i -> element ("owned-" + string i))
               SellAll = unbox<HTMLButtonElement> (element "sell-all")
               Expand = unbox<HTMLButtonElement> (element "cargo-upgrade")
+              RepairCredits = unbox<HTMLButtonElement> (element "repair-credits")
+              RepairScrap = unbox<HTMLButtonElement> (element "repair-scrap")
+              RepairStatus = element "repair-status"
               Next = unbox<HTMLButtonElement> (element "next-sector")
               Purchase = -1
               TradeAction = -1
+              RepairAction = -1
               TravelAction = -1
               Depart = false
               Advance = false
@@ -78,6 +86,8 @@ module Shop =
             ui.SellButtons.[i].addEventListener ("click", fun _ -> ui.TradeAction <- i + 6)
         ui.SellAll.addEventListener ("click", fun _ -> ui.TradeAction <- 12)
         ui.Expand.addEventListener ("click", fun _ -> ui.TradeAction <- 13)
+        ui.RepairCredits.addEventListener ("click", fun _ -> ui.RepairAction <- 1)
+        ui.RepairScrap.addEventListener ("click", fun _ -> ui.RepairAction <- 2)
         let tabs = [| "market"; "equipment"; "routes"; "skills"; "blockade"; "ships" |]
         let selectTab selected =
             for name in tabs do
@@ -137,6 +147,7 @@ module Shop =
     let show (ui: ShopUi) (outpost: Outpost) =
         ui.Purchase <- -1
         ui.TradeAction <- -1
+        ui.RepairAction <- -1
         ui.TravelAction <- -1
         ui.Shipyard.Request <- None
         ui.FreightDesk.Request <- None
@@ -261,5 +272,26 @@ module Shop =
                     depart true (if escortPort = target then "EIGENE ESKORTE · KOSTENLOS" else "MIT GELEITSCHUTZ · " + string fee + " CR")
                 depart false (if count = 0 then "SICHER REISEN · KOSTENLOS" else sprintf "EIGENFLUG · 0 CR · PIRATEN IN %d S" (int (TradeRoutes.patrolDelay terms)))
                 cards.appendChild card |> ignore
+
+    let refreshRepair (ui: ShopUi) terms (wallet: Wallet) (cargo: CargoHold) (ship: Ship) (outpost: Outpost) =
+        let missing = Economy.repairNeeded ship
+        let hullNow = int (System.Math.Floor ship.Hull)
+        let hullMax = int (System.Math.Round ship.MaxHull)
+        let cost = Economy.repairCostFor terms ship
+        let scrap = TradeSystem.quantityOf cargo CommodityId.TitaniumScrap
+        ui.RepairStatus.textContent <-
+            if missing <= 0 then sprintf "%d / %d Hülle · INTAKT" hullMax hullMax
+            else sprintf "%d / %d Hülle · −%d Schaden" hullNow hullMax missing
+        ui.RepairCredits.disabled <- not outpost.HasRepair || missing <= 0 || wallet.Credits < cost
+        ui.RepairCredits.textContent <-
+            if missing <= 0 then "HÜLLE INTAKT"
+            elif not outpost.HasRepair then "KEINE REPARATUR"
+            elif wallet.Credits < cost then sprintf "REPARIEREN · %d CR (%d CR FEHLEN)" cost (cost - wallet.Credits)
+            else sprintf "VOLL REPARIEREN · %d CR" cost
+        ui.RepairScrap.disabled <- not outpost.HasRepair || missing <= 0 || scrap < 1
+        ui.RepairScrap.textContent <-
+            if missing <= 0 then "KEIN SCHADEN"
+            elif scrap < 1 then "1 t TITANSCHROTT (+35) · 0 AN BORD"
+            else sprintf "1 t TITANSCHROTT (+35) · %d AN BORD" scrap
 
     let hide (ui: ShopUi) = ui.Root.setAttribute ("hidden", "")

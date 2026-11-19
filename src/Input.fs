@@ -3,9 +3,8 @@ namespace SpaceEngine
 // =====================================================================================
 //  Input.fs  -  nicht-blockierender Eingabezustand
 //
-//  Die Browser-Events schreiben nur in vorab angelegte Typed Arrays und Felder;
-//  die Spielschleife fragt den Zustand ab, wann immer sie will (Polling). Es gibt
-//  keine Event-Queue und damit keine Allokation pro Tastendruck oder Frame.
+//  Die Browser-Events merken gehaltene Tasten und aktualisieren die Aktionsarrays.
+//  Die Spielschleife liest diese Arrays ohne Event-Queue.
 //
 //  Tastatur:  W/S Pitch, A/D Yaw, Q/E Roll, Shift Boost, Leertaste Feuer,
 //             Pfeil hoch/runter (oder R/F) Schub, Pfeil rechts/links Voll-/Nullschub,
@@ -72,8 +71,9 @@ type GameAction =
     | ToggleOptics = 41
 
 type InputState =
-    { /// Pro Aktion: 1 = Taste wird gerade gehalten.
+    { /// Anzahl gehaltener physischer Tasten pro Aktion.
       Down: JS.Uint8Array
+      HeldCodes: System.Collections.Generic.HashSet<string>
       /// Pro Aktion: 1 = Taste wurde seit dem letzten endFrame neu gedrueckt.
       Pressed: JS.Uint8Array
       /// Virtueller Joystick der Maus, jeweils -1..1 (X rechts, Y unten).
@@ -220,6 +220,7 @@ module Input =
         | _ -> -1
 
     let reset (state: InputState) =
+        state.HeldCodes.Clear()
         for i in 0 .. ActionCount - 1 do
             state.Down.[i] <- 0uy
             state.Pressed.[i] <- 0uy
@@ -238,6 +239,7 @@ module Input =
     let attach (canvas: HTMLCanvasElement) : InputState =
         let state =
             { Down = JS.Constructors.Uint8Array.Create ActionCount
+              HeldCodes = System.Collections.Generic.HashSet<string>()
               Pressed = JS.Constructors.Uint8Array.Create ActionCount
               StickX = 0.0
               StickY = 0.0
@@ -268,11 +270,10 @@ module Input =
 
                 // Browser-Kuerzel (Strg+R, Alt+Tab ...) nicht abfangen
                 if action >= 0 && not (editing e) && not state.SaveDialogOpen && not (state.UiMode && key.code = "Tab") && not key.ctrlKey && not key.altKey && not key.metaKey then
-                    // Auto-Repeat des Betriebssystems erzeugt kein neues "Pressed"
-                    if state.Down.[action] = 0uy && not key.repeat then
-                        state.Pressed.[action] <- 1uy
-
-                    state.Down.[action] <- 1uy
+                    if state.HeldCodes.Add key.code then
+                        if state.Down.[action] = 0uy && not key.repeat then
+                            state.Pressed.[action] <- 1uy
+                        state.Down.[action] <- state.Down.[action] + 1uy
                     if action = int GameAction.Brake then
                         state.StickX <- 0.0
                         state.StickY <- 0.0
@@ -282,10 +283,10 @@ module Input =
         window.addEventListener (
             "keyup",
             fun (e: Event) ->
-                let action = actionOfCode (unbox<KeyboardEvent> e).code
-
-                if action >= 0 then
-                    state.Down.[action] <- 0uy
+                let code = (unbox<KeyboardEvent> e).code
+                if state.HeldCodes.Remove code then
+                    let action = actionOfCode code
+                    state.Down.[action] <- state.Down.[action] - 1uy
         )
 
         // Verliert das Fenster den Fokus, kaeme das keyup nie an - alles loslassen.
@@ -415,7 +416,8 @@ module Input =
         state.WheelThrottle <- 0.0
         amount
 
-    let inline private held (state: InputState) (action: GameAction) : float = float state.Down.[int action]
+    let inline private held (state: InputState) (action: GameAction) : float =
+        if isDown state action then 1.0 else 0.0
 
     let private clampUnit (v: float) : float =
         if v > 1.0 then 1.0

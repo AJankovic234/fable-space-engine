@@ -43,6 +43,7 @@ type Rng(seed: int) =
         Vec3(r * cos angle, r * sin angle, z)
 
 /// Vertexfarbe: RGB (linear) plus Emissive (0 = beleuchtet, 1 = selbstleuchtend).
+/// Ein negativer Emissive-Wert traegt die Oberflaechenklasse (Materials.encode).
 type MeshColor =
     { R: float
       G: float
@@ -51,6 +52,7 @@ type MeshColor =
 
 [<RequireQualifiedAccess>]
 module MeshColor =
+    /// Lack (Standard).
     let rgb (r: float) (g: float) (b: float) : MeshColor =
         { R = r; G = g; B = b; Emissive = 0.0 }
 
@@ -59,6 +61,21 @@ module MeshColor =
           G = g
           B = b
           Emissive = emissive }
+
+    /// Blankes Metall; die Farbe ist die Reflexionsfarbe (dunkel = Stahl, hell = Alu).
+    let metal (r: float) (g: float) (b: float) : MeshColor =
+        { R = r; G = g; B = b; Emissive = Materials.encode Materials.Metal 0.0 }
+
+    /// Glas oder Kanzel: dunkle Innenfarbe, `cabin` = Kabinenlicht (0 .. 0,95).
+    let glass (r: float) (g: float) (b: float) (cabin: float) : MeshColor =
+        { R = r; G = g; B = b; Emissive = Materials.encode Materials.Glass cabin }
+
+    /// Gummi und Dichtungen.
+    let rubber (r: float) (g: float) (b: float) : MeshColor =
+        { R = r; G = g; B = b; Emissive = Materials.encode Materials.Rubber 0.0 }
+
+    /// Oberflaechenklasse einer Farbe (Materials.Paint .. Rubber).
+    let surface (c: MeshColor) : int = Materials.surface c.Emissive
 
     let white = rgb 1.0 1.0 1.0
 

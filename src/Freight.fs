@@ -44,13 +44,21 @@ module Freight =
             Some 0
         | _ -> None
 
+    type private Directions = { DockHint: string; FlightHint: string; Gate: string option }
+
     let private directions =
         Universe.sectors |> Array.mapi (fun destination _ ->
-            Universe.sectors |> Array.mapi (fun origin _ ->
-                if origin = destination then "Auftragsfracht am Handelsmarkt abliefern."
-                else
-                    match TradeRoutes.nextHop origin destination with
-                    | Some next -> sprintf "Auftragsfracht · Am Dock „%s“ wählen." (portName next)
-                    | None -> "Auftragsfracht an Bord."))
+            Universe.sectors |> Array.mapi (fun origin sector ->
+                match TradeRoutes.nextHop origin destination with
+                | Some next ->
+                    let id = Universe.sectors.[next].Id
+                    let gate = sector.Gates |> Array.find (fun gate -> gate.TargetSectorId = id)
+                    { DockHint = sprintf "Auftragsfracht · Am Dock „%s“ wählen." (portName next)
+                      FlightHint = "Frachtkurs · " + gate.Label; Gate = Some id }
+                | None ->
+                    let hint = if origin = destination then "Auftragsfracht am Handelsmarkt abliefern." else "Auftragsfracht an Bord."
+                    { DockHint = hint; FlightHint = hint; Gate = None }))
 
-    let hint port (job: FreightContract) = directions.[job.Destination].[port]
+    let hint port (job: FreightContract) = directions.[job.Destination].[port].DockHint
+    let flightHint port (job: FreightContract) = directions.[job.Destination].[port].FlightHint
+    let nextGate port (job: FreightContract) = directions.[job.Destination].[port].Gate

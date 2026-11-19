@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameSave_capture as capture, GameSave_decode as decode, GameSave_restore as restore } from '../build/GameSave.js';
-import { WorldModule_create as createWorld, WorldModule_reset as resetWorld, ShipModule_reset as resetShip, LaserPoolModule_spawn as laser, Physics_step as step } from '../build/PhysicsAndPool.js';
+import { AsteroidFieldModule_clearDockingArea as clearDockingArea, WorldModule_create as createWorld, WorldModule_reset as resetWorld, ShipModule_reset as resetShip, LaserPoolModule_spawn as laser, Physics_step as step } from '../build/PhysicsAndPool.js';
 import { AI_createBrain as createBrain, AI_reset as resetBrain } from '../build/AI.js';
 import { EnemyProfiles_configure as configure } from '../build/EnemyProfiles.js';
 import { Mission_resetPlayer as resetPlayer, Mission_applyUpgrade as upgrade } from '../build/Mission.js';
@@ -64,6 +64,25 @@ test('legacy saves near the berth and inside overlapping Helios decks restore wi
     assert.equal(ship.Hull,source.w.Player.Hull);
     assert.equal(ship.Shield,source.w.Player.Shield);
   }
+});
+
+test('loading combat wave two clears the saved Helios approach and preserves rocks in the Kestrel corridor', () => {
+  const source = rig(), dest = rig();
+  const field = source.w.Asteroids;
+  field.Count = 2;
+  const points = sectors.slice(0, 2).map(({Outpost: {Position: p}}) => [p.X, p.Y, p.Z + 350]);
+  points.forEach((point, i) => {
+    field.Data.set(point, i * 16);
+    field.Data[i * 16 + 6] = 3;
+  });
+  const mission = {...run(), Trading: false, Wave: 2, Phase: 2, Spawned: 0, Patrol: []};
+  const data = read(snapshot(source, mission));
+  dest.w.SectorIndex = 0;
+  restore(data, dest.w, dest.brains, dest.wallet, dest.cargo, dest.markets, dest.levels, dest.turret, dest.pickups);
+  assert.equal(dest.w.SectorIndex, 1);
+  clearDockingArea(dest.w.SectorIndex, false, dest.w.Asteroids);
+  assert.equal(dest.w.Asteroids.Count, 1);
+  assert.deepEqual(Array.from(dest.w.Asteroids.Data.subarray(0, 3)), points[0]);
 });
 
 test('save roundtrip preserves the economy, damaged upgraded ships, combat, depleted ore, loose cargo and RNG',()=>{

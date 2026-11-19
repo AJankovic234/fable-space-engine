@@ -47,3 +47,35 @@ module Economy =
         else false
 
     let buy wallet ship levels item = buyFor TradeTerms.standard wallet ship levels item
+
+    [<Literal>]
+    let ScrapRepairAmount = 35.0
+
+    let repairNeeded (ship: Ship) =
+        max 0 (int (System.Math.Ceiling(max 0.0 (ship.MaxHull - ship.Hull))))
+
+    let repairCostFor terms (ship: Ship) =
+        let missing = repairNeeded ship
+        if missing <= 0 then 0
+        else max 1 (TradeTerms.servicePrice terms (missing * 2))
+
+    let repairWithCredits terms (wallet: Wallet) (ship: Ship) =
+        let cost = repairCostFor terms ship
+        if cost > 0 && wallet.Credits >= cost then
+            wallet.Credits <- wallet.Credits - cost
+            ship.Hull <- ship.MaxHull
+            ship.Shield <- ship.MaxShield
+            ship.ShieldDelay <- 0.0
+            true
+        else false
+
+    let repairWithScrap (cargo: CargoHold) (ship: Ship) =
+        let i = int CommodityId.TitaniumScrap
+        if repairNeeded ship > 0 && cargo.Quantities.[i] >= 1 then
+            cargo.Quantities.[i] <- cargo.Quantities.[i] - 1
+            if cargo.Quantities.[i] = 0 then cargo.AvgCost.[i] <- 0.0
+            ship.Hull <- min ship.MaxHull (ship.Hull + ScrapRepairAmount)
+            ship.Shield <- ship.MaxShield
+            ship.ShieldDelay <- 0.0
+            true
+        else false

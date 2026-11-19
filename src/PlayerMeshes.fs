@@ -28,14 +28,16 @@ module PlayerMeshes =
     let private panel = ProceduralMeshes.armorPanel
 
     let private seam = MeshColor.rgb 0.050 0.066 0.080
-    let private rubber = MeshColor.rgb 0.024 0.032 0.038
-    let private iron = MeshColor.rgb 0.11 0.14 0.16
-    let private steel = MeshColor.rgb 0.27 0.32 0.35
-    let private alloy = MeshColor.rgb 0.46 0.52 0.55
+    // Materialklassen: Fender und Dichtungen Gummi, Träger, Läufe und Düsen blankes Metall,
+    // Kanzeln Glas mit Kabinenlicht. Lackierte Platten bleiben Lack.
+    let private rubber = MeshColor.rubber 0.024 0.032 0.038
+    let private iron = MeshColor.metal 0.11 0.14 0.16
+    let private steel = MeshColor.metal 0.27 0.32 0.35
+    let private alloy = MeshColor.metal 0.46 0.52 0.55
     /// Angelaufener Düsenstahl.
-    let private scorch = MeshColor.rgb 0.34 0.24 0.18
+    let private scorch = MeshColor.metal 0.34 0.24 0.18
     let private hazard = MeshColor.rgb 0.96 0.70 0.07
-    let private glass = MeshColor.glow 0.03 0.21 0.29 0.22
+    let private glass = MeshColor.glass 0.03 0.21 0.29 0.22
     let private portRed = MeshColor.glow 1.0 0.10 0.04 0.95
     let private starGreen = MeshColor.glow 0.08 0.95 0.40 0.90
     let private white = MeshColor.glow 0.95 0.97 1.0 0.95

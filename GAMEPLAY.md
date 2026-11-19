@@ -59,6 +59,8 @@ Im Auftragsfenster von Helios wählst du den Einsatz. Im Bomber hältst du den K
 
 ## Darstellung im Handelsflug
 
+Triebwerke ziehen eine feine, schnell verblassende Spur, die mit dem Schub heller wird; beim Boost ist sie deutlich länger. Beim Bremsen feuern die Bremsdüsen am Bug, in harten Kurven puffen die Steuerdüsen. In Asteroidenfeldern treibt feiner, sonnenbeschienener Staub um das Schiff und zieht bei Fahrt Striche. Lack, blankes Metall, Glas und Gummi glänzen unterschiedlich, Kanzeln spiegeln den Himmel. Das Licht auf den Rümpfen nimmt den Farbton des Sektorhimmels an: Helios wirkt warm, Relais Theta violett, Drift-9 türkis.
+
 Auch das Gestein wechselt mit dem Sektor. Kestrel hat staubige Schichtfelsen, Helios dunkle Schlacke mit rostroten Nähten und Drift-9 grünliches Gestein mit zwei gerundeten Lappen. Bei Kepler brechen blauweiße Eisblöcke entlang flacher Ebenen. Theta hat violettgraue Rippen und Morgenlicht metallische, eingedellte Meteoriten. Diese Merkmale gehören zur Geologie des gesamten Felds. Ob ein einzelner Brocken abbaubares Erz enthält, erfährst du beim Treffer.
 
 Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Am Äther-Relais sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis.
@@ -122,9 +124,24 @@ Create a single illustrated equipment catalog strip for an industrial space trad
 
 ## Im Gefecht
 
-Das gewählte Ziel trägt einen goldenen Rahmen. Links unten zeigt die Zielanzeige Rolle, Entfernung, Annäherung, Schild, Hülle und Zustand. Lädt ein schwerer Gegner eine Salve, erscheint dort **„LÄDT AUF“** mit Fortschrittsbalken, und seine Rohre glühen auf. Schwere Salven zielen auf den Kurs, den du beim Aufglühen fliegst: Wechsle danach die Richtung. Im Kampf schrumpfen Stations- und Tormarker zu kleinen Symbolen. Im Gravidar steht ein Quadrat für die Station, eine Raute für ein Tor, ein roter Punkt für einen Gegner und ein goldener Ring für das gewählte Ziel; die Linie zum Fußpunkt zeigt die Höhe relativ zu deinem Schiff.
+Das gewählte Ziel trägt einen goldenen Rahmen. Links unten zeigt die Zielanzeige Rolle, Entfernung, Annäherung, Schild, Hülle und Zustand. Lädt ein schwerer Gegner eine Salve, erscheint dort **„LÄDT AUF“** mit Fortschrittsbalken, und seine Rohre glühen auf. Schwere Salven zielen auf den Kurs, den du beim Aufglühen fliegst: Wechsle danach die Richtung. Im Kampf schrumpfen Stations- und Tormarker zu kleinen Symbolen. Im Gravidar steht ein Quadrat für die Station, eine Raute für ein Tor, ein roter Punkt für einen Gegner und ein goldener Ring für das gewählte Ziel; die Linie zum Fußpunkt zeigt die Höhe relativ zu deinem Schiff. Explosionen werfen Funken, Glut und kurz glühenden Rauch aus und beleuchten Rümpfe und Felsen in der Nähe; auch Mündungsfeuer und vorbeifliegende Bolts erhellen nahe Schiffe.
 
 Eigene Schüsse sind kühl gefärbt (Bordkanone grün, Impulsfokus violett, Turret blau), gegnerische warm (Bomber magenta, Kommandoschiff gold). Treffer auf einen Schild zeigen blaue Ringe und eine blaue Treffermarke, Treffer auf die Hülle Funken und eine helle Marke. Ein rotes Kreuz bestätigt den Abschuss. Rote Bögen um die Bildmitte zeigen, aus welcher Richtung du getroffen wirst. Schwere Schiffe brennen unter einem Viertel Hülle sichtbar und zerbrechen in mehreren Stufen.
+
+## Grafik und Leistung
+
+Im Hauptmenü wählst du unter **Grafik** die Qualitätsstufe: Niedrig, Mittel, Hoch, Ultra oder Auto. Auto misst die ersten Sekunden im Flug und wählt dann eine Stufe. Die dynamische Auflösung senkt die 3D-Auflösung bei anhaltender Last in Schritten bis auf 50 % und hebt sie wieder an, sobald die Bildzeiten stabil sind. Das HUD bleibt dabei scharf. Beides merkt sich der Browser. **F3** zeigt neben Bildrate und Draw-Calls die aktive Stufe und Skalierung.
+
+| Stufe | 3D-Auflösung | Kantenglättung | Schatten | Bloom-Stufen | Punktlichter | Partikel |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| Niedrig | 70 %, höchstens 1× Pixeldichte | aus | aus | 1 | 4 | 3.072 |
+| Mittel | 85 %, höchstens 1,5× | aus | 1024² | 2 | 8 | 6.144 |
+| Hoch | 100 %, höchstens 2× | 4× MSAA | 2048² | 3 | 16 | 12.288 |
+| Ultra | 100 %, volle Pixeldichte | 4× MSAA | 4096² | 3 | 32 | 24.576 |
+
+Auf Niedrig blenden kleine Asteroiden ab 950 m aus, auf Mittel ab 1.800 m. Unter dem Budget von Hoch fallen Partikelausstöße anteilig kleiner aus.
+
+Mit `?bench` hinter der Adresse des Spiels startet ein Grafik-Benchmark. Eine feste Kampfszene läuft je Stufe zehn Sekunden, danach erscheinen mittlere FPS, p95, p99 und der schlechteste Frame. Spielstände und Einstellungen bleiben unberührt. Der Browser begrenzt die Bildrate auf die Bildwiederholrate des Monitors. Auf schnellen Grafikkarten zeigen deshalb alle Stufen denselben Wert; aussagekräftig ist der Benchmark vor allem auf schwächeren Rechnern.
 
 ## Spielstände
 

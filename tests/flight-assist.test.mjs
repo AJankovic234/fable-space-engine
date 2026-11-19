@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   Input_attach as attach, Input_pitch as pitch, Input_yaw as yaw,
-  Input_roll as roll, Input_centerStick as centerStick,
+  Input_roll as roll, Input_centerStick as centerStick, Input_throttleChange as throttleChange,
   Input_adjustMouseSensitivity as adjustSensitivity, Input_mouseSensitivityPercent as sensitivityPercent,
   Input_takeWheelThrottle as takeWheel, Input_endFrame as endFrame, Input_toggleMouseMode as toggleMouseMode,
   Input_relaxLook as relaxLook, Input_setMouseSensitivityPercent as setSensitivity,
@@ -174,6 +174,35 @@ test("keyboard controls yaw with A/D, roll with Q/E and expose combat mode on F2
       assert.equal(state.Pressed[action],1,code);
       window.emit("keyup",{code});
     }
+  });
+});
+
+test("overlapping physical bindings survive repeat, releasing one key and losing focus", () => {
+  withAttachedInput((state, window) => {
+    const down = (code, repeat = false) => window.emit("keydown", { code, repeat });
+    const up = code => window.emit("keyup", { code });
+    down("ArrowUp");
+    endFrame(state);
+    down("KeyR");
+    down("KeyR", true);
+    assert.equal(state.Pressed[8], 0);
+    assert.equal(throttleChange(state), 1);
+    up("KeyR");
+    assert.equal(throttleChange(state), 1);
+    up("ArrowUp");
+    assert.equal(throttleChange(state), 0);
+
+    down("ShiftLeft");
+    down("ShiftRight");
+    up("ShiftLeft");
+    assert.ok(state.Down[6]);
+    window.emit("blur");
+    up("ShiftRight");
+    assert.equal(state.Down[6], 0);
+    down("ShiftRight");
+    assert.equal(state.Pressed[6], 1);
+    up("ShiftRight");
+    assert.equal(state.Down[6], 0);
   });
 });
 

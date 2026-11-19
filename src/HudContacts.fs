@@ -6,7 +6,7 @@ open Browser.Types
 open Fable.Core
 open SpaceEngine
 
-type Glyph = Square | Diamond | Circle | Bearing of dx: float * dy: float
+type Glyph = Square | Diamond | Circle | Bearing of dx: float * dy: float | CargoCrate
 type Marker =
     { X: float; Y: float; Radius: float; Glyph: Glyph; Tint: string
       Title: string; Detail: string; Priority: int; Quiet: bool }
@@ -27,6 +27,12 @@ let symbol (ctx: CanvasRenderingContext2D) glyph x y r =
         ctx.lineTo (x,y+r)
         ctx.lineTo (x-r,y)
         ctx.closePath ()
+    | CargoCrate ->
+        ctx.rect (x-r,y-r*0.8,r*2.0,r*1.6)
+        ctx.moveTo (x-r*0.35,y-r*0.8)
+        ctx.lineTo (x-r*0.35,y-r*0.1)
+        ctx.lineTo (x+r*0.35,y-r*0.1)
+        ctx.lineTo (x+r*0.35,y-r*0.8)
     | Bearing (dx,dy) ->
         ctx.moveTo (x-dx*r-dy*r*0.7,y-dy*r+dx*r*0.7)
         ctx.lineTo (x+dx*r,y+dy*r)

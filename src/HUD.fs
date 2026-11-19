@@ -60,6 +60,7 @@ type Hud =
       mutable Credits: int
       mutable CargoUsed: int
       mutable CargoCapacity: int
+      mutable FreightGate: string option
       mutable Trading: bool
       mutable Trips: int
       mutable TradeProfit: int
@@ -242,6 +243,7 @@ module Hud =
           Credits = 0
           CargoUsed = 0
           CargoCapacity = 16
+          FreightGate = None
           Trading = true
           Trips = 0
           TradeProfit = 0
@@ -694,7 +696,10 @@ module Hud =
             contact sector.Outpost.Position Cyan HudContacts.Square 3.3 0.0
             if school = FlightSchool.Off then
                 for gate in sector.Gates do
-                    contact gate.Position "#ccb36f" HudContacts.Diamond 3.5 0.0
+                    if hud.FreightGate = Some gate.TargetSectorId then
+                        contact gate.Position Green HudContacts.CargoCrate 5.0 0.0
+                    else
+                        contact gate.Position "#ccb36f" HudContacts.Diamond 3.5 0.0
 
         let enemies = world.Enemies
         for i in 0 .. enemies.Length-1 do
@@ -831,7 +836,10 @@ module Hud =
             project hud viewProj p.X p.Y p.Z
             if onScreen hud then
                 let title = gate.Label + " · " + string (int distance) + " m"
-                queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
+                if hud.FreightGate = Some gate.TargetSectorId then
+                    queueMarker hud HudContacts.CargoCrate hud.ScreenX hud.ScreenY 9.0 Green 75 hud.InCombat ("Frachtkurs · " + title) ""
+                else
+                    queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
 
     /// Das Flug-HUD.
     ///   viewProj/aspect : Kamera des aktuellen Frames
@@ -1031,13 +1039,45 @@ module Hud =
                 if onScreen hud then
                     queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 7.0 "#deabf3" 65 hud.InCombat
                         ("Archiv · " + fst RelicArchive.entries.[sectorIndex]) (string (int distance) + " m")
+        if school = FlightSchool.Off && scanElapsed >= 0.0 && scanElapsed <= 5.5 then
+            let scanRange = RelicArchive.range world.Pilot
+            let scanRangeSq = scanRange * scanRange
+            let asteroids = world.Asteroids
+            let data = asteroids.Data
+            let mutable shown = 0
+            for i in 0 .. asteroids.Count - 1 do
+                let ore = int asteroids.Ore.[i]
+                if ore > 0 && shown < 6 then
+                    let o = i * 16
+                    let ax = float data.[o]
+                    let ay = float data.[o + 1]
+                    let az = float data.[o + 2]
+                    let dx = ax - playerPosition.X
+                    let dy = ay - playerPosition.Y
+                    let dz = az - playerPosition.Z
+                    let dSq = dx * dx + dy * dy + dz * dz
+                    if dSq <= scanRangeSq then
+                        project hud viewProj ax ay az
+                        if onScreen hud then
+                            let tint = if ore = 2 then Amber else Cyan
+                            let tag = if ore = 2 then "ERZ+ · " else "ERZ · "
+                            queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 5.5 tint 32 hud.InCombat
+                                (tag + number hud (sqrt dSq) + " m") ""
+                            shown <- shown + 1
         for pickup in pickups do
             let p = pickup.Position
             project hud viewProj p.X p.Y p.Z
             if onScreen hud then
-                let tint = if pickup.Kind = 3 then "#deabf3" elif pickup.Kind = 2 then Amber else Cyan
+                let tint, prefix =
+                    match pickup.Kind with
+                    | 2 -> Amber, "ERZ+ · "
+                    | 3 -> "#deabf3", "NAV · "
+                    | 4 -> "#cbd8e3", "TIT · "
+                    | 5 -> "#ff9b4a", "PLS · "
+                    | 6 -> "#f3c66b", "TRB · "
+                    | _ -> Cyan, ""
                 queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 6.0 tint 35 hud.InCombat
-                    ((if pickup.Kind = 3 then "NAV · " else "") + number hud (Vec3.distance p playerPosition) + " m") ""
+                    (prefix + number hud (Vec3.distance p playerPosition) + " m") ""
 
         // ---- Gegner-Marker: Rahmen im Bild, Pfeile am Rand ----
         ctx.textAlign <- "center"

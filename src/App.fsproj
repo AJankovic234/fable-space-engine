@@ -17,7 +17,12 @@
     <Compile Include="CapitalFlight.fs" />
     <Compile Include="Recovery.fs" />
     <Compile Include="TradeSystem.fs" />
+    <Compile Include="GraphicsQuality.fs" />
+    <Compile Include="Materials.fs" />
+    <Compile Include="LightSelection.fs" />
     <Compile Include="WebGLRenderer.fs" />
+    <Compile Include="SkyLight.fs" />
+    <Compile Include="GraphicsSettings.fs" />
     <Compile Include="GlbLoader.fs" />
     <Compile Include="ProceduralMeshes.fs" />
     <Compile Include="AsteroidMeshes.fs" />
@@ -31,7 +36,10 @@
     <Compile Include="PlayerMeshes.fs" />
     <Compile Include="UpgradeMeshes.fs" />
     <Compile Include="Input.fs" />
+    <Compile Include="GpuParticles.fs" />
+    <Compile Include="ParticleRecipes.fs" />
     <Compile Include="PhysicsAndPool.fs" />
+    <Compile Include="EngineTrails.fs" />
     <Compile Include="JumpFlight.fs" />
     <Compile Include="Salvage.fs" />
     <Compile Include="EnemyProfiles.fs" />
@@ -44,6 +52,7 @@
     <Compile Include="Blockade.fs" />
     <Compile Include="Turret.fs" />
     <Compile Include="AI.fs" />
+    <Compile Include="CombatLights.fs" />
     <Compile Include="Encounters.fs" />
     <Compile Include="FlightSchool.fs" />
     <Compile Include="Camera.fs" />
@@ -64,6 +73,7 @@
     <Compile Include="Shop.fs" />
     <Compile Include="SkillUi.fs" />
     <Compile Include="BlockadeUi.fs" />
+    <Compile Include="Bench.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

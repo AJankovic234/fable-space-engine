@@ -13,7 +13,10 @@ import {
   Damage_asteroid as damageAsteroid,
   Physics_step as stepPhysics,
 } from "../build/PhysicsAndPool.js";
-import { Salvage_create as createSalvage, Salvage_spawn as spawn, Salvage_update as update, Salvage_collect as collect } from "../build/Salvage.js";
+import {
+  Salvage_create as createSalvage, Salvage_spawn as spawn, Salvage_spawnWreck as spawnWreck,
+  Salvage_update as update, Salvage_collect as collect, Salvage_collectCargo as collectCargo,
+} from "../build/Salvage.js";
 import {
   TradeSystem_createCargo as createCargo, TradeSystem_resetCargo as resetCargo,
   TradeSystem_loadSalvage as loadCargo, TradeSystem_quantityOf as quantityOf,
@@ -316,5 +319,44 @@ test("multiple simultaneous pickups cannot overfill cargo or delete an uncollect
   assert.equal(dense.Quantity, 2);
   assert.equal(update(pool, player, cargo, 90), 0);
   assert.equal(pool.length, 0);
+  assert.equal(usedVolume(cargo), 16);
+});
+
+test("wreck salvage drops role-specific commodities and loads them into cargo", () => {
+  const player = playerAt();
+  const cargo = createCargo(24);
+  const pool = createSalvage();
+  // Gunship (role 2) drops 2x TitaniumScrap (kind 4, 1t) + 1x PlasmaCores (kind 5, 2t).
+  assert.equal(spawnWreck(pool, zero, 2), 3);
+  for (const p of pool) { p.Position = zero; p.Velocity = zero; }
+  const counts = collectCargo(pool, player, cargo, 55, 0.016);
+  assert.equal(pool.length, 0);
+  assert.equal(counts[0], 2); // TitaniumScrap
+  assert.equal(counts[2], 1); // PlasmaCores
+  assert.equal(quantityOf(cargo, 0), 2);
+  assert.equal(quantityOf(cargo, 2), 1);
+  assert.equal(usedVolume(cargo), 4);
+  assert.equal(cargo.AvgCost[0], 0);
+  assert.equal(cargo.AvgCost[2], 0);
+});
+
+test("2-tonne PlasmaCores pickup ignores magnet and stays uncollected when only 1 tonne is free", () => {
+  const player = playerAt();
+  const cargo = createCargo(16);
+  loadCargo(cargo, 1, 15); // 1 tonne free
+  const pool = createSalvage();
+  const core = stationaryPickup(pool, new Vec3(20, 0, 0), 5); // PlasmaCores = 2t
+  const counts = collectCargo(pool, player, cargo, 55, 0.1);
+  assert.equal(counts[2], 0);
+  assert.equal(core.Velocity.X, 0);
+  assert.equal(pool.length, 1);
+  // Once 2 tonnes are free, magnet pulls and collects the core.
+  resetCargo(cargo, 16);
+  loadCargo(cargo, 1, 14); // 2 tonnes free
+  collectCargo(pool, player, cargo, 55, 0.1);
+  assert.ok(core.Velocity.X < 0);
+  for (let i = 0; i < 120 && pool.length; i++) collectCargo(pool, player, cargo, 55, 0.05);
+  assert.equal(pool.length, 0);
+  assert.equal(quantityOf(cargo, 2), 1);
   assert.equal(usedVolume(cargo), 16);
 });

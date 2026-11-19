@@ -4,7 +4,10 @@ import {
   Economy_create as createWallet, Economy_reset as resetWallet, Economy_earn as earn,
   Economy_available as available, Economy_price as price, Economy_buy as buy,
   Economy_priceFor as priceFor, Economy_buyFor as buyFor,
+  Economy_repairCostFor as repairCostFor, Economy_repairWithCredits as repairWithCredits,
+  Economy_repairWithScrap as repairWithScrap,
 } from "../build/Economy.js";
+import { TradeSystem_createCargo as createCargo, TradeSystem_loadSalvage as loadSalvage, TradeSystem_quantityOf as quantityOf } from "../build/TradeSystem.js";
 import { Turret_create as createTurret, Turret_reset as resetTurret, Turret_update as updateTurret } from "../build/Turret.js";
 import {
   WorldModule_create as createWorld, WorldModule_reset as resetWorld,
@@ -109,6 +112,34 @@ test("earnings distinguish salvage, reject negative grants and reset with owners
   buy(wallet, ship, levels, 0);
   resetWallet(wallet);
   assert.deepEqual([wallet.Credits, wallet.Earned, wallet.SalvageEarned, wallet.TurretOwned], [0, 0, 0, false]);
+});
+
+test("dock hull repair supports discounted credits and salvaged titanium scrap", () => {
+  const { wallet, ship } = shop();
+  const cargo = createCargo(16);
+  const standard = { SignalLevel: 0, FixerLevel: 0 };
+  const fixer = { SignalLevel: 0, FixerLevel: 1 };
+  ship.Hull = 40;
+  ship.Shield = 10;
+  assert.equal(repairCostFor(standard, ship), 120);
+  assert.equal(repairCostFor(fixer, ship), 90);
+  // Salvaged TitaniumScrap patches +35 hull for free and recharges shield.
+  assert.equal(repairWithScrap(cargo, ship), false);
+  loadSalvage(cargo, 0, 1);
+  assert.equal(repairWithScrap(cargo, ship), true);
+  assert.equal(quantityOf(cargo, 0), 0);
+  assert.equal(ship.Hull, 75);
+  assert.equal(ship.Shield, ship.MaxShield);
+  // Remaining 25 hull costs 50 CR standard (37 CR with Fixer).
+  assert.equal(repairCostFor(fixer, ship), 37);
+  earn(wallet, 36, false);
+  assert.equal(repairWithCredits(fixer, wallet, ship), false);
+  earn(wallet, 1, false);
+  assert.equal(repairWithCredits(fixer, wallet, ship), true);
+  assert.equal(wallet.Credits, 0);
+  assert.equal(ship.Hull, ship.MaxHull);
+  assert.equal(repairCostFor(standard, ship), 0);
+  assert.equal(repairWithCredits(standard, wallet, ship), false);
 });
 
 test("turrets cannot fire before purchase, for dead players, at dead targets or outside 280 units", () => {

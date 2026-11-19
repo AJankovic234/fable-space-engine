@@ -19,10 +19,46 @@ module Salvage =
     [<Literal>]
     let MagnetRadius = 55.0
 
+    [<Literal>]
+    let CryoOreKind = 1
+
+    [<Literal>]
+    let RichCryoOreKind = 2
+
+    [<Literal>]
+    let NavDataKind = 3
+
+    [<Literal>]
+    let TitaniumScrapKind = 4
+
+    [<Literal>]
+    let PlasmaCoresKind = 5
+
+    [<Literal>]
+    let FuelCellsKind = 6
+
+    let commodityOf (kind: int) : CommodityId =
+        match kind with
+        | 3 -> CommodityId.NavData
+        | 4 -> CommodityId.TitaniumScrap
+        | 5 -> CommodityId.PlasmaCores
+        | 6 -> CommodityId.FuelCells
+        | _ -> CommodityId.CryoOre
+
+    /// Rollenspezifische Wrack-Beute (0 = Drohne, 1 = Spaeher, 2 = Kanonenboot, 3 = Bomber, 4 = Kommandoschiff).
+    let wreckDrops (role: int) : (int * int)[] =
+        match role with
+        | 0 -> [| TitaniumScrapKind, 1 |]
+        | 1 -> [| TitaniumScrapKind, 1; FuelCellsKind, 1 |]
+        | 2 -> [| TitaniumScrapKind, 2; PlasmaCoresKind, 1 |]
+        | 3 -> [| PlasmaCoresKind, 1; FuelCellsKind, 1 |]
+        | 4 -> [| PlasmaCoresKind, 2; TitaniumScrapKind, 2; NavDataKind, 1 |]
+        | _ -> Array.empty
+
     let create () : ResizeArray<MineralPickup> = ResizeArray<MineralPickup>(Capacity)
 
     let spawn (pool: ResizeArray<MineralPickup>) (position: Vec3) (kind: int) (count: int) =
-        if kind >= 1 && kind <= 3 then
+        if kind >= 1 && kind <= 6 then
             let first = pool.Count
             let amount = max 0 (min count (Capacity - first))
             for i in 0 .. amount - 1 do
@@ -33,14 +69,19 @@ module Salvage =
                     { Position = position + direction * 1.8
                       Velocity = direction * 3.0
                       Kind = kind
-                      Quantity = if kind = 2 then 2 else 1
+                      Quantity = if kind = RichCryoOreKind then 2 else 1
                       Life = Lifetime }
 
+    let spawnWreck (pool: ResizeArray<MineralPickup>) (position: Vec3) (role: int) =
+        let before = pool.Count
+        for kind, count in wreckDrops role do
+            spawn pool position kind count
+        pool.Count - before
+
     /// Nach Physics.step mit demselben dt aufrufen: PrevPosition erfasst auch einen
-    /// schnellen Durchflug. Rueckgabe: geladene Kryo-Erz-Einheiten, niemals Credits.
-    let collect (pool: ResizeArray<MineralPickup>) (player: Ship) (cargo: CargoHold) (magnetRadius: float) (dt: float) =
-        let mutable loaded = 0
-        let mutable data = 0
+    /// schnellen Durchflug. Rueckgabe: aufgenommene Stueckzahl je CommodityId (0..5).
+    let collectCargo (pool: ResizeArray<MineralPickup>) (player: Ship) (cargo: CargoHold) (magnetRadius: float) (dt: float) : int[] =
+        let collected = Array.zeroCreate TradeSystem.commodities.Length
         if dt > 0.0 then
             let damping = exp (-0.8 * dt)
             let collectRadius = 12.0 + player.Radius
@@ -50,11 +91,13 @@ module Salvage =
                 pickup.Life <- pickup.Life - dt
                 let mutable remove = pickup.Life <= 0.0 || pickup.Quantity <= 0
                 if not remove then
+                    let good = commodityOf pickup.Kind
+                    let unitVolume = max 1 (TradeSystem.commodityDef good).UnitVolume
                     let oldPosition = pickup.Position
                     let toPlayer = player.Position - oldPosition
                     let distance = Vec3.length toPlayer
                     let mutable velocity = pickup.Velocity * damping
-                    let canCollect = player.Alive && TradeSystem.freeVolume cargo > 0
+                    let canCollect = player.Alive && TradeSystem.freeVolume cargo >= unitVolume
                     if canCollect && distance < magnetRadius && distance > 1e-6 then
                         let acceleration = 28.0 + 60.0 * (1.0 - distance / magnetRadius)
                         velocity <- velocity + toPlayer * (acceleration * dt / distance)
@@ -69,10 +112,9 @@ module Salvage =
                                relativeStart.X relativeStart.Y relativeStart.Z
                                relativeEnd.X relativeEnd.Y relativeEnd.Z
                                0.0 0.0 0.0 collectRadius >= 0.0 then
-                            let good = if pickup.Kind = 3 then CommodityId.NavData else CommodityId.CryoOre
                             let taken = TradeSystem.loadSalvage cargo good pickup.Quantity
                             pickup.Quantity <- pickup.Quantity - taken
-                            if pickup.Kind = 3 then data <- data + taken else loaded <- loaded + taken
+                            collected.[int good] <- collected.[int good] + taken
                             remove <- pickup.Quantity <= 0
 
                 if remove then
@@ -81,7 +123,11 @@ module Salvage =
                     pool.RemoveAt(last)
                 else
                     i <- i + 1
-        struct (loaded, data)
+        collected
+
+    let collect (pool: ResizeArray<MineralPickup>) (player: Ship) (cargo: CargoHold) (magnetRadius: float) (dt: float) =
+        let counts = collectCargo pool player cargo magnetRadius dt
+        struct (counts.[int CommodityId.CryoOre], counts.[int CommodityId.NavData])
 
     let update pool player cargo dt =
         let struct (ore, _) = collect pool player cargo MagnetRadius dt

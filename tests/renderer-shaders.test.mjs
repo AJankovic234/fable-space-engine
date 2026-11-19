@@ -4,6 +4,8 @@ import { Shaders_fragment as mainFrag, Shaders_vertex as mainVert, RendererModul
 import { SkyBackdropModule_create as createSky, SkyBackdropModule_draw as drawSky } from '../build/SkyBackdrop.js';
 import { CameraModule_create as createCamera, CameraModule_updateMatrices as updateCamera } from '../build/Camera.js';
 import { ProceduralMeshes_jumpGateFrame as jumpGateFrame, ProceduralMeshes_jumpGateRing as jumpGateRing } from '../build/ProceduralMeshes.js';
+import { RendererModule_applyQuality as applyQuality, RendererModule_resize as resize } from '../build/WebGLRenderer.js';
+import { parse, preset } from '../build/GraphicsQuality.js';
 
 function createMockGl() {
   const shaders = [];
@@ -109,6 +111,60 @@ function createMockGl() {
   const canvas = { getContext: () => mockGl, clientWidth: 1280, clientHeight: 720, width: 1280, height: 720 };
   return { mockGl, canvas, shaders, uniforms };
 }
+
+test('switching quality releases unused GL targets and reuses buffers between frames', () => {
+  const { canvas, mockGl: gl } = createMockGl();
+  const live = new Set();
+  let allocations = 0;
+  let storageCalls = 0;
+  for (const kind of ['Framebuffer', 'Renderbuffer', 'Texture']) {
+    gl['create' + kind] = () => {
+      const handle = { kind, id: ++allocations };
+      live.add(handle);
+      return handle;
+    };
+    gl['delete' + kind] = h => assert.ok(live.delete(h), 'each handle is released once');
+  }
+  gl.texImage2D = () => storageCalls++;
+  gl.MAX_RENDERBUFFER_SIZE = 0x84e8;
+  gl.getParameter = p => p === gl.MAX_SAMPLES ? 4 : 16384;
+  const previous = globalThis.window;
+  globalThis.window = { devicePixelRatio: 3 };
+  try {
+    const renderer = createRenderer(canvas);
+    const use = key => {
+      const p = preset(parse(key));
+      applyQuality(renderer, p, p.RenderScale);
+      resize(renderer);
+    };
+    use('high');
+    const highCount = live.size;
+    assert.equal(canvas.width, 2560);
+    use('low');
+    assert.equal(canvas.width, 896);
+    assert.equal(live.size, highCount - 11); // 4 Bloom-Paare (FBO/Textur), 3 MSAA-Handles
+    assert.equal(renderer.ShadowsOn, false);
+    assert.equal(renderer.Post.Msaa, false);
+    use('medium');
+    assert.equal(renderer.ShadowSize, 1024);
+    assert.equal(renderer.Post.BloomLevels, 2);
+    use('ultra');
+    assert.equal(canvas.width, 3840);
+    assert.equal(renderer.Post.Msaa, true);
+    assert.equal(live.size, highCount);
+    const before = [allocations, storageCalls];
+    use('ultra');
+    assert.equal(resize(renderer), false);
+    assert.deepEqual([allocations, storageCalls], before);
+    renderer.RenderScale = .8;
+    assert.equal(resize(renderer), true);
+    assert.equal(allocations, before[0]);
+    assert.equal(live.size, highCount);
+  } finally {
+    if (previous === undefined) delete globalThis.window;
+    else globalThis.window = previous;
+  }
+});
 
 test('WebGLRenderer fragment shader includes slope bias, metallic specTint, panel bevel, solar rim and calibrated deep-space fog', () => {
   assert.ok(mainVert.startsWith('#version 300 es'));

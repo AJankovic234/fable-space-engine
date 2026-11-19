@@ -127,6 +127,25 @@
             <div class="audio-actions"><button id="audio-test" type="button">Tonprobe</button></div>
           </div>
         </details>
+        <details id="menu-graphics">
+          <summary>Grafik</summary>
+          <div class="graphics-options">
+            <label for="graphics-tier">Qualitätsstufe</label>
+            <select id="graphics-tier">
+              <option value="auto" id="graphics-auto">Auto</option>
+              <option value="low">Niedrig</option><option value="medium">Mittel</option>
+              <option value="high">Hoch</option><option value="ultra">Ultra</option>
+            </select>
+            <label for="graphics-dynamic">Dynamische Auflösung</label>
+            <input type="checkbox" id="graphics-dynamic" checked />
+            <span>Renderskalierung</span><output id="graphics-scale" for="graphics-tier graphics-dynamic">100 %</output>
+          </div>
+          <script>
+            // Der separate Benchmark braucht kein Pilotenprofil. Dessen deferred
+            // Initialisierung schreibt sonst schon beim Öffnen den lokalen Speicher.
+            if (new URLSearchParams(location.search).has('bench')) document.getElementById('menu-pilot').remove();
+          </script>
+        </details>
         <details id="menu-controls">
           <summary>Flugsteuerung</summary>
           <dl>
@@ -296,6 +315,13 @@
           <p class="route-help">Geleitschutz hält Piraten auf dieser Überfahrt fern. Im Eigenflug kannst du noch andocken, solange die Patrouille der Station fernbleibt. Hüllenschäden bleiben beim Sprung erhalten.</p>
         </div>
         <div id="equipment-panel" class="equipment-grid" hidden>
+          <section id="hull-repair-bar" class="repair-bar" aria-label="Hüllenreparatur">
+            <div><p class="eyebrow">WERFT-INSTANDSETZUNG</p><strong id="repair-status">100 / 100 Hülle</strong></div>
+            <div class="repair-actions">
+              <button id="repair-scrap" type="button">MIT 1 t TITANSCHROTT (+35)</button>
+              <button id="repair-credits" type="button">HÜLLE REPARIEREN</button>
+            </div>
+          </section>
           <article class="equipment flagship">
             <div class="card-top"><span class="pill">AUTONOME BEWAFFNUNG</span><kbd>1</kbd></div>
             <div class="turret-art"><img src="/assets/auto-turret.webp" alt="Drehbarer automatischer Laserturm mit zwei Rohren und türkisfarbenem Zielsensor" /><span class="art-caption">SENTINEL / AT-01</span></div>

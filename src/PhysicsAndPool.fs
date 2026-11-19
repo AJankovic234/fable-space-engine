@@ -662,6 +662,32 @@ module AsteroidField =
 
         field.Count <- last
 
+    /// Hält Anflugkorridor, Sprungtore und Relikt des angegebenen Sektors frei.
+    let clearDockingArea sectorIndex cruiserPresent (field: AsteroidField) =
+        let sector = Universe.sectorByIndex sectorIndex
+        let outpost = sector.Outpost
+        let archive = RelicArchive.position outpost.Position sectorIndex
+        let works = outpost.Position + StationMeshes.worksCenter
+        let worksRadius = StationMeshes.worksRadius outpost.Kind
+        let mutable i = 0
+        while i < field.Count do
+            let o = i * Stride
+            let radius = float field.Data.[o+6]
+            let point = Vec3(float field.Data.[o], float field.Data.[o+1], float field.Data.[o+2])
+            let inArrivalLane = abs (point.X-outpost.Position.X) < 40.0 + radius && abs (point.Y-outpost.Position.Y) < 40.0 + radius && point.Z > outpost.Position.Z && point.Z < outpost.Position.Z+720.0
+            let inCustomsLane =
+                if not cruiserPresent then false
+                else
+                    let d = point - CapitalFlight.position
+                    let e = CapitalFlight.extent
+                    abs d.X < e.X + 16.0 + radius && abs d.Y < e.Y + 14.0 + radius && d.Z > -e.Z - 8.0 - radius && d.Z < 475.0 + radius
+            let nearGate =
+                sector.Gates |> Array.exists (fun gate -> Vec3.distance point gate.Position < gate.TriggerRadius + radius + 24.0)
+            let inStation = Vec3.distance point works < worksRadius + radius + 6.0 || Vec3.distance point outpost.Position < outpost.DockRadius + radius + 25.0
+            if inArrivalLane || inCustomsLane || nearGate || inStation || Vec3.distance point archive < radius + 60.0 then
+                remove field i
+            else i <- i + 1
+
     /// Erzeugt das Startfeld: ein dichtes, durchfliegbares Feld vor dem Startpunkt
     /// und einen flachen Guertel um den Ursprung. Nur beim Setup/Neustart aufrufen.
     let generate (field: AsteroidField) (rng: Rng) (count: int) =
@@ -826,8 +852,8 @@ module AsteroidField =
 /// Kurzlebige Point Lights fuer Explosionen. Pro Licht:
 /// [x, y, z, Reichweite, r, g, b, Intensitaet]
 module Flashes =
-    // 6 von 8 Point Lights: Muendungs- und Trefferblitze teilen sich die Plaetze mit
-    // den Stufen einer Grossexplosion. Der Rest bleibt fuer Schild- und Triebwerkslicht.
+    // 6 Blitz-Plaetze: Muendungs- und Trefferblitze teilen sie sich mit den Stufen einer
+    // Grossexplosion. Welche Lichter tatsaechlich aktiv sind, waehlt Lights.select nach Wichtigkeit.
     [<Literal>]
     let Slots = 6
 
@@ -1448,6 +1474,7 @@ module Effects =
     let sparks (world: World) (x: float) (y: float) (z: float) (count: int) (r: float) (g: float) (b: float) =
         let n = CombatVfx.scaled count (thrift world)
         burst world ParticleKind.Streak n x y z 0.0 0.0 0.0 0.2 10.0 38.0 0.15 0.45 0.10 0.22 r g b
+        ParticleRecipes.sparks world.Time x y z count r g b
 
     /// Stossring. Normale (0, 0, 0) richtet ihn zur Kamera aus.
     let ring (world: World) x y z vx vy vz nx ny nz (life: float) (size: float) (r: float) (g: float) (b: float) =
@@ -1470,6 +1497,7 @@ module Effects =
         ParticlePool.spawn world.Particles ParticleKind.Debris x y z (vx + nx * 9.0) (vy + ny * 9.0) (vz + nz * 9.0) 1.4 (0.14 * scale) 0.30 0.30 0.34
         ParticlePool.spawn world.Particles ParticleKind.Glow x y z vx vy vz 0.11 (1.3 * scale) 1.7 1.1 0.55
         flash world x y z (10.0 + 4.0 * scale) 1.0 0.7 0.4 1.6
+        ParticleRecipes.hullHit world.Time x y z nx ny nz vx vy vz radius damage
 
     /// Schildtreffer: die Blase leuchtet an der Trefferstelle auf - zwei Ringe laufen
     /// ueber die Schildflaeche, dazu ein kurzer Kern und wenige blaue Funken.
@@ -1483,6 +1511,7 @@ module Effects =
         ParticlePool.spawn world.Particles ParticleKind.Glow px py pz vx vy vz 0.13 (1.5 * scale) 0.55 1.1 1.9
         cone world ParticleKind.Streak (CombatVfx.scaled 5 (thrift world)) px py pz vx vy vz nx ny nz 1.6 10.0 30.0 0.12 0.32 0.09 0.16 0.4 0.85 1.6
         flash world x y z (10.0 + 4.0 * scale) 0.3 0.7 1.0 1.6
+        ParticleRecipes.shieldHit world.Time x y z nx ny nz vx vy vz radius
 
     /// Lichtblitz an einer Rohrmuendung. Den farbigen Muendungsstern zeichnet Main
     /// aus dem jungen Bolt (Farbe der Quelle).
@@ -1525,16 +1554,20 @@ module Effects =
         wreckage world x y z vx vy vz s r.Debris r.Chunks
         ring world x y z vx vy vz 0.0 0.0 0.0 0.32 (s * 4.5) 0.7 0.42 0.2
         flash world x y z (s * r.FlashRange) 1.0 0.62 0.25 r.FlashIntensity
+        ParticleRecipes.blast world.Time CombatVfx.TierLight x y z vx vy vz s 1.0
 
     /// Folgeexplosion (CombatVfx.SecondaryParticles Partikel).
     let private secondary (world: World) x y z vx vy vz (s: float) =
         fireball world x y z vx vy vz s 9 3
         shrapnel world x y z vx vy vz s 12 5
         flash world x y z (12.0 + s * 14.0) 1.0 0.66 0.3 3.5
+        ParticleRecipes.secondary world.Time x y z vx vy vz s
 
     /// Hauptexplosion schwerer Schiffe und Kernbruch der Grossschiffe
     /// (CombatVfx.finaleParticles Partikel).
     let private finale (world: World) (tier: int) x y z vx vy vz (s: float) =
+        ParticleRecipes.finale world.Time tier x y z vx vy vz s
+
         if tier >= CombatVfx.TierCruiser then
             fireball world x y z vx vy vz (s * 0.8) 90 20
             shrapnel world x y z vx vy vz s 140 50
@@ -1581,6 +1614,7 @@ module Effects =
             shrapnel world px py pz vx vy vz girth (r.Sparks / points) (r.Shards / points)
             wreckage world px py pz vx vy vz girth (r.Debris / points) (r.Chunks / points)
             afterglow world px py pz vx vy vz girth (r.Smoke / points)
+            ParticleRecipes.blast world.Time tier px py pz vx vy vz girth (1.0 / float points)
 
         ring world x y z vx vy vz 0.0 0.0 0.0 0.4 (girth * 5.0) 0.8 0.5 0.24
         flash world x y z (size * r.FlashRange) 1.0 0.62 0.25 r.FlashIntensity
@@ -1668,6 +1702,7 @@ module Effects =
         fireball world x y z vx vy vz s 4 1
         burst world ParticleKind.Streak 6 x y z vx vy vz 0.2 12.0 40.0 0.2 0.6 0.10 0.2 1.5 0.9 0.4
         flash world x y z (8.0 + s * 10.0) 1.0 0.6 0.3 1.8
+        ParticleRecipes.hullPop world.Time x y z vx vy vz s
 
     /// Zerplatzen eines Asteroiden: Staubwolke, Gesteinssplitter, schwacher Blitz.
     let rockBurst
@@ -1732,6 +1767,7 @@ module Effects =
             b
 
         flash world x y z (20.0 + radius * 4.0) 1.0 0.7 0.4 (1.5 + scale * 0.12)
+        ParticleRecipes.rockBurst world.Time x y z vx vy vz radius r g b
 
 // -------------------------------------------------------------------------------------
 //  Schaden

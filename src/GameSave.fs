@@ -152,7 +152,7 @@ module GameSave =
         && items 512 (intRange 0 1) s.Lasers.Teams && numbers (s.Lasers.Teams.Length*12) -1e9 1e9 s.Lasers.Data
         && (s.Lasers.Teams |> Array.mapi (fun i _ -> range 0.0 5.0 s.Lasers.Data.[i*12+10] && range 0.0 10000.0 s.Lasers.Data.[i*12+11]) |> Array.forall id)
         && Option.forall (items 512 (fun i -> intRange 0 (s.Lasers.Teams.Length - 1) i && s.Lasers.Teams.[i] = 0)) s.Lasers.Piercing
-        && items 96 (fun p -> vec p.Position && numbers 3 -1000.0 1000.0 p.Velocity && intRange 1 3 p.Kind && intRange 1 (if p.Kind = 2 then 2 else 1) p.Quantity && range 0.0 90.0 p.Life) s.Pickups
+        && items 96 (fun p -> vec p.Position && numbers 3 -1000.0 1000.0 p.Velocity && intRange 1 6 p.Kind && intRange 1 (if p.Kind = 2 then 2 else 1) p.Quantity && range 0.0 90.0 p.Life) s.Pickups
         && quat s.Turret.Rotation && range 0.0 10.0 s.Turret.Cooldown && intRange -1 15 s.Turret.Target && intRange -1 1 s.Turret.LastBarrel
         && range 0.0 1e9 s.WorldTime && integer (box s.RandomState) && range 1.0 4294967295.0 s.RandomState
         && intRange 0 1 s.Settings.Camera && bool s.Settings.Muted && bool s.Settings.InvertPitch && range 0.0001 0.02 s.Settings.Sensitivity
