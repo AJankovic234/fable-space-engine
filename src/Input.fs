@@ -9,7 +9,8 @@ namespace SpaceEngine
 //
 //  Tastatur:  W/S Pitch, A/D Yaw, Q/E Roll, Shift Boost, Leertaste Feuer,
 //             Pfeil hoch/runter (oder R/F) Schub, Pfeil rechts/links Voll-/Nullschub,
-//             X Bremse, L Tempo ans Ziel angleichen, T/Tab Ziel wechseln, C Kamera,
+//             X Bremse, L Tempo ans Ziel angleichen, T/Tab Ziel wechseln,
+//             N naechstes Ziel nach Entfernung, C Kamera,
 //             H Heckblick (halten), Bild auf/ab Kameraabstand, U Mausmodus, M Ton,
 //             I Pitch invertieren, F1 Hilfe, F3 Statistik, F4 Schatten, Enter, P Pause
 //  Maus:      Klick ins Bild aktiviert PointerLock. Die Maus bewegt dann einen
@@ -67,7 +68,8 @@ type GameAction =
     | ZoomOut = 37
     | ToggleShadows = 38
     | ToggleHelp = 39
-    | ToggleOptics = 40
+    | TargetNearest = 40
+    | ToggleOptics = 41
 
 type InputState =
     { /// Pro Aktion: 1 = Taste wird gerade gehalten.
@@ -104,7 +106,7 @@ type InputState =
 module Input =
 
     [<Literal>]
-    let private ActionCount = 41
+    let private ActionCount = 42
 
     /// Radiant Blickdrehung pro Pixel Mausweg beim freien Umsehen.
     [<Literal>]
@@ -214,6 +216,7 @@ module Input =
         | "KeyO" -> int GameAction.ToggleOptics
         | "Comma" -> int GameAction.MouseSlower
         | "Period" -> int GameAction.MouseFaster
+        | "KeyN" -> int GameAction.TargetNearest
         | _ -> -1
 
     let reset (state: InputState) =

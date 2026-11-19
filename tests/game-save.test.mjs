@@ -13,6 +13,8 @@ import { Vec3, QuatModule_identity as identity } from '../build/Math3D.js';
 import { Rng__NextFloat as random } from '../build/ProceduralMeshes.js';
 import { Blockade_create as newBlockade } from '../build/Blockade.js';
 import { CapitalFlight_create as newSortie, CapitalFlight_position as cruiser } from '../build/CapitalFlight.js';
+import { Universe_sectors as sectors } from '../build/Universe.js';
+import { forSector, move } from '../build/StationCollision.js';
 
 // The same typed-array conversion used by GameSave.encode's emitted JSON serializer.
 const json = data => JSON.stringify(data, (_, value) => ArrayBuffer.isView(value) ? Array.from(value) : value);
@@ -38,6 +40,31 @@ function fixture() {
   return r;
 }
 function read(value) { const result=decode(typeof value==='string'?value:json(value));assert.equal(result.tag,0,result.fields[0]);return result.fields[0]; }
+
+test('legacy saves near the berth and inside overlapping Helios decks restore without damage', () => {
+  const port = sectors[1].Outpost.Position;
+  const near = new Vec3(port.X,port.Y,port.Z+30);
+  const inside = new Vec3(port.X+7,port.Y-10,port.Z-99);
+  for (const position of [near,inside]) {
+    const source = rig(), dest = rig();
+    source.w.Asteroids.Count = 0;
+    source.w.Player.Position = position;
+    source.w.Player.PrevPosition = position;
+    const data = read(snapshot(source));
+    restore(data,dest.w,dest.brains,dest.wallet,dest.cargo,dest.markets,dest.levels,dest.turret,dest.pickups);
+    const ship = dest.w.Player;
+    assert.deepEqual(ship.Position,position);
+    step(dest.w,1/60);
+    if (position === near) assert.deepEqual(ship.Position,position);
+    else {
+      assert.notDeepEqual(ship.Position,position);
+      assert.deepEqual(ship.PrevPosition,ship.Position);
+      assert.equal(move(forSector(1),ship.Radius,ship.Position,ship.Position,ship.Velocity),undefined);
+    }
+    assert.equal(ship.Hull,source.w.Player.Hull);
+    assert.equal(ship.Shield,source.w.Player.Shield);
+  }
+});
 
 test('save roundtrip preserves the economy, damaged upgraded ships, combat, depleted ore, loose cargo and RNG',()=>{
   const source=fixture(),saved=read(snapshot(source)),dest=rig();

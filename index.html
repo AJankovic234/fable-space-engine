@@ -85,7 +85,7 @@
           <p class="menu-location">Bergbau-Depot Kestrel</p>
           <p>»Deine Kennung ist abgelaufen, ich weiß. Komm rein. Wenn der Turm nachfragt, gib ihm meinen Kanal.« – Voss</p>
         </div>
-        <p id="menu-record">200 CR Startguthaben · 16 t Frachtraum</p>
+        <p id="menu-record">Vier Startschiffe am Bergbau-Depot Kestrel</p>
         <details id="menu-pilot">
           <summary>
             <img id="pilot-badge-img" src="/assets/emblems/emblem-kestrel.svg" alt="Piloten-Emblem" />
@@ -107,7 +107,7 @@
             </div>
           </div>
         </details>
-        <button id="menu-launch" class="menu-launch" type="button"><span id="menu-launch-label">Handelsflug starten</span><kbd>Enter ↵</kbd></button>
+        <button id="menu-launch" class="menu-launch" type="button"><span id="menu-launch-label">Startschiff wählen</span><kbd>Enter ↵</kbd></button>
         <div class="menu-actions">
           <button id="menu-intro" type="button">Intro-Film ▸</button>
           <button id="menu-combat" type="button">Kampfmission <kbd>F2</kbd></button>
@@ -147,9 +147,45 @@
             <dt>C · M · P</dt><dd>Kamera · Ton · Pause mit Einstellung für die Mausempfindlichkeit</dd>
           </dl>
         </details>
+        <details id="menu-chronik">
+          <summary>Chronik · Signal Lost (2034 → 2601 AE)</summary>
+          <div class="chronik-grid">
+            <article class="chronik-card">
+              <p class="eyebrow">TEIL I · 14.03.2034 · HERMES 2</p>
+              <h3>SIGNAL LOST</h3>
+              <p>Der G5-Sturm bricht die Netze. In 24 dichten Episoden greifst du mit Python, SQL und HTTP live in ein sterbendes Orbitalnetz ein — jede Abfrage entscheidet über Vertrauen und Überleben.</p>
+            </article>
+            <article class="chronik-card">
+              <p class="eyebrow">TEIL II · 14.03.2034 · RT-9 / ORPHEUS 7</p>
+              <h3>SIGNAL LOST: FALLLINIE</h3>
+              <p>Dieselbe Nacht, ein anderes Signal: Allein im dunklen 3D-Relaisraum RT-9 steuerst du Funk, IP-Routing und Schicksale direkt mit echtem C#-Code — der Ursprung der gespiegelten Kennung.</p>
+            </article>
+          </div>
+        </details>
         <p id="menu-notice" role="status"></p>
       </div>
     </main>
+    <dialog id="start-hangar" aria-labelledby="start-heading">
+      <form method="dialog">
+        <header class="start-header"><h2 id="start-heading">Startschiff wählen</h2><span>Bergbau-Depot Kestrel</span></header>
+        <div class="start-layout">
+          <section class="start-preview" aria-labelledby="start-name">
+            <div class="start-stage"><img id="start-portrait" alt=""></div>
+            <div class="start-details" aria-live="polite">
+              <p id="start-role"></p><h3 id="start-name"></h3><p id="start-brief"></p>
+              <dl class="start-stats">
+                <div><dt>Startkapital</dt><dd id="start-credits"></dd></div>
+                <div><dt>Laderaum</dt><dd id="start-hold"></dd></div>
+                <div><dt>Reisetempo</dt><dd id="start-cruise"></dd></div>
+                <div><dt>Laserschaden</dt><dd id="start-laser"></dd></div>
+              </dl>
+            </div>
+          </section>
+          <fieldset class="start-choice"><legend>Schwierigkeit im Handelsflug</legend><div id="start-hulls"></div></fieldset>
+        </div>
+        <footer class="start-actions"><button value="launch" id="start-launch">Mit diesem Schiff starten</button><button value="cancel" id="start-cancel">Zurück</button></footer>
+      </form>
+    </dialog>
     <button id="open-saves" type="button">F8 · SPIELSTÄNDE</button>
     <section id="save-panel" hidden role="dialog" aria-modal="true" aria-labelledby="save-title">
       <div class="save-shell">
@@ -243,7 +279,7 @@
               <div id="freight-offers">
                 <label for="freight-destination">Lieferhafen</label>
                 <select id="freight-destination"></select>
-                <p>Die Station stellt die Ladung. Geleitschutz zahlst du selbst.</p>
+                <p id="freight-passage"></p>
                 <div class="freight-buttons"><button id="freight-accept-8" type="button"></button><button id="freight-accept-24" type="button"></button></div>
               </div>
               <div id="freight-active" hidden>
@@ -295,12 +331,13 @@
     </section>
     <!-- Borderlands-inspiriertes Intro-Kino (abspielbar ueber das Hauptmenue) -->
     <section id="intro-film" hidden aria-label="Intro-Film Space 2601AE">
-      <div id="intro-bg" aria-hidden="true"></div>
+      <div id="intro-bg-a" class="intro-bg" aria-hidden="true"></div>
+      <div id="intro-bg-b" class="intro-bg" aria-hidden="true"></div>
       <canvas id="intro-fx" aria-hidden="true"></canvas>
       <div class="intro-grain" aria-hidden="true"></div>
       <div id="intro-flash" aria-hidden="true"></div>
       <div class="intro-bar intro-bar-top" aria-hidden="true">
-        <span>SPACE 2601AE · INTRO</span>
+        <span>SPACE 2601AE · <span id="intro-timecode">00:00:00 · REC</span></span>
         <span class="intro-audio-meta"><canvas id="intro-wave" width="112" height="18"></canvas><span class="intro-track">♪ NO REST IN THE BELT</span></span>
       </div>
       <div class="intro-stage">
@@ -309,6 +346,7 @@
           <p id="intro-kicker"></p>
           <h2 id="intro-title"></h2>
           <p id="intro-tagline"></p>
+          <button id="intro-play-cta" type="button" hidden>Ins Cockpit ↵</button>
         </div>
         <div id="intro-caption" hidden>
           <p class="intro-cap-kicker"></p>
@@ -317,6 +355,7 @@
         </div>
       </div>
       <div class="intro-bar intro-bar-bottom">
+        <div id="intro-chapters" class="intro-chapters" aria-label="Intro-Szenen"></div>
         <div class="intro-progress-track" aria-hidden="true"><i id="intro-progress"></i></div>
         <div class="intro-controls">
           <button id="intro-mute" type="button">Ton aus</button>

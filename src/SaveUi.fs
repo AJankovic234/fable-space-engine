@@ -28,7 +28,12 @@ module SaveUi =
     let label slot = if slot = "auto" then "AUTOMATISCHER SPIELSTAND" else "SPEICHERPLATZ " + slot.Substring(4)
     let summary (data: SaveData) =
         let sector = Universe.tryFindSector data.Run.SectorId |> Option.get
-        (if data.Run.Trading then "Handelsflug" else "Kampfmission") + " · " + sector.Outpost.Name + " · " + string data.Wallet.Credits + " CR"
+        let flight =
+            if data.Run.Trading then
+                let hull = data.Run.Fleet |> Option.map (fun fleet -> fleet.Active) |> Option.defaultValue 0
+                "Handelsflug · " + ShipCatalog.hulls.[hull].Name
+            else "Kampfmission"
+        flight + " · " + sector.Outpost.Name + " · " + string data.Wallet.Credits + " CR"
 
     let create () =
         let element id = document.getElementById id

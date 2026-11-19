@@ -4,7 +4,8 @@ open Fable.Core
 
 type HullSpec =
     { Name: string; Role: string; Art: string; Price: int; Hold: int
-      Cruise: float; Laser: float; Handling: float }
+      Cruise: float; Laser: float; Handling: float
+      Difficulty: string; StartingCredits: int; FlightBrief: string }
 
 type ShipKit = { Name: string; Effect: string; Price: int }
 type HangarFleet = { mutable Active: int; mutable Owned: int; mutable Kit: int; mutable Kits: int }
@@ -20,21 +21,30 @@ module ShipCatalog =
     let hullStrength level = 100.0 + 25.0 * float level
 
     let hulls =
-        [| { Name = "Bergungskutter"; Role = "Bergung & Handel"; Art = "kutter"; Price = 0
-             Hold = 16; Cruise = Ship.cutterCruise; Laser = 12.0; Handling = 1.0 }
+        [| { Name = "Bergungskutter"; Role = "Bergung & Handel"; Art = "kutter"; Price = 200
+             Hold = 16; Cruise = Ship.cutterCruise; Laser = 12.0; Handling = 1.0
+             Difficulty = "Standard"; StartingCredits = 200
+             FlightBrief = "Nach einem 8-t-Auftrag bleibt die halbe Ladefläche für eigenes Erz frei. Der Kutter dreht gutmütig in den Stationsanflug." }
            { Name = "Lastkahn"; Role = "Schwerer Frachter"; Art = "lastkahn"; Price = 380
-             Hold = 32; Cruise = 48.0; Laser = 10.0; Handling = 0.8 }
+             Hold = 32; Cruise = 48.0; Laser = 10.0; Handling = 0.8
+             Difficulty = "Anspruchsvoll"; StartingCredits = 110
+             FlightBrief = "Ein Großauftrag lässt noch acht Tonnen für eigene Ware. Die trägen Kurven verlangen frühe Kurskorrekturen, besonders wenn Piraten den Anflug stören." }
            { Name = "Sperber"; Role = "Leichte Eskorte"; Art = "sperber"; Price = 320
-             Hold = 8; Cruise = 82.0; Laser = 16.0; Handling = 1.25 }
+             Hold = 8; Cruise = 82.0; Laser = 16.0; Handling = 1.25
+             Difficulty = "Experte"; StartingCredits = 60
+             FlightBrief = "Ein Kleinauftrag füllt den ganzen Laderaum. Mit engen Kurven und dem stärksten Serienlaser kannst du dein knappes Handelsbudget durch Abschussprämien ergänzen." }
            { Name = "Eisvogel"; Role = "Frachtkurier"; Art = "eisvogel"; Price = 540
-             Hold = 24; Cruise = 74.0; Laser = 9.0; Handling = 0.97 } |]
+             Hold = 24; Cruise = 74.0; Laser = 9.0; Handling = 0.97
+             Difficulty = "Entspannt"; StartingCredits = 300
+             FlightBrief = "Die Doppelkufen tragen einen ganzen 24-t-Auftrag. Mit hohem Reisetempo und einer Reserve für Geleitschutz kannst du Gefechten ausweichen." } |]
     let kits =
         [| { Name = "Serientrimmung"; Effect = "Grundabstimmung des Rumpfs"; Price = 0 }
            { Name = "Kurierdüsen"; Effect = "+12 m/s Reisegeschwindigkeit"; Price = 90 }
            { Name = "Impulsfokus"; Effect = "+25 % Laserschaden"; Price = 130 }
            { Name = "Schildrelais"; Effect = "Schild lädt 2 s nach dem letzten Treffer. Serie: 3,5 s."; Price = 150 } |]
 
-    let create () = { Active = 0; Owned = 1; Kit = 0; Kits = 1 }
+    let startFleet hull = { Active = hull; Owned = 1 <<< hull; Kit = 0; Kits = 1 }
+    let create () = startFleet 0
     let owns mask index = mask &&& (1 <<< index) <> 0
 
     [<Emit("Number.isInteger($0)")>]
@@ -43,9 +53,9 @@ module ShipCatalog =
     let valid fleet =
         let selection index mask count =
             integer index && index >= 0 && index < count && integer mask && mask > 0 &&
-            mask < (1 <<< count) && owns mask 0 && owns mask index
+            mask < (1 <<< count) && owns mask index
         not (isNull (box fleet)) && selection fleet.Active fleet.Owned hulls.Length &&
-        selection fleet.Kit fleet.Kits kits.Length
+        selection fleet.Kit fleet.Kits kits.Length && owns fleet.Kits 0
 
     let capacityFor fleet (cargo: CargoHold) target =
         cargo.Capacity - hulls.[fleet.Active].Hold + hulls.[target].Hold

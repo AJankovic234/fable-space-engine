@@ -37,7 +37,7 @@ module Blockade =
            { Kind = 2; Name = "Eskorte"; Materials = [| CommodityId.TitaniumScrap, 2; CommodityId.PlasmaCores, 1 |]
              Description = "Begleitet dich auf Wunsch zum Einsatzhafen. Dort entfällt die Gebühr für Geleitschutz." }
            { Kind = 3; Name = "Torpedobomber"; Materials = [| CommodityId.PlasmaCores, 2; CommodityId.TitaniumScrap, 1 |]
-             Description = "Geht nach Helios. Dort kannst du den Bomber selbst fliegen oder seiner Crew im eigenen Kutter Geleitschutz geben." } |]
+             Description = "Geht nach Helios. Dort kannst du den Bomber selbst fliegen oder seiner Crew im eigenen Schiff Geleitschutz geben." } |]
 
     let create () =
         { Started = false; Lifted = false; Permit = 0; BomberReady = false

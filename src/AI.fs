@@ -10,6 +10,13 @@ namespace SpaceEngine
 //         |                             |          (zu nah / zu lange / beschossen)
 //         +---(Spieler zerstoert)-------+---(Ausweichen beendet)-- Evade
 //
+//  Jede Rolle fliegt dieselbe Maschine anders (Kommentare an `think`):
+//      Drohne       Schwarm: rueckt zusammen, kreist und feuert im gemeinsamen Takt.
+//      Spaeher      Flanke: kommt von der Seite, kurzer Vorbeiflug, loest sich mit Sprint.
+//      Kanonenboot  haelt Abstand, zeigt in der Feuerpause die Breitseite, weicht Nahkampf aus.
+//      Bomber       Anlauf mit Nachbrenner, eingefrorene schwere Salve, dreht ab.
+//      Korvette     drei Phasen nach Huelle: Buggeschuetze, dazu Batteriefaecher, am Ende Nahkampf.
+//
 //  Die KI erzeugt ausschliesslich Steuerbefehle (ShipControls). Geflogen wird mit
 //  demselben Flugmodell wie der Spieler - Gegner haben also dieselbe Traegheit
 //  und koennen genauso ausmanoevriert werden.
@@ -52,7 +59,23 @@ type AiBrain =
       mutable WeaponCharge: float
       mutable FiringBurst: bool
       /// Individueller Phasenversatz, damit nicht alle Gegner synchron wackeln.
-      Phase: float }
+      Phase: float
+      // ---- Rollentaktik. Steht nicht im Spielstand; AI.resync leitet sie nach dem Laden ab. ----
+      /// +1/-1: Flanken- und Kreisrichtung; Spaeher wechseln sie nach jedem Anflug.
+      mutable Side: float
+      /// Schwere Salven frieren waehrend der Aufladung den Kurs des Spielers ein (Ort, Geschwindigkeit,
+      /// Weltzeit) und feuern entlang dieser Bahn: wer danach den Kurs wechselt, weicht aus.
+      mutable Locked: bool
+      mutable Lock: Vec3
+      mutable LockVelocity: Vec3
+      mutable LockTime: float
+      /// Korvette: 1..3, steigt mit sinkender Huelle.
+      mutable BossPhase: int
+      /// Beim Phasenwechsel gesetzt; Encounters.takeEscortCall holt es ab.
+      mutable EscortCall: bool
+      mutable BatteryTimer: float
+      /// Restzeit des Schildstosses nach einem Phasenwechsel (Korvette unverwundbar).
+      mutable PhaseShift: float }
 
 [<RequireQualifiedAccess>]
 module AI =
@@ -75,6 +98,24 @@ module AI =
 
     let private threat = JS.Constructors.Float32Array.Create 3
 
+    /// Ab diesem Anteil der Aufladung steht der Zielpunkt schwerer Salven fest.
+    [<Literal>]
+    let LockAt = 0.75
+
+    /// Abstand zwischen zwei Batteriefaechern der Korvette.
+    [<Literal>]
+    let BatteryInterval = 0.34
+
+    /// Korvettenphase aus der Huelle: ueber zwei Drittel 1, ueber ein Drittel 2, darunter 3.
+    let bossPhase (ship: Ship) : int =
+        let hull = if ship.MaxHull > 0.0 then ship.Hull / ship.MaxHull else 1.0
+        if hull > 0.66 then 1 elif hull > 0.33 then 2 else 3
+
+    /// Pause zwischen zwei Salven; die Korvette verkuerzt sie in ihrer letzten Phase.
+    let restTime (brain: AiBrain) (profile: EnemyProfile) : float =
+        if brain.Role = EnemyRole.Commander && brain.BossPhase >= 3 then profile.RestTime * EnemyProfiles.EnragedRest
+        else profile.RestTime
+
     let createBrain (index: int) : AiBrain =
         { Role = EnemyRole.Drone
           State = patrol
@@ -90,7 +131,16 @@ module AI =
           AimPoint = Vec3.zero
           WeaponCharge = 0.0
           FiringBurst = false
-          Phase = float index * 1.618 }
+          Phase = float index * 1.618
+          Side = (if index % 2 = 0 then 1.0 else -1.0)
+          Locked = false
+          Lock = Vec3.zero
+          LockVelocity = Vec3.zero
+          LockTime = 0.0
+          BossPhase = 1
+          EscortCall = false
+          BatteryTimer = 0.0
+          PhaseShift = 0.0 }
 
     let private enter (brain: AiBrain) (ship: Ship) (state: AiState) =
         brain.State <- state
@@ -104,8 +154,26 @@ module AI =
         brain.AimPoint <- home
         brain.WeaponCharge <- 0.0
         brain.FiringBurst <- false
+        brain.Locked <- false
+        brain.BossPhase <- 1
+        brain.EscortCall <- false
+        brain.BatteryTimer <- 0.0
+        brain.PhaseShift <- 0.0
         brain.ThinkTimer <- (brain.Phase % 1.0) * ThinkInterval
         enter brain ship chase
+
+    /// Nach dem Laden: Taktikfelder aus dem gespeicherten Zustand ableiten, ohne dass die
+    /// Korvette ihren Phasenwechsel (Schild, Eskortenruf) ein zweites Mal ausloest.
+    let resync (world: World) (brains: AiBrain[]) =
+        for i in 0 .. brains.Length - 1 do
+            let brain = brains.[i]
+            brain.Locked <- false
+            brain.EscortCall <- false
+            brain.BatteryTimer <- 0.0
+            brain.PhaseShift <- 0.0
+            brain.Side <- if sin brain.Phase >= 0.0 then 1.0 else -1.0
+            brain.BossPhase <-
+                if brain.Role = EnemyRole.Commander && world.Enemies.[i].Alive then bossPhase world.Enemies.[i] else 1
 
     let private clampUnit (v: float) : float =
         if v > 1.0 then 1.0
@@ -142,36 +210,102 @@ module AI =
     let private startEvade (world: World) (brain: AiBrain) (ship: Ship) (toPlayer: Vec3) (distance: float) =
         let rng = world.Rng
         let side = if rng.NextFloat() < 0.5 then -1.0 else 1.0
+        let forward = Quat.forward ship.Rotation
+        let right = Quat.right ship.Rotation
+        let up = Quat.up ship.Rotation
 
         let away =
             if distance > 1e-3 then
                 toPlayer * (-1.0 / distance)
             else
-                Quat.forward ship.Rotation
+                forward
 
-        // Seitlich wegbrechen, dabei Fahrt behalten und sich vom Spieler entfernen
-        brain.EvadeDirection <-
-            Vec3.normalize (
-                Quat.forward ship.Rotation * 0.6
-                + Quat.right ship.Rotation * (side * 0.9)
-                + Quat.up ship.Rotation * rng.Range(-0.5, 0.5)
-                + away * 0.3
-            )
+        match brain.Role with
+        | EnemyRole.Scout ->
+            // Loesen: mit voller Fahrt am Spieler vorbei und geradeaus weiter (keine Kehre im Nahbereich),
+            // damit der naechste Anflug wieder aus der Distanz und von der Flanke kommt
+            brain.EvadeDirection <- Vec3.normalize (forward + right * (side * 0.45) + up * rng.Range(-0.3, 0.3) + away * 0.2)
+            brain.EvadeDuration <- rng.Range(4.0, 5.0)
+        | EnemyRole.Gunship ->
+            // Abstand zurueckgewinnen statt Kurvenkampf
+            brain.EvadeDirection <- Vec3.normalize (away + right * (side * 0.35) + up * rng.Range(-0.2, 0.2))
+            brain.EvadeDuration <- rng.Range(4.0, 5.0)
+        | EnemyRole.Bomber ->
+            // Abdrehen: am Spieler vorbei und Raum fuer den naechsten Anlauf schaffen
+            let profile = EnemyProfiles.profile brain.Role
+            brain.EvadeDirection <- Vec3.normalize (forward * 0.5 + right * (brain.Side * 0.9) + up * 0.3 + away * 0.6)
+            brain.EvadeDuration <- profile.RestTime + rng.Range(-0.4, 0.4)
+            brain.Side <- -brain.Side
+        | _ ->
+            // Seitlich wegbrechen, dabei Fahrt behalten und sich vom Spieler entfernen
+            brain.EvadeDirection <-
+                Vec3.normalize (forward * 0.6 + right * (side * 0.9) + up * rng.Range(-0.5, 0.5) + away * 0.3)
+            brain.EvadeDuration <- rng.Range(1.4, 2.0)
 
-        brain.EvadeDuration <-
-            if brain.Role = EnemyRole.Scout then rng.Range(1.6, 2.3)
-            else rng.Range(1.4, 2.0)
+        brain.Locked <- false
         enter brain ship evade
 
+    /// Vorhalt auf die eingefrorene Bahn: wo waere der Spieler beim Einschlag, wenn er den Kurs
+    /// seit dem Einfrieren gehalten haette? Liefert den Zielpunkt relativ zum Schiff.
+    let private lockedAim (world: World) (brain: AiBrain) (ship: Ship) : Vec3 =
+        let track = Vec3.mulAdd brain.Lock brain.LockVelocity (world.Time - brain.LockTime) - ship.Position
+        let relative = brain.LockVelocity - ship.Velocity
+        let time = Ballistics.interceptTime track.X track.Y track.Z relative.X relative.Y relative.Z Combat.LaserSpeed
+        if time > 0.0 then Vec3.mulAdd track relative time else track
+
+    /// Gerichtete Salve entlang der eingefrorenen Bahn. Die Korvette feuert aus ihren vier
+    /// Seitenbatterien einen engen Faecher, der Bomber aus beiden Bugrohren. Die Rohre schwenken
+    /// begrenzt mit (kein Feuer nach achtern); wer den Kurs haelt, fliegt mitten hinein.
+    let private fireLocked (world: World) (brain: AiBrain) (ship: Ship) (slot: int) =
+        let bow = Quat.forward ship.Rotation
+        let focus = ship.Position + lockedAim world brain ship
+        let mutable fired = false
+        let shoot (origin: Vec3) (target: Vec3) (damage: float) (gimbal: float) =
+            let direction = Vec3.normalize (target - origin)
+            if Vec3.dot direction bow > gimbal then
+                let v = Vec3.mulAdd ship.Velocity direction Combat.LaserSpeed
+                let q = Quat.lookRotation direction Vec3.unitY
+                if LaserPool.spawn world.Lasers origin.X origin.Y origin.Z v.X v.Y v.Z q.X q.Y q.Z q.W damage Team.Enemy then
+                    fired <- true
+        if brain.Role = EnemyRole.Commander then
+            let hull = EnemyMeshes.hull (int brain.Role)
+            let scale = ShipHardpoints.interceptorScale
+            let right = Quat.right ship.Rotation
+            let up = Quat.up ship.Rotation
+            let damage = ship.LaserDamage * EnemyProfiles.BatteryDamage
+            // Obere und untere Batteriepaare wechseln sich ab
+            let upper = int (world.Time / BatteryInterval) % 2 = 0
+            for k in 0 .. hull.Batteries.Length - 1 do
+              if (k < 2) = upper then
+                let origin = ship.Position + Quat.rotateVec3 ship.Rotation (hull.Batteries.[k] * scale)
+                let sx = if k % 2 = 0 then -1.0 else 1.0
+                let sy = if k < 2 then 1.0 else -1.0
+                shoot origin (focus + right * (sx * EnemyProfiles.BatterySpread) + up * (sy * EnemyProfiles.BatterySpread * 0.25)) damage 0.6
+        else
+            shoot (ship.Position + Quat.rotateVec3 ship.Rotation ship.GunLeft) focus ship.LaserDamage 0.9
+            shoot (ship.Position + Quat.rotateVec3 ship.Rotation ship.GunRight) focus ship.LaserDamage 0.9
+            // Muendungsfeuer wie bei einem normalen Schuss (Main liest FireCooldown)
+            if fired then ship.FireCooldown <- ship.FireInterval
+        if fired then world.Events.Add(LaserFired(Team.Enemy, ship.Position, slot))
+
     /// Eine Entscheidung: Zustandswechsel pruefen, dann Steuerbefehle setzen.
-    let private think (world: World) (brain: AiBrain) (ship: Ship) =
+    let private think (world: World) (brains: AiBrain[]) (slot: int) (ship: Ship) =
+        let brain = brains.[slot]
         let player = world.Player
         let rng = world.Rng
         let c = ship.Controls
         let toPlayer = player.Position - ship.Position
         let distance = Vec3.length toPlayer
         let playerAlive = player.Alive
-        let profile = EnemyProfiles.profile brain.Role
+        let role = brain.Role
+        let profile = EnemyProfiles.profile role
+
+        let cycle = profile.ChargeTime + profile.BurstTime + restTime brain profile
+
+        // Spaeher: noch auf dem Weg zur Flanke? Sonst (seitlich des Spielers oder schon nah) eindrehen.
+        let flanking =
+            role = EnemyRole.Scout && brain.StateTime < EnemyProfiles.FlankPatience && distance > EnemyProfiles.FlankCommit
+            && -(Vec3.dot (Quat.forward player.Rotation) toPlayer) / distance >= EnemyProfiles.FlankBearing
 
         // ---- 1. Zustandswechsel ----
         match brain.State with
@@ -195,27 +329,50 @@ module AI =
 
                 brain.StateTime <- 0.0
         | Chase ->
-            if not playerAlive then
-                enter brain ship patrol
-            elif distance < profile.AttackRange then
-                brain.AttackDuration <-
-                    match brain.Role with
-                    | EnemyRole.Scout -> rng.Range(5.0, 7.0)
-                    | EnemyRole.Drone -> rng.Range(8.0, 11.0)
-                    | _ -> rng.Range(18.0, 25.0)
-                enter brain ship attack
-        | Attack ->
-            let damageTaken = brain.HealthAtEntry - (ship.Hull + ship.Shield)
+            let ready =
+                if distance >= profile.AttackRange then false
+                elif role = EnemyRole.Bomber && distance > 1e-3 then
+                    // Der Anlauf beginnt erst, wenn die Nase auf dem Spieler liegt.
+                    Vec3.dot (Quat.forward ship.Rotation) toPlayer / distance > 0.94
+                elif role = EnemyRole.Scout && distance > 1e-3 then
+                    // Spaeher greifen erst an, wenn sie neben oder hinter dem Spieler stehen
+                    // und die eigene Nase schon grob auf ihm liegt (kein Angriff aus der Kehre).
+                    not flanking && Vec3.dot (Quat.forward ship.Rotation) toPlayer / distance > 0.8
+                else true
 
             if not playerAlive then
                 enter brain ship patrol
+            elif ready then
+                brain.AttackDuration <-
+                    match role with
+                    | EnemyRole.Scout -> rng.Range(3.2, 4.6)
+                    | EnemyRole.Drone -> rng.Range(8.0, 11.0)
+                    | _ -> rng.Range(18.0, 25.0)
+                brain.Locked <- false
+                enter brain ship attack
+        | Attack ->
+            let damageTaken = brain.HealthAtEntry - (ship.Hull + ship.Shield)
+            let cycleTime = brain.StateTime % cycle
+            let committed = cycleTime > profile.ChargeTime * 0.5 && cycleTime < profile.ChargeTime + profile.BurstTime
+
+            if not playerAlive then
+                enter brain ship patrol
+            elif role = EnemyRole.Bomber && brain.StateTime > profile.ChargeTime + profile.BurstTime then
+                // Ein Anlauf, eine Salve: danach abdrehen
+                startEvade world brain ship toPlayer distance
+            elif role = EnemyRole.Gunship && distance < profile.PreferredRange * 0.5 && not committed then
+                startEvade world brain ship toPlayer distance
             elif distance < profile.BreakDistance || brain.StateTime > brain.AttackDuration
-                 || (brain.Role = EnemyRole.Scout && damageTaken > 22.0) then
+                 || (role = EnemyRole.Scout && damageTaken > 26.0) then
                 startEvade world brain ship toPlayer distance
             elif distance > profile.AttackRange * 1.25 then
                 enter brain ship chase
         | Evade ->
-            if brain.StateTime > brain.EvadeDuration then
+            let clear = role = EnemyRole.Scout && brain.StateTime > 1.2 && distance > EnemyProfiles.ScoutBreakAway
+            // Bomber holen erst Anlauf, bevor sie wieder eindrehen (hoechstens doppelt so lange).
+            let cramped = role = EnemyRole.Bomber && distance < EnemyProfiles.BomberRunUp && brain.StateTime < brain.EvadeDuration * 2.0
+            if (brain.StateTime > brain.EvadeDuration && not cramped) || clear then
+                if role = EnemyRole.Scout then brain.Side <- -brain.Side
                 if playerAlive then
                     enter brain ship chase
                 else
@@ -238,16 +395,46 @@ module AI =
             // Auf die vorausberechnete Spielerposition zuhalten statt hinterherzufliegen
             let lookTime = Math.Min(distance / ship.CruiseSpeed, 1.0)
             desired <- Vec3.mulAdd toPlayer player.Velocity lookTime
-            if profile.FlankOffset > 0.0 then
-                let side = if sin brain.Phase >= 0.0 then 1.0 else -1.0
-                desired <-
-                    desired
-                    + Quat.right player.Rotation * (profile.FlankOffset * side)
-                    + Quat.up player.Rotation * (sin brain.Phase * 30.0)
             c.Throttle <- 1.0
-            // Nur Spaeherschiffe sprinten kurz; auch ihr Sprint bleibt langsamer als der Spieler.
-            c.Boost <- brain.Role = EnemyRole.Scout && distance > 340.0
-                       && (world.Time + brain.Phase) % 12.0 < 0.65
+
+            match role with
+            | EnemyRole.Scout ->
+                // Flankenpunkt seitlich und leicht hinter dem Spieler anfliegen
+                if flanking then
+                    desired <-
+                        desired
+                        + Quat.right player.Rotation * (profile.FlankOffset * brain.Side)
+                        - Quat.forward player.Rotation * 40.0
+                        + Quat.up player.Rotation * (sin brain.Phase * 30.0)
+                // Kurze Sprints; auch ihr Sprint bleibt langsamer als der Spieler.
+                c.Boost <- distance > 200.0 && (world.Time + brain.Phase) % 6.0 < 1.5
+            | EnemyRole.Drone ->
+                // Schwarm: zu den anderen Drohnen aufschliessen und gemeinsam pendeln
+                let mutable cx = 0.0
+                let mutable cy = 0.0
+                let mutable cz = 0.0
+                let mutable mates = 0
+                for i in 0 .. brains.Length - 1 do
+                    let other = world.Enemies.[i]
+                    if i <> slot && other.Alive && brains.[i].Role = EnemyRole.Drone then
+                        cx <- cx + other.Position.X
+                        cy <- cy + other.Position.Y
+                        cz <- cz + other.Position.Z
+                        mates <- mates + 1
+                let mutable heading = Vec3.normalize desired
+                if mates > 0 then
+                    let toSwarm = Vec3(cx / float mates, cy / float mates, cz / float mates) - ship.Position
+                    let gap = Vec3.length toSwarm
+                    if gap > 45.0 then
+                        heading <- heading + toSwarm * (Math.Min(0.7, (gap - 45.0) / 110.0) / gap)
+                let w = world.Time * 1.4 + (if mates > 0 then 0.0 else brain.Phase)
+                desired <- heading + Quat.right ship.Rotation * (sin w * 0.16) + Quat.up ship.Rotation * (cos (w * 0.7) * 0.1)
+            | EnemyRole.Bomber ->
+                // Zu nah fuer einen Anlauf und nicht ausgerichtet: erst Abstand holen statt eng zu kreisen
+                if distance > 1e-3 && distance < EnemyProfiles.BomberRunUp * 0.6
+                   && Vec3.dot (Quat.forward ship.Rotation) toPlayer / distance < 0.94 then
+                    desired <- toPlayer * (-1.0 / distance) + Quat.right ship.Rotation * (brain.Side * 0.3)
+            | _ -> ()
         | Attack ->
             // Lead-Target-Prediction: Wo ist der Spieler, wenn der Bolt ankommt?
             // Bolts erben die Geschwindigkeit des Schuetzen, deshalb zaehlt die
@@ -276,37 +463,118 @@ module AI =
             let wobble = distance * profile.AimError
             let w = world.Time * 0.85 + brain.Phase
 
-            let aim =
+            let mutable aim =
                 Vec3(
                     lead.X + sin w * wobble,
                     lead.Y + cos (w * 1.3) * wobble,
                     lead.Z + sin (w * 0.7 + 1.0) * wobble
                 )
 
-            desired <- aim
             aimGain <- 1.5
-
-            // Abstand halten: aufschliessen, wenn weit weg; Schub raus, wenn nah
-            c.Throttle <-
-                if distance > profile.PreferredRange * 1.3 then 0.85
-                elif distance > profile.PreferredRange then 0.35
-                elif brain.Role = EnemyRole.Scout then 0.55
-                else 0.0
 
             // Jede Salve beginnt mit einer echten, sichtbaren Vorwarnung. Zwischen
             // den Salven entsteht Zeit zum Gegenangriff oder zum Positionswechsel.
-            let cycle = profile.ChargeTime + profile.BurstTime + profile.RestTime
-            let cycleTime = brain.StateTime % cycle
-            if cycleTime < profile.ChargeTime then
-                brain.WeaponCharge <- cycleTime / profile.ChargeTime
-            elif cycleTime < profile.ChargeTime + profile.BurstTime then
+            // Drohnen teilen sich die Weltuhr: der ganze Schwarm laedt und feuert gemeinsam.
+            let swarm = role = EnemyRole.Drone
+            let cycleTime = (if swarm then world.Time else brain.StateTime) % cycle
+            // Eine Drohne, die mitten im Takt dazukommt, wartet auf die naechste Schwarmsalve.
+            let joined = not swarm || brain.StateTime >= cycleTime
+            let salvoEnd = profile.ChargeTime + profile.BurstTime
+            let locks = role = EnemyRole.Bomber || (role = EnemyRole.Commander && brain.BossPhase >= 2)
+
+            if not joined then
+                ()
+            elif cycleTime < profile.ChargeTime then
+                let charge = cycleTime / profile.ChargeTime
+                brain.WeaponCharge <- charge
+                if charge < LockAt then
+                    brain.Locked <- false
+                elif locks && not brain.Locked then
+                    // Kurs einfrieren: die Salve folgt dieser Bahn, nicht mehr dem Spieler.
+                    brain.Lock <- player.Position
+                    brain.LockVelocity <- player.Velocity
+                    brain.LockTime <- world.Time
+                    brain.Locked <- true
+                    brain.BatteryTimer <- 0.0
+            elif cycleTime < salvoEnd then
                 brain.FiringBurst <- true
+            else
+                brain.Locked <- false
+
+            // Bomber feuern die Buggeschuetze entlang der eingefrorenen Bahn; vorher halten sie
+            // ohne Zielfehler vor, damit beim Einfrieren nichts springt.
+            if role = EnemyRole.Bomber then
+                if brain.Locked then
+                    aim <- lockedAim world brain ship
+                    brain.AimPoint <- ship.Position + aim
+                else
+                    aim <- lead
+
+            desired <- aim
+
+            // Abstand halten: aufschliessen, wenn weit weg; Schub raus, wenn nah
+            let preferred = if role = EnemyRole.Commander && brain.BossPhase >= 3 then EnemyProfiles.EnragedRange else profile.PreferredRange
+            let holdRange =
+                if distance > preferred * 1.3 then 0.85
+                elif distance > preferred then 0.35
+                else 0.0
+
+            // Kreisbahn um den Spieler (Drohnen, Kanonenboot): quer zur Sichtlinie mit Abstandskorrektur
+            let orbit (pull: float) =
+                let line = if distance > 1e-3 then toPlayer / distance else Quat.forward ship.Rotation
+                let axis = if abs line.Y > 0.9 then Vec3.unitX else Vec3.unitY
+                let tangent = Vec3.normalize (Vec3.cross line axis) * brain.Side
+                let radial = Math.Max(-0.8, Math.Min(0.8, (distance - preferred) / preferred * 2.0))
+                tangent * pull + line * radial
+
+            let resting = joined && cycleTime >= salvoEnd
+            let restElapsed = cycleTime - salvoEnd
+
+            match role with
+            | EnemyRole.Scout ->
+                // Vorbeiflug: Fahrt behalten, bis der Abstand zum Loesen zwingt
+                c.Throttle <- 0.8
+            | EnemyRole.Bomber ->
+                // Anlauf mit Nachbrenner
+                c.Throttle <- 1.0
+                c.Boost <- true
+            | EnemyRole.Drone ->
+                // Zwischen zwei Schwarmsalven kreisen, rechtzeitig vor der Aufladung eindrehen
+                if resting && restElapsed < profile.RestTime * 0.5 then
+                    desired <- orbit 0.9
+                    aimGain <- 1.0
+                    c.Throttle <- 0.75
+                else
+                    c.Throttle <- max holdRange 0.2
+            | EnemyRole.Gunship ->
+                // In der Feuerpause Breitseite zeigen und seitlich versetzen
+                if resting && restElapsed < profile.RestTime - EnemyProfiles.GunshipTurnIn then
+                    desired <- orbit 0.8
+                    aimGain <- 1.0
+                    // Erst abdrehen, dann Fahrt aufnehmen: sonst schiebt jede Pause das Boot naeher heran
+                    let offLine = distance < 1e-3 || Vec3.dot (Quat.forward ship.Rotation) toPlayer / distance < 0.7
+                    c.Throttle <- if offLine || distance > preferred then 0.7 else 0.1
+                else
+                    c.Throttle <- holdRange
+            | EnemyRole.Commander ->
+                c.Throttle <- if brain.BossPhase >= 3 && distance > preferred then 1.0 else holdRange
+            | _ ->
+                c.Throttle <- holdRange
 
             let aimLength = Vec3.length aim
+            // Rohre auf die Zielentfernung einstellen
+            ship.Convergence <- aimLength
 
-            if brain.FiringBurst && distance < profile.AttackRange * 1.1 && aimLength > 1e-3 then
+            if brain.FiringBurst && role <> EnemyRole.Bomber && distance < profile.AttackRange * 1.1 && aimLength > 1e-3 then
                 let cosAngle = Vec3.dot (Quat.forward ship.Rotation) aim / aimLength
                 c.Fire <- cosAngle > FireConeCos
+
+            // Gerichtete Salven: Bomber immer, Korvette ab Phase 2 zusaetzlich zu den Buggeschuetzen.
+            if locks && brain.FiringBurst && brain.Locked then
+                brain.BatteryTimer <- brain.BatteryTimer - ThinkInterval
+                if brain.BatteryTimer <= 0.0 then
+                    brain.BatteryTimer <- (if role = EnemyRole.Bomber then profile.FireInterval else BatteryInterval)
+                    fireLocked world brain ship slot
         | Evade ->
             // Ausweichrichtung mit ueberlagertem Zickzack
             let w = world.Time * 1.6 + brain.Phase
@@ -317,7 +585,8 @@ module AI =
                 + Quat.right ship.Rotation * (cos (w * 0.8) * 0.25)
 
             c.Throttle <- 1.0
-            c.Boost <- false
+            // Spaeher loesen sich mit Sprint
+            c.Boost <- role = EnemyRole.Scout
 
         // Nachbarn frueh seitlich umfliegen. Skalare Akkumulatoren vermeiden pro
         // Nachbar neue Vektoren und halten auch groessere Gegnergruppen bezahlbar.
@@ -392,6 +661,25 @@ module AI =
         else
             steerTowards ship direction aimGain
 
+    /// Korvette: Phasen nach Huelle. Jeder Wechsel haelt die Huelle an der Schwelle fest, laedt
+    /// den Schild neu, ruft Eskorte und beginnt mit einer frischen, sichtbaren Aufladung.
+    /// Waehrend des kurzen Schildstosses prallt alles ab - so findet jede Phase auch dann statt,
+    /// wenn der Spieler mit Overdrive feuert.
+    let private updateBoss (brain: AiBrain) (ship: Ship) (dt: float) =
+        if bossPhase ship > brain.BossPhase then
+            brain.BossPhase <- brain.BossPhase + 1
+            ship.Hull <- max ship.Hull (ship.MaxHull * (if brain.BossPhase = 2 then 0.34 else 0.02))
+            brain.PhaseShift <- EnemyProfiles.PhaseShield
+            brain.EscortCall <- true
+            brain.Locked <- false
+            if brain.State = attack then
+                brain.StateTime <- 0.0
+        if brain.PhaseShift > 0.0 then
+            brain.PhaseShift <- brain.PhaseShift - dt
+            ship.Shield <- ship.MaxShield
+            ship.ShieldDelay <- 0.0
+            ship.ShieldFlash <- max ship.ShieldFlash 0.7
+
     /// Fuehrt fuer alle lebenden Gegner faellige Entscheidungen aus.
     /// Einmal pro Physikschritt aufrufen, vor Physics.step.
     let update (world: World) (brains: AiBrain[]) (dt: float) =
@@ -408,6 +696,7 @@ module AI =
                 brains.[i].ThinkTimer <- 0.0
             elif ship.Alive then
                 let brain = brains.[i]
+                if brain.Role = EnemyRole.Commander then updateBoss brain ship dt
                 brain.StateTime <- brain.StateTime + dt
                 brain.ThinkTimer <- brain.ThinkTimer - dt
 
@@ -417,4 +706,4 @@ module AI =
                     if brain.ThinkTimer < 0.0 then
                         brain.ThinkTimer <- 0.0
 
-                    think world brain ship
+                    think world brains i ship

@@ -171,5 +171,5 @@ module BlockadeUi =
             setAction "convoy-filters" (sector = Blockade.helios && state.Permit = 1) UnloadFilters
                 (sprintf "Filterlieferung quittieren · %d CR Honorar" Blockade.filterFee)
             setAction "convoy-bomber" (Blockade.canSortie state sector) FlyBomber "Bomber übernehmen"
-            setAction "convoy-escort" (Blockade.canSortie state sector) FlyEscort "Bomber im eigenen Kutter begleiten"
+            setAction "convoy-escort" (Blockade.canSortie state sector) FlyEscort "Bomber im eigenen Schiff begleiten"
             updateYard ui state sector wallet cargo

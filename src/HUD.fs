@@ -92,10 +92,18 @@ type Hud =
       mutable HoldStick: bool
       /// Schub ist an das Tempo des Ziels gekoppelt.
       mutable MatchSpeed: bool
-      /// Bereits belegte Beschriftungsflaechen dieses Frames: [x0, y0, x1, y1] je Eintrag.
-      LabelRects: float[]
-      mutable LabelCount: int
-      mutable Time: float }
+      Reserved: ResizeArray<HudLayout.Rect>
+      Markers: ResizeArray<HudContacts.Marker>
+      mutable InCombat: bool
+      mutable Time: float
+      /// Letzter eigener Treffer lag auf dem Schild (blaue statt helle Treffermarke).
+      mutable HitShield: bool
+      /// > 0: Abschussmarke am Fadenkreuz (klingt ab).
+      mutable KillMarker: float
+      /// Trefferrichtungen: je Platz [x, y, z, Restzeit], Richtung in Weltkoordinaten.
+      DamageDirs: float[]
+      /// Dargestellte Kamerarotation des Frames (fuer die Trefferrichtung).
+      mutable ViewRotation: Quat }
 
 [<RequireQualifiedAccess>]
 module Hud =
@@ -116,7 +124,7 @@ module Hud =
             let heading,keys =
                 match step with
                 | FlightSchool.Accelerate -> "Nimm Fahrt auf", "Halte <kbd>↑</kbd> oder <kbd>R</kbd>, bis du 18 m/s erreichst."
-                | FlightSchool.Brake -> "Fang den Kutter ab", "<kbd>↓</kbd> senkt den Schub. Halte jetzt <kbd>X</kbd>, bis du unter 4 m/s bist."
+                | FlightSchool.Brake -> "Bremse dein Schiff ab", "<kbd>↓</kbd> senkt den Schub. Halte jetzt <kbd>X</kbd>, bis du unter 4 m/s bist."
                 | FlightSchool.FirstTarget -> "Triff die Zieldrohne", "Ziele mit <kbd>A</kbd>/<kbd>D</kbd> und <kbd>W</kbd>/<kbd>S</kbd>. Feuere mit der <kbd>Leertaste</kbd>. Die Drohne ist unbewaffnet."
                 | FlightSchool.MovingTarget -> "Folge dem beweglichen Ziel", "Die zweite Drohne pendelt seitwärts. Nimm sie ins Fadenkreuz und halte die <kbd>Leertaste</kbd>."
                 | _ -> "Zurück ans Handelsdock", "Flieg mit <kbd>↑</kbd> zur Stationsmarke. Unter 90 m kannst du mit <kbd>B</kbd> andocken."
@@ -154,9 +162,6 @@ module Hud =
     let private Red = "rgba(255, 90, 70, 0.95)"
 
     [<Literal>]
-    let private RedDim = "rgba(255, 90, 70, 0.3)"
-
-    [<Literal>]
     let private RedSoft = "rgba(255, 90, 70, 0.62)"
 
     [<Literal>]
@@ -190,6 +195,16 @@ module Hud =
     /// Bis zu dieser Entfernung wird eine Vorhaltemarke angezeigt (Laser-Reichweite).
     [<Literal>]
     let private LeadRange = 640.0
+
+    /// Gleichzeitig angezeigte Trefferrichtungen.
+    [<Literal>]
+    let private DamageSlots = 4
+
+    [<Literal>]
+    let private HitMarkerTime = 0.22
+
+    [<Literal>]
+    let private KillMarkerTime = 0.6
 
     let inline private fill (ctx: CanvasRenderingContext2D) (color: string) = ctx.fillStyle <- U3.Case1 color
     let inline private stroke (ctx: CanvasRenderingContext2D) (color: string) = ctx.strokeStyle <- U3.Case1 color
@@ -250,9 +265,14 @@ module Hud =
           BoostLocked = false
           HoldStick = false
           MatchSpeed = false
-          LabelRects = Array.zeroCreate (4 * 8)
-          LabelCount = 0
-          Time = 0.0 }
+          Reserved = ResizeArray()
+          Markers = ResizeArray()
+          InCombat = false
+          Time = 0.0
+          HitShield = false
+          KillMarker = 0.0
+          DamageDirs = Array.zeroCreate (4 * DamageSlots)
+          ViewRotation = Quat.identity }
 
     /// Haelt das HUD-Canvas deckungsgleich mit dem WebGL-Canvas. Nur bei
     /// Groessenaenderung aufrufen (setzt die Canvas-Groesse, was den Inhalt loescht).
@@ -278,7 +298,35 @@ module Hud =
         hud.BannerDuration <- duration
 
     /// Eigener Laser hat ein Schiff getroffen.
-    let hitMarker (hud: Hud) = hud.HitMarker <- 0.2
+    let hitMarker (hud: Hud) = hud.HitMarker <- HitMarkerTime
+
+    /// Treffermarke mit Unterscheidung Schild (blau) / Huelle (hell).
+    let confirmHit (hud: Hud) (shield: bool) =
+        hud.HitMarker <- HitMarkerTime
+        hud.HitShield <- shield
+
+    /// Abschussbestaetigung: rotes Kreuz und Ring am Fadenkreuz.
+    let confirmKill (hud: Hud) =
+        hud.KillMarker <- KillMarkerTime
+        hud.HitMarker <- 0.0
+
+    /// Merkt eine Trefferrichtung (Welt, vom Spieler zur Quelle). Treffer aus fast
+    /// derselben Richtung frischen ihren Platz auf, sonst wird der aelteste ersetzt.
+    let damageFrom (hud: Hud) (direction: Vec3) =
+        let d = hud.DamageDirs
+        let mutable slot = -1
+        let mutable oldest = 0
+        for i in 0 .. DamageSlots - 1 do
+            let o = i * 4
+            if d.[o + 3] < d.[oldest * 4 + 3] then oldest <- i
+            if slot < 0 && d.[o + 3] > 0.0
+               && d.[o] * direction.X + d.[o + 1] * direction.Y + d.[o + 2] * direction.Z > 0.94 then
+                slot <- i
+        let o = (if slot >= 0 then slot else oldest) * 4
+        d.[o] <- direction.X
+        d.[o + 1] <- direction.Y
+        d.[o + 2] <- direction.Z
+        d.[o + 3] <- CombatFeedback.DamageIndicatorTime
 
     /// Der Spieler hat Schaden erlitten.
     let damage (hud: Hud) (amount: float) =
@@ -305,7 +353,11 @@ module Hud =
         hud.RewardTime <- max 0.0 (hud.RewardTime - dt)
         hud.BannerTime <- Math.Max(0.0, hud.BannerTime - dt)
         hud.HitMarker <- Math.Max(0.0, hud.HitMarker - dt)
+        hud.KillMarker <- Math.Max(0.0, hud.KillMarker - dt)
         hud.DamageFlash <- Math.Max(0.0, hud.DamageFlash - dt * 1.6)
+        for i in 0 .. DamageSlots - 1 do
+            let o = i * 4 + 3
+            if hud.DamageDirs.[o] > 0.0 then hud.DamageDirs.[o] <- Math.Max(0.0, hud.DamageDirs.[o] - dt)
 
         if hud.ComboTimer > 0.0 then
             hud.ComboTimer <- Math.Max(0.0, hud.ComboTimer - dt)
@@ -334,43 +386,32 @@ module Hud =
             hud.ManualLock <- false
             false
 
+    /// Schaltet auf das naechstgelegene Ziel, bei erneutem Druck auf das naechstfernere (N).
+    let targetNearest (hud: Hud) (enemies: Ship[]) (position: Vec3) : bool =
+        let next = CombatFeedback.nextByDistance enemies position (if hud.ManualLock then hud.Target else -1)
+        if next >= 0 then
+            hud.Target <- next
+            hud.ManualLock <- true
+            true
+        else
+            false
+
     /// Loescht das Overlay und stellt die Zeichen-Transformation ein.
     /// Erster Aufruf jedes Frames, vor allen draw*-Funktionen.
     let clear (hud: Hud) =
         let ctx = hud.Ctx
         ctx.setTransform (hud.Ratio, 0.0, 0.0, hud.Ratio, 0.0, 0.0)
         ctx.clearRect (0.0, 0.0, hud.Width, hud.Height)
-        hud.LabelCount <- 0
+        hud.Reserved.Clear()
+        hud.Markers.Clear()
 
-    /// Reserviert eine Beschriftungsflaeche und liefert die y-Verschiebung, mit der sie
-    /// keine frueher reservierte Flaeche dieses Frames ueberdeckt (weicht nach unten aus).
-    let private reserveLabel (hud: Hud) (x: float) (y: float) (width: float) (height: float) : float =
-        let r = hud.LabelRects
-        let mutable shift = 0.0
-        let mutable settled = false
-        let mutable guard = 0
+    let private queueMarker (hud: Hud) glyph x y radius tint priority quiet title detail =
+        hud.Markers.Add
+            { Glyph = glyph; X = x; Y = y; Radius = if quiet then min 5.0 radius else radius
+              Tint = tint; Priority = priority; Quiet = quiet; Title = title; Detail = detail }
 
-        while not settled && guard < 8 do
-            settled <- true
-            guard <- guard + 1
-
-            for i in 0 .. hud.LabelCount - 1 do
-                let o = i * 4
-                let top = y + shift
-
-                if x < r.[o + 2] && x + width > r.[o] && top < r.[o + 3] && top + height > r.[o + 1] then
-                    shift <- r.[o + 3] + 4.0 - y
-                    settled <- false
-
-        if hud.LabelCount * 4 < r.Length then
-            let o = hud.LabelCount * 4
-            r.[o] <- x
-            r.[o + 1] <- y + shift
-            r.[o + 2] <- x + width
-            r.[o + 3] <- y + shift + height
-            hud.LabelCount <- hud.LabelCount + 1
-
-        shift
+    let drawWorldMarkers (hud: Hud) =
+        HudContacts.draw hud.Ctx hud.Width hud.Height hud.Reserved hud.Markers
 
     /// String fuer eine Zahl aus der Tabelle (auf 0..999 begrenzt).
     let private number (hud: Hud) (value: float) : string =
@@ -533,6 +574,9 @@ module Hud =
     let private drawRadar
         (hud: Hud)
         (world: World)
+        (sector: SectorDef)
+        (school: int)
+        (sortie: bool)
         (scanElapsed: float)
         (scanRange: float)
         (alpha: float)
@@ -623,49 +667,44 @@ module Hud =
                     let py = baseY + lz * ry
                     ctx.fillRect (px - 1.2, py - 1.2, 2.4, 2.4)
 
-        // 2. Gegner mit vertikalen Hoehenlinien (Stalks)
-        let enemies = world.Enemies
-
-        for i in 0 .. enemies.Length - 1 do
-            let enemy = enemies.[i]
-
-            if enemy.Alive then
-                let ex = enemy.PrevPosition.X + (enemy.Position.X - enemy.PrevPosition.X) * alpha
-                let ey = enemy.PrevPosition.Y + (enemy.Position.Y - enemy.PrevPosition.Y) * alpha
-                let ez = enemy.PrevPosition.Z + (enemy.Position.Z - enemy.PrevPosition.Z) * alpha
-                let vx = ex - playerPosition.X
-                let vy = ey - playerPosition.Y
-                let vz = ez - playerPosition.Z
-                let tx = 2.0 * (qy * vz - qz * vy)
-                let ty = 2.0 * (qz * vx - qx * vz)
-                let tz = 2.0 * (qx * vy - qy * vx)
-                let mutable lx = (vx + qw * tx + (qy * tz - qz * ty)) / radarRange
-                let mutable ly = (vy + qw * ty + (qz * tx - qx * tz)) / radarRange
-                let mutable lz = (vz + qw * tz + (qx * ty - qy * tx)) / radarRange
-                let planar = sqrt (lx * lx + lz * lz)
-
-                if planar > 0.96 then
-                    let inv = 0.96 / planar
-                    lx <- lx * inv
-                    lz <- lz * inv
-
-                ly <- Math.Max(-0.9, Math.Min(0.9, ly))
-                let discX = cx + lx * rx
-                let discY = baseY + lz * ry
-                let blipY = discY - ly * 22.0
-                let isTarget = i = target
-
-                // Fusspunkt auf der Scheibe + Hoehenlinie
-                stroke ctx (if isTarget then Amber else RedSoft)
-                ctx.lineWidth <- 1.2
+        // Gleiche Projektion fuer Navigations- und Kampfkontakte. Kurzer Fussstrich
+        // auf der Scheibe, Symbol am oberen bzw. unteren Ende der Hoehenlinie.
+        let toLocal = Quat.conjugate playerRotation
+        let contact p tint glyph size core =
+            let local = Quat.rotateVec3 toLocal (p-playerPosition)
+            let struct (offset,foot,tip) = HudLayout.radarOffset radarRange rx ry local
+            let x,y = cx+offset,baseY+tip
+            stroke ctx tint
+            ctx.lineWidth <- 1.2
+            if abs (tip-foot) >= 1.0 then
                 ctx.beginPath ()
-                ctx.moveTo (discX, discY)
-                ctx.lineTo (discX, blipY)
+                ctx.moveTo (x-2.0,baseY+foot)
+                ctx.lineTo (x+2.0,baseY+foot)
+                ctx.moveTo (x,baseY+foot)
+                ctx.lineTo (x,y)
                 ctx.stroke ()
-                fill ctx (if isTarget then Amber else Red)
+            HudContacts.symbol ctx glyph x y size
+            if core > 0.0 then
+                fill ctx tint
                 ctx.beginPath ()
-                ctx.arc (discX, blipY, (if isTarget then 3.4 else 2.5), 0.0, 2.0 * Math.PI)
+                ctx.arc (x,y,core,0.0,2.0*Math.PI)
                 ctx.fill ()
+
+        if not sortie && (school = FlightSchool.Off || school = FlightSchool.Dock) then
+            contact sector.Outpost.Position Cyan HudContacts.Square 3.3 0.0
+            if school = FlightSchool.Off then
+                for gate in sector.Gates do
+                    contact gate.Position "#ccb36f" HudContacts.Diamond 3.5 0.0
+
+        let enemies = world.Enemies
+        for i in 0 .. enemies.Length-1 do
+            if i <> target && enemies.[i].Alive then
+                let enemy = enemies.[i]
+                contact (Vec3.lerp enemy.PrevPosition enemy.Position alpha) Red HudContacts.Circle 2.3 2.3
+        if target >= 0 then
+            let enemy = enemies.[target]
+            let p = Vec3.lerp enemy.PrevPosition enemy.Position alpha
+            contact p "#ffce79" HudContacts.Circle 5.2 1.6
 
         // Eigenes Schiff in der Mitte
         fill ctx Cyan
@@ -679,29 +718,19 @@ module Hud =
             fill ctx "#deabf3"
             ctx.fillText ("[G] Archivscan · " + number hud scanRange + " m", cx, cy + 35.0)
 
-    /// Eigener Stationsmarker bleibt auch hinter der Kamera als Richtungspfeil sichtbar.
     let drawCustoms (hud: Hud) (vp: Mat4) (blockade: BlockadeState) (f: CapitalFlightState) (player: Vec3) freightSix =
         let ctx = hud.Ctx
-        let marker (p: Vec3) tint label size height =
+        let marker (p: Vec3) tint label size priority =
             project hud vp p.X p.Y p.Z
+            let quiet = hud.InCombat && f.Role = 0
             if onScreen hud then
-                let x,y = hud.ScreenX,hud.ScreenY
-                stroke ctx tint
-                bracket ctx x y size 4.0
-                if label <> "" then
-                    ctx.font <- FontSmall
-                    ctx.textAlign <- "center"
-                    fill ctx tint
-                    let mutable labelY = y-size-14.0
-                    if height > 0.0 then
-                        project hud vp p.X (p.Y+height) p.Z
-                        if hud.ClipW > 0.0 then labelY <- min labelY (hud.ScreenY-15.0)
-                    ctx.fillText (label,max 82.0 (min (hud.Width-82.0) x),max 3.0 labelY)
+                queueMarker hud HudContacts.Square hud.ScreenX hud.ScreenY size tint priority quiet label ""
             elif f.Role <> 0 && p = CapitalFlight.position then
                 let length = max 0.0001 (sqrt (hud.ClipX*hud.ClipX + hud.ClipY*hud.ClipY))
                 let dx,dy = hud.ClipX/length,-hud.ClipY/length
-                fill ctx tint
-                arrow ctx (hud.Width*0.5 + dx*max 20.0 (hud.Width*0.5-45.0)) (hud.Height*0.5 + dy*max 20.0 (hud.Height*0.5-130.0)) dx dy 9.0
+                let x = hud.Width*0.5 + dx*max 20.0 (hud.Width*0.5-45.0)
+                let y = hud.Height*0.5 + dy*max 20.0 (hud.Height*0.5-130.0)
+                queueMarker hud (HudContacts.Bearing(dx,dy)) x y 9.0 tint priority false label ""
         ctx.save ()
         ctx.textBaseline <- "top"
         if f.Role = 0 && Vec3.distance player freightSix < 490.0 then
@@ -709,19 +738,20 @@ module Hud =
                 if f.Landing >= CapitalFlight.landingTime then "am Liegeplatz"
                 elif blockade.Lifted || blockade.Permit = 2 then "Einflug frei"
                 else "wartet auf Freigabe"
-            marker freightSix Cyan ("Frachter Sechs · " + clearance) 11.0 0.0
+            marker freightSix Cyan ("Frachter Sechs · " + clearance) 8.0 60
         let distance = Vec3.distance player CapitalFlight.position
         if not blockade.Lifted then
-            marker CapitalFlight.position Amber ("AETHER · Zollkreuzer · " + string (int distance) + " m") 18.0 CapitalFlight.crown
+            marker CapitalFlight.position Amber ("AETHER · Zollkreuzer · " + string (int distance) + " m") 11.0 (if f.Role <> 0 then 120 else 75)
             if f.Role <> 0 && distance < 460.0 then
                 for i in 0..1 do
-                    if f.Guns.[i] > 0.0 then marker (CapitalFlight.position+CapitalFlight.gunOffsets.[i]) Red "" 5.5 0.0
+                    if f.Guns.[i] > 0.0 then marker (CapitalFlight.position+CapitalFlight.gunOffsets.[i]) Red "" 5.5 125
         if f.Role = CapitalFlight.Escort && not blockade.Lifted then
-            marker (CapitalFlight.allyPosition f) Green "Kepler Zwei" 10.0 0.0
+            marker (CapitalFlight.allyPosition f) Green "Kepler Zwei" 8.0 110
         if f.Role <> 0 && not blockade.Lifted then
             let width = min 356.0 (hud.Width - 32.0)
             fill ctx "rgba(7,16,22,0.92)"
             ctx.fillRect (16.0,123.0,width,63.0)
+            hud.Reserved.Add(HudLayout.rect 16.0 123.0 width 63.0)
             ctx.textAlign <- "left"
             fill ctx Amber
             ctx.font <- FontLabel
@@ -744,55 +774,29 @@ module Hud =
             bar ctx 25.0 174.0 (width-18.0) 3.0 (if f.Flight > 0.0 then 1.0-f.Flight else f.Lock/CapitalFlight.lockTime) Amber
         ctx.restore ()
 
-    let drawStation (hud: Hud) (viewProj: Mat4) (aspect: float) (outpost: Outpost) (position: Vec3) (combat: bool) =
-        let ctx = hud.Ctx
+    let drawStation (hud: Hud) (viewProj: Mat4) (aspect: float) (outpost: Outpost) (position: Vec3) (dockBlocked: bool) =
         let p = outpost.Position
-        let distance = Vec3.length (p - position)
+        let distance = Vec3.distance p position
         project hud viewProj p.X p.Y p.Z
-        let visible = onScreen hud && hud.ScreenX > 125.0 && hud.ScreenX < hud.Width-125.0 && hud.ScreenY > 170.0 && hud.ScreenY < hud.Height-170.0
-        let mutable x = hud.ScreenX
-        let mutable y = hud.ScreenY
-        ctx.save ()
-        fill ctx Cyan
-        stroke ctx Cyan
-        ctx.lineWidth <- 1.5
-        if visible then
-            bracket ctx x y 21.0 8.0
-            // Keep the station facade visible during the final approach.
-            if distance < outpost.ApproachRadius && hud.Width >= 760.0 then
-                let side = if x < hud.Width * 0.55 then 1.0 else -1.0
-                let labelX = max 124.0 (min (hud.Width-124.0) (x + side * 258.0))
-                stroke ctx "rgba(113,218,224,0.58)"
-                ctx.beginPath ()
-                ctx.moveTo (x + side*25.0, y+15.0)
-                ctx.lineTo (labelX-side*122.0, y+46.0)
-                ctx.stroke ()
-                x <- labelX
-        else
-            let dx = hud.ClipX / max 0.01 aspect
-            let dy = -hud.ClipY
-            let length = sqrt (dx*dx + dy*dy)
-            let nx = if length < 0.001 then 0.0 else dx/length
-            let ny = if length < 0.001 then 1.0 else dy/length
-            x <- hud.Width*0.5 + nx*(hud.Width*0.5-130.0)
-            y <- hud.Height*0.5 + ny*max 35.0 (hud.Height*0.5-190.0)
-            arrow ctx x y nx ny 9.0
-        ctx.textAlign <- "center"
-        ctx.textBaseline <- "top"
-        ctx.font <- FontSmall
-        y <- y + reserveLabel hud (x-122.0) (y+28.0) 244.0 43.0
-        fill ctx "rgba(3,12,23,0.83)"
-        ctx.fillRect (x-122.0,y+28.0,244.0,43.0)
-        fill ctx Cyan
-        ctx.fillText ((if visible then outpost.Name else "HANDELSSTATION") + " · " + string (int distance) + " m",x,y+32.0,232.0)
-        fill ctx (if combat then TextDim else Amber)
+        let x,y,glyph =
+            if onScreen hud then hud.ScreenX,hud.ScreenY,HudContacts.Square
+            else
+                let dx,dy = hud.ClipX / max 0.01 aspect,-hud.ClipY
+                let length = sqrt (dx*dx + dy*dy)
+                let nx,ny = if length < 0.001 then 0.0,1.0 else dx/length,dy/length
+                hud.Width*0.5 + nx*max 16.0 (hud.Width*0.5-30.0),
+                hud.Height*0.5 + ny*max 16.0 (hud.Height*0.5-186.0),HudContacts.Bearing(nx,ny)
+        let docking = Universe.evaluateDocking outpost position dockBlocked
         let prompt =
-            match Universe.evaluateDocking outpost position combat with
-            | ReadyToDock _ -> "[B] ANDOCKEN · HANDEL & AUSRÜSTUNG"
-            | BlockedByCombat _ -> "DOCK GESPERRT · SEKTOR SICHERN"
-            | _ -> if combat then "NACH DEM KAMPF VERFÜGBAR" else "ANFLIEGEN · DOCKRADIUS " + string (int outpost.DockRadius) + " m"
-        ctx.fillText (prompt,x,y+51.0,232.0)
-        ctx.restore ()
+            match docking with
+            | ReadyToDock _ -> "[B] Andocken · Handel & Ausrüstung"
+            | BlockedByCombat _ -> "Dock gesperrt · Sektor sichern"
+            | _ -> "Anfliegen · Dockradius " + string (int outpost.DockRadius) + " m"
+        match docking with
+        | ReadyToDock _ when hud.InCombat ->
+            queueMarker hud glyph x y 5.0 Cyan 100 false ("[B] Andocken · " + string (int distance) + " m") ""
+        | _ ->
+            queueMarker hud glyph x y 10.0 Cyan 100 hud.InCombat (outpost.Name + " · " + string (int distance) + " m") prompt
 
     /// Short streaks expand from the projected direction of travel after a jump.
     let drawJumpTransit (hud: Hud) (viewProj: Mat4) (position: Vec3) (direction: Vec3) progress =
@@ -820,45 +824,14 @@ module Hud =
 
     /// Markiert die Sprungtore des aktuellen Sektors im 3D-Raum mit Zielnamen und Distanz.
     let drawJumpGates (hud: Hud) (viewProj: Mat4) (sector: SectorDef) (position: Vec3) =
-        let ctx = hud.Ctx
         for gate in sector.Gates do
             let distance = Vec3.distance gate.Position position
-            let near = distance < 120.0
-            let p = if near then gate.Position + Quat.up (Universe.gateRotation sector gate) * 30.0 else gate.Position
+            // Nah am Tor rückt die Marke über den Ring, damit die Durchfahrt frei bleibt.
+            let p = if distance < 120.0 then gate.Position + Quat.up (Universe.gateRotation sector gate) * 30.0 else gate.Position
             project hud viewProj p.X p.Y p.Z
             if onScreen hud then
-                let x = hud.ScreenX
-                let y = hud.ScreenY
-                let pulse = 1.0 + 0.12 * sin (hud.Time * 3.5)
-                let r = 14.0 * pulse
-                ctx.save ()
-                stroke ctx Amber
-                ctx.lineWidth <- 1.5
-                if not near then
-                    ctx.beginPath ()
-                    ctx.moveTo (x, y - r)
-                    ctx.lineTo (x + r, y)
-                    ctx.lineTo (x, y + r)
-                    ctx.lineTo (x - r, y)
-                    ctx.closePath ()
-                    ctx.stroke ()
-                ctx.textAlign <- "center"
-                ctx.textBaseline <- "top"
-                ctx.font <- FontSmall
-                let width = min 196.0 (hud.Width - 16.0)
-                let left = max 8.0 (min (hud.Width - 8.0 - width) (x - width * 0.5))
-                let top = if near then y - 26.0 else y + r + 5.0
-                let labelY = top + reserveLabel hud left top width 20.0
-                let overlapsRadar =
-                    hud.Width >= 760.0 && labelY + 20.0 > hud.Height - 118.0 &&
-                    left < hud.Width * 0.5 + 92.0 && left + width > hud.Width * 0.5 - 92.0
-                if width > 8.0 && labelY >= 6.0 && labelY + 20.0 <= hud.Height - 6.0 &&
-                   not overlapsRadar && (not near || labelY + 20.0 <= y) then
-                    fill ctx "rgba(3,12,23,0.78)"
-                    ctx.fillRect (left, labelY, width, 20.0)
-                    fill ctx Amber
-                    ctx.fillText (gate.Label + " · " + string (int distance) + " m", left + width * 0.5, labelY + 3.0, width - 8.0)
-                ctx.restore ()
+                let title = gate.Label + " · " + string (int distance) + " m"
+                queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
 
     /// Das Flug-HUD.
     ///   viewProj/aspect : Kamera des aktuellen Frames
@@ -872,6 +845,7 @@ module Hud =
         (opticsActive: bool)
         (world: World)
         (brains: AiBrain[])
+        (sectorIndex: int)
         (pickups: ResizeArray<MineralPickup>)
         (scanElapsed: float)
         (input: InputState)
@@ -926,6 +900,38 @@ module Hud =
             ctx.fillRect (0.0, 0.0, w, h)
             ctx.globalAlpha <- 1.0
 
+        // ---- Trefferrichtung: rote Boegen um die Bildmitte zeigen zur Schadensquelle ----
+        if player.Alive then
+            let toView = Quat.conjugate hud.ViewRotation
+            let radius = Math.Min(w, h) * 0.22
+            let d = hud.DamageDirs
+            ctx.save ()
+            ctx.lineCap <- "round"
+            for slot in 0 .. DamageSlots - 1 do
+                let o = slot * 4
+                let life = d.[o + 3]
+                if life > 0.0 then
+                    let local = Quat.rotateVec3 toView (Vec3(d.[o], d.[o + 1], d.[o + 2]))
+                    let struct (angle, weight) = CombatFeedback.indicator local.X local.Y local.Z
+                    // Frisch kraeftig, in der letzten halben Sekunde ausblenden
+                    let fresh = (life - (CombatFeedback.DamageIndicatorTime - 0.25)) / 0.25
+                    ctx.globalAlpha <- Math.Min(1.0, life / 0.5) * weight
+                    stroke ctx "rgba(255, 60, 40, 0.32)"
+                    ctx.lineWidth <- 14.0 + 6.0 * Math.Max(0.0, fresh)
+                    ctx.beginPath ()
+                    ctx.arc (centerX, centerY, radius, angle - 0.36, angle + 0.36)
+                    ctx.stroke ()
+                    stroke ctx Red
+                    ctx.lineWidth <- 3.0
+                    ctx.beginPath ()
+                    ctx.arc (centerX, centerY, radius + 6.0, angle - 0.3, angle + 0.3)
+                    ctx.stroke ()
+                    fill ctx Red
+                    let ux = cos angle
+                    let uy = sin angle
+                    arrow ctx (centerX + ux * (radius + 20.0)) (centerY + uy * (radius + 20.0)) ux uy 8.0
+            ctx.restore ()
+
         // ---- Zielpunkt des Schiffs (Fadenkreuz) ----
         let forward = Quat.forward playerRotation
         // In der Verfolgerkamera entsteht bei nahen Zielen Parallaxe. Das Visier
@@ -941,6 +947,11 @@ module Hud =
         let aimVisible = hud.ClipW > 1e-3
         let aimX = if aimVisible then hud.ScreenX else centerX
         let aimY = if aimVisible then hud.ScreenY else centerY
+
+        let sightBounds =
+            let r = if cameraMode = Cockpit then 68.0 else 38.0
+            HudLayout.rect (aimX-r) (aimY-38.0) (r + (if opticsActive then 112.0 else r)) 76.0
+        hud.Reserved.Add sightBounds
 
         // ---- Prograde-Drift-Marke (tatsaechlicher Geschwindigkeitsvektor) ----
         let speed = Vec3.length player.Velocity
@@ -1008,25 +1019,25 @@ module Hud =
 
         hud.Target <- target
 
-        // Physische Beute hat eigene Diamantmarker und eine lesbare Entfernung.
-        ctx.font <- FontSmall
-        ctx.textAlign <- "center"
+        hud.InCombat <- sortie || (target >= 0 && enemies |> Array.exists (fun e ->
+            e.Alive && Vec3.distanceSq e.Position playerPosition <= LeadRange*LeadRange))
+        let sector = Universe.sectorByIndex sectorIndex
+        // Archivposition erst nach erfolgreichem Scan einblenden.
+        if school = FlightSchool.Off && PilotSkills.contains world.Pilot.Relics sectorIndex then
+            let p = RelicArchive.position sector.Outpost.Position sectorIndex
+            let distance = Vec3.distance p playerPosition
+            if distance <= RelicArchive.range world.Pilot then
+                project hud viewProj p.X p.Y p.Z
+                if onScreen hud then
+                    queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 7.0 "#deabf3" 65 hud.InCombat
+                        ("Archiv · " + fst RelicArchive.entries.[sectorIndex]) (string (int distance) + " m")
         for pickup in pickups do
             let p = pickup.Position
             project hud viewProj p.X p.Y p.Z
             if onScreen hud then
-                let x, y = hud.ScreenX, hud.ScreenY
-                stroke ctx (if pickup.Kind = 3 then "#deabf3" elif pickup.Kind = 2 then Amber else Cyan)
-                ctx.lineWidth <- 1.5
-                ctx.beginPath ()
-                ctx.moveTo (x, y-12.0)
-                ctx.lineTo (x+9.0, y)
-                ctx.lineTo (x, y+12.0)
-                ctx.lineTo (x-9.0, y)
-                ctx.closePath ()
-                ctx.stroke ()
-                fill ctx TextColor
-                ctx.fillText ((if pickup.Kind = 3 then "NAV · " else "") + number hud (Vec3.distance p playerPosition) + " m", x, y+18.0)
+                let tint = if pickup.Kind = 3 then "#deabf3" elif pickup.Kind = 2 then Amber else Cyan
+                queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 6.0 tint 35 hud.InCombat
+                    ((if pickup.Kind = 3 then "NAV · " else "") + number hud (Vec3.distance p playerPosition) + " m") ""
 
         // ---- Gegner-Marker: Rahmen im Bild, Pfeile am Rand ----
         ctx.textAlign <- "center"
@@ -1036,7 +1047,7 @@ module Hud =
         let mutable targetY = 0.0
         let mutable targetVisible = false
 
-        for i in 0 .. enemies.Length - 1 do
+        let drawEnemy i =
             let enemy = enemies.[i]
 
             if enemy.Alive then
@@ -1060,60 +1071,26 @@ module Hud =
                 if onScreen hud then
                     let x = hud.ScreenX
                     let y = hud.ScreenY
-                    // Rahmengroesse folgt der scheinbaren Groesse, mit Mindestmass
-                    let size = Math.Max((if isTarget then 16.0 else 9.0), enemy.Radius * 1.1 * h / hud.ClipW)
-                    ctx.lineWidth <- (if isTarget then 2.0 else 1.2)
-                    stroke ctx (if FlightSchool.onRange school then Green else profile.Color)
-                    bracket ctx x y size (size * 0.4)
-
+                    let apparent = enemy.Radius * 0.72 * h / hud.ClipW
+                    let size = if isTarget then max 23.0 (min 94.0 apparent) else max 7.0 (min 23.0 apparent)
+                    let struck = enemy.HitFlash > 0.35
+                    let charging = brains.[i].WeaponCharge > 0.0 && brains.[i].Role >= EnemyRole.Gunship
+                    hud.Reserved.Add(HudLayout.around x y (size+7.0))
                     if isTarget then
                         targetX <- x
                         targetY <- y
                         targetVisible <- true
-                        ctx.save ()
-                        ctx.translate (x, y)
-                        ctx.rotate (hud.Time * 0.9)
-                        stroke ctx (if brains.[i].FiringBurst then Red else "rgba(118, 229, 249, 0.55)")
-                        ctx.lineWidth <- 1.2
-                        ctx.setLineDash [| 6.0; 6.0 |]
-                        ctx.beginPath ()
-                        ctx.arc (0.0, 0.0, size * 1.28, 0.0, 2.0 * Math.PI)
-                        ctx.stroke ()
-                        ctx.restore ()
-                        // Getrennte Balken fuer Schild (blau) und Huelle (rot)
-                        let shieldFrac = enemy.Shield / Math.Max(1.0, enemy.MaxShield)
-                        let hullFrac = enemy.Hull / Math.Max(1.0, enemy.MaxHull)
-                        fill ctx CyanDim
-                        ctx.fillRect (x - size, y - size - 13.0, size * 2.0, 3.0)
-                        fill ctx ShieldBlue
-                        ctx.fillRect (x - size, y - size - 13.0, size * 2.0 * shieldFrac, 3.0)
-                        fill ctx RedDim
-                        ctx.fillRect (x - size, y - size - 8.0, size * 2.0, 3.0)
-                        fill ctx Red
-                        ctx.fillRect (x - size, y - size - 8.0, size * 2.0 * hullFrac, 3.0)
-
-                        let stateLabel =
-                            if FlightSchool.onRange school then "UNBEWAFFNET"
-                            elif brains.[i].FiringBurst then "SALVE!"
-                            elif brains.[i].WeaponCharge > 0.0 then "LÄDT AUF"
-                            else
-                                match brains.[i].State with
-                                | AiState.Attack -> "ANGRIFF"
-                                | AiState.Chase -> "ANFLUG"
-                                | AiState.Evade -> "MANÖVER"
-                                | AiState.Patrol -> "PATROUILLE"
-
-                        let invDist = if distance > 1e-3 then 1.0 / distance else 0.0
-                        let closing =
-                            ((player.Velocity.X - enemy.Velocity.X) * (ex - playerPosition.X)
-                             + (player.Velocity.Y - enemy.Velocity.Y) * (ey - playerPosition.Y)
-                             + (player.Velocity.Z - enemy.Velocity.Z) * (ez - playerPosition.Z)) * invDist
-                        let dv = int (Math.Round closing)
-                        let dvText = (if dv > 0 then "+" else "") + string dv + " m/s"
-                        fill ctx (if FlightSchool.onRange school then Green else profile.Color)
-                        ctx.fillText ((if FlightSchool.onRange school then "Zieldrohne" else profile.Name), x, y - size - 28.0)
-                        fill ctx (if brains.[i].WeaponCharge > 0.0 then Amber elif attacking then Red else TextColor)
-                        ctx.fillText (number hud distance + "m · " + dvText + " · " + stateLabel, x, y + size + 11.0)
+                        stroke ctx "rgba(5,12,18,0.9)"
+                        ctx.lineWidth <- 5.0
+                        bracket ctx x y size (size*0.38)
+                    ctx.globalAlpha <- if isTarget || struck then 1.0 else 0.68
+                    stroke ctx (if struck then "#ffffff" elif isTarget then "#ffce79" elif FlightSchool.onRange school then Green else profile.Color)
+                    ctx.lineWidth <- if isTarget then 2.8 else 1.25
+                    bracket ctx x y size (size*0.38)
+                    ctx.globalAlpha <- 1.0
+                    if charging || isTarget then
+                        fill ctx (if charging then "#ff9155" else "#ffce79")
+                        arrow ctx x (y-size-3.0) 0.0 1.0 (if isTarget then 6.0 else 3.5)
                 else
                     // Bildschirmrichtung zum Gegner. Die Clip-Koordinaten VOR der Division
                     // durch w zeigen auch fuer Ziele hinter der Kamera in die richtige
@@ -1145,11 +1122,14 @@ module Hud =
                     let y = centerY + sy * scale
                     // Angreifer pulsieren, nahe Gegner bekommen groessere Pfeile
                     let pulse = if attacking then 0.75 + 0.25 * sin (hud.Time * 12.0) else 1.0
-                    let size = (if distance < 250.0 then 13.0 else 9.5) * pulse
-                    fill ctx (if FlightSchool.onRange school then Green elif attacking || isTarget then Red else RedSoft)
+                    let size = if isTarget then 14.0 else (if distance < 250.0 then 9.5 else 7.0) * pulse
+                    fill ctx (if isTarget then "#ffce79" elif FlightSchool.onRange school then Green elif attacking then Red else RedSoft)
                     arrow ctx x y sx sy size
-                    fill ctx TextColor
-                    ctx.fillText (number hud distance, x - sx * 26.0, y - sy * 26.0)
+                    hud.Reserved.Add(HudLayout.around x y (size+2.0))
+
+        for i in 0 .. enemies.Length-1 do
+            if i <> target then drawEnemy i
+        if target >= 0 then drawEnemy target
 
         // ---- Vorhaltemarke: Wohin zielen, damit der Bolt das Ziel trifft? ----
         if target >= 0 && player.Alive then
@@ -1174,6 +1154,7 @@ module Hud =
                     if onScreen hud then
                         let lx = hud.ScreenX
                         let ly = hud.ScreenY
+                        hud.Reserved.Add(HudLayout.around lx ly 11.0)
                         let ax = lx - aimX
                         let ay = ly - aimY
                         // Fadenkreuz auf der Marke = Schussloesung
@@ -1232,19 +1213,37 @@ module Hud =
                 ctx.lineTo (aimX + 46.0, aimY + 5.0)
                 ctx.stroke ()
 
+            let diagonals (inner: float) (outer: float) =
+                ctx.beginPath ()
+                ctx.moveTo (aimX - outer, aimY - outer)
+                ctx.lineTo (aimX - inner, aimY - inner)
+                ctx.moveTo (aimX + outer, aimY - outer)
+                ctx.lineTo (aimX + inner, aimY - inner)
+                ctx.moveTo (aimX - outer, aimY + outer)
+                ctx.lineTo (aimX - inner, aimY + inner)
+                ctx.moveTo (aimX + outer, aimY + outer)
+                ctx.lineTo (aimX + inner, aimY + inner)
+                ctx.stroke ()
+
             if hud.HitMarker > 0.0 then
+                // Kurz nach aussen springend; Schildtreffer blau, Huellentreffer hell-orange
+                let k = hud.HitMarker / HitMarkerTime
                 ctx.globalAlpha <- Math.Min(1.0, hud.HitMarker * 8.0)
-                stroke ctx "rgb(255, 255, 255)"
+                stroke ctx (if hud.HitShield then "rgb(130, 200, 255)" else "rgb(255, 228, 190)")
+                ctx.lineWidth <- 2.0 + k
+                diagonals (10.0 + 3.0 * k) (19.0 + 5.0 * k)
+                ctx.globalAlpha <- 1.0
+
+            if hud.KillMarker > 0.0 then
+                let k = hud.KillMarker / KillMarkerTime
+                ctx.globalAlpha <- Math.Min(1.0, hud.KillMarker * 5.0)
+                stroke ctx Red
+                ctx.lineWidth <- 3.0
+                diagonals 12.0 (30.0 + 6.0 * (1.0 - k))
+                ctx.globalAlpha <- 0.8 * k
                 ctx.lineWidth <- 2.0
                 ctx.beginPath ()
-                ctx.moveTo (aimX - 20.0, aimY - 20.0)
-                ctx.lineTo (aimX - 11.0, aimY - 11.0)
-                ctx.moveTo (aimX + 20.0, aimY - 20.0)
-                ctx.lineTo (aimX + 11.0, aimY - 11.0)
-                ctx.moveTo (aimX - 20.0, aimY + 20.0)
-                ctx.lineTo (aimX - 11.0, aimY + 11.0)
-                ctx.moveTo (aimX + 20.0, aimY + 20.0)
-                ctx.lineTo (aimX + 11.0, aimY + 11.0)
+                ctx.arc (aimX, aimY, 18.0 + 30.0 * (1.0 - k), 0.0, 2.0 * Math.PI)
                 ctx.stroke ()
                 ctx.globalAlpha <- 1.0
 
@@ -1275,6 +1274,7 @@ module Hud =
         let scanRange = if school = FlightSchool.Off then RelicArchive.range world.Pilot else 0.0
         fill ctx "rgba(3, 12, 23, 0.72)"
         ctx.fillRect (left - 12.0, baseY - 18.0, barW + 118.0, 164.0)
+        hud.Reserved.Add(HudLayout.rect (left-12.0) (baseY-18.0) (barW+118.0) 164.0)
         fill ctx Cyan
         ctx.fillRect (left - 12.0, baseY - 18.0, 34.0, 2.0)
         stroke ctx CyanDim
@@ -1334,7 +1334,8 @@ module Hud =
 
         // ---- Unten Mitte: 3D-Sensorschirm (Gravidar) ----
         if w >= 760.0 && player.Alive then
-            drawRadar hud world scanElapsed scanRange alpha playerPosition playerRotation target
+            drawRadar hud world sector school sortie scanElapsed scanRange alpha playerPosition playerRotation target
+            hud.Reserved.Add(HudLayout.rect (centerX-92.0) (h-118.0) 184.0 102.0)
 
         // ---- Unten rechts: Welle, Gegner, Punkte + Kill-Kombo ----
         if score <> hud.ScoreValue then
@@ -1348,6 +1349,7 @@ module Hud =
             if hud.Combo > 1 && hud.ComboTimer > 0.0 then
                 fill ctx "rgba(3, 12, 23, 0.78)"
                 ctx.fillRect (right - 190.0, scoreBottom - 166.0, 202.0, 34.0)
+                hud.Reserved.Add(HudLayout.rect (right-190.0) (scoreBottom-166.0) 202.0 34.0)
                 stroke ctx Amber
                 ctx.strokeRect (right - 190.0, scoreBottom - 166.0, 202.0, 34.0)
                 ctx.textAlign <- "left"
@@ -1358,6 +1360,7 @@ module Hud =
 
             fill ctx "rgba(3, 12, 23, 0.72)"
             ctx.fillRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
+            hud.Reserved.Add(HudLayout.rect (right-190.0) (scoreBottom-126.0) 202.0 116.0)
             stroke ctx CyanDim
             ctx.strokeRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
             fill ctx Amber
@@ -1381,6 +1384,7 @@ module Hud =
             let missionWidth = if w < 680.0 then w-32.0 else min 560.0 (w-268.0)
             fill ctx "rgba(3, 12, 23, 0.78)"
             ctx.fillRect (16.0, 38.0, missionWidth, 80.0)
+            hud.Reserved.Add(HudLayout.rect 16.0 38.0 missionWidth 80.0)
             ctx.textAlign <- "left"
             ctx.font <- FontLabel
             fill ctx Cyan
@@ -1403,9 +1407,11 @@ module Hud =
             bar ctx 28.0 109.0 (missionWidth - 24.0) 3.0 hud.StageProgress Cyan
 
         // Geld ist Kaufkraft, Punkte bleiben die getrennte Flugwertung.
-        if school <> FlightSchool.Off && w >= 680.0 then
+        let compactTarget = target >= 0 && (w < 680.0 || h < 500.0)
+        if school <> FlightSchool.Off && w >= 680.0 && not compactTarget then
             fill ctx "rgba(3, 12, 23, 0.85)"
             ctx.fillRect (w-236.0,42.0,220.0,62.0)
+            hud.Reserved.Add(HudLayout.rect (w-236.0) 42.0 220.0 62.0)
             ctx.textAlign <- "right"
             ctx.font <- FontValue
             fill ctx Amber
@@ -1413,10 +1419,11 @@ module Hud =
             ctx.font <- FontSmall
             fill ctx TextColor
             ctx.fillText ("Je Übungsziel einmalig 100 CR",w-28.0,80.0,200.0)
-        elif not sortie && school = FlightSchool.Off then
+        elif not sortie && school = FlightSchool.Off && not compactTarget then
             let walletY = if w < 680.0 then 128.0 else 42.0
             fill ctx "rgba(3, 12, 23, 0.85)"
             ctx.fillRect (w - 236.0, walletY, 220.0, 113.0)
+            hud.Reserved.Add(HudLayout.rect (w-236.0) walletY 220.0 113.0)
             ctx.textAlign <- "right"
             ctx.font <- FontValue
             fill ctx Amber
@@ -1439,6 +1446,8 @@ module Hud =
             fill ctx Amber
             ctx.font <- FontLabel
             ctx.fillText (hud.RewardText, centerX, h-185.0, w-32.0)
+            let width = min (w-32.0) (ctx.measureText(hud.RewardText).width)
+            hud.Reserved.Add(HudLayout.rect (centerX-width*0.5) (h-188.0) width 20.0)
 
         // ---- Meldung (blendet am Ende aus) ----
         if hud.BannerTime > 0.0 then
@@ -1450,9 +1459,12 @@ module Hud =
             fill ctx Cyan
             let bannerY = max 145.0 (h * 0.2)
             ctx.fillText (hud.Banner, centerX, bannerY, w - 32.0)
+            let titleWidth = ctx.measureText(hud.Banner).width
             ctx.font <- FontSmall
             fill ctx TextColor
             ctx.fillText (hud.BannerSub, centerX, bannerY + 40.0, w - 32.0)
+            let width = min (w-32.0) (max titleWidth (ctx.measureText(hud.BannerSub).width))
+            hud.Reserved.Add(HudLayout.rect (centerX-width*0.5) bannerY width 56.0)
             ctx.globalAlpha <- 1.0
 
         // ---- Statistik oben links & Systemstatus oben rechts ----
@@ -1465,6 +1477,18 @@ module Hud =
         let camLabel = if cameraMode = Cockpit then "COCKPIT" else "VERFOLGER"
         let soundLabel = if hud.Muted then "TON AUS" else "TON AN"
         ctx.fillText ("[F1] HILFE   [C] " + camLabel + "   [T] ZIEL   [M] " + soundLabel, right, 12.0)
+
+        hud.Reserved.Add(HudLayout.rect 0.0 0.0 w 32.0)
+        if scanElapsed >= 0.0 then
+            hud.Reserved.Add(HudLayout.rect 16.0 (if w < 680.0 then 123.0 else max 129.0 (0.31*h)) 300.0 118.0)
+        if target >= 0 && player.Alive then
+            let enemy = enemies.[target]
+            let delta = Vec3.lerp enemy.PrevPosition enemy.Position alpha - playerPosition
+            let distance = Vec3.length delta
+            let closing = Vec3.dot (player.Velocity-enemy.Velocity) delta / max 0.001 distance
+            let box = HudLayout.targetBox w h (not compactTarget && not sortie) sightBounds hud.Reserved
+            hud.Reserved.Add box
+            HudContacts.targetPanel ctx box enemy brains.[target] distance closing (FlightSchool.onRange school)
 
     /// Abgedunkelter Hintergrund fuer die Vollbild-Texte (Menue, Pause, Game Over).
     let private dim (hud: Hud) (opacity: float) =
@@ -1511,6 +1535,7 @@ module Hud =
            "L", "Tempo ans erfasste Ziel angleichen"
            "Leertaste · LMB", "Feuern"
            "T / Tab · RMB", "Ziel wechseln"
+           "N", "Nächstes Ziel (erneut: nächstfernes)"
            "V · J", "Störimpuls · Torpedo (Bomber)"
            "B · G", "Andocken · Archivscan"
            "C · H", "Kamera wechseln · Heckblick (halten)"

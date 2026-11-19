@@ -44,6 +44,8 @@ type GameEvent =
     | CapitalGunFired of position: Vec3
     | CapitalHit of position: Vec3 * part: int * destroyed: bool
     | CollisionImpact of position: Vec3 * intensity: float * isPlayer: bool
+    /// Der Spieler wurde getroffen; Einheitsvektor (Welt) vom Spieler zur Schadensquelle.
+    | PlayerHitFrom of direction: Vec3
 
 /// Steuerbefehle eines Schiffs. Der Spieler fuellt sie aus der Eingabe,
 /// die KI aus ihrer Zustandsmaschine - das Flugmodell kennt den Unterschied nicht.
@@ -111,7 +113,10 @@ type Ship =
       mutable Overdrive: float
       /// Timer fuer Partikelspuren (Rauch bei kritischer Huelle, Funken beim Boost).
       mutable TrailTimer: float
-      mutable Alive: bool }
+      mutable Alive: bool
+      /// Entfernung, in der sich beide Rohre kreuzen (0 = parallel). Die KI setzt sie auf ihr
+      /// Ziel: breite Rohrpaare schiessen sonst links und rechts am anvisierten Punkt vorbei.
+      mutable Convergence: float }
 
 /// Kampf- und Effektparameter.
 module Combat =
@@ -205,7 +210,8 @@ module Ship =
           ShieldFlash = 0.0
           Overdrive = 0.0
           TrailTimer = 0.0
-          Alive = false }
+          Alive = false
+          Convergence = 0.0 }
 
     let createPlayer () : Ship =
         create
@@ -270,6 +276,7 @@ module Ship =
         ship.ShieldFlash <- 0.0
         ship.Overdrive <- 0.0
         ship.TrailTimer <- 0.0
+        ship.Convergence <- 0.0
         ship.Alive <- true
 
 // -------------------------------------------------------------------------------------
@@ -351,6 +358,9 @@ type LaserPool =
     { Data: JS.Float32Array
       Team: JS.Uint8Array
       Piercing: JS.Uint8Array
+      /// Quelle des Bolts (CombatVfx.Owner*), nur fuer die Darstellung. Wird nicht
+      /// gespeichert: geladene Bolts zeigen die Standardfarbe ihres Teams.
+      Owner: JS.Uint8Array
       Capacity: int
       mutable Count: int }
 
@@ -364,6 +374,7 @@ module LaserPool =
         { Data = JS.Constructors.Float32Array.Create(capacity * Stride)
           Team = JS.Constructors.Uint8Array.Create capacity
           Piercing = JS.Constructors.Uint8Array.Create capacity
+          Owner = JS.Constructors.Uint8Array.Create capacity
           Capacity = capacity
           Count = 0 }
 
@@ -403,8 +414,13 @@ module LaserPool =
             d.[o + 11] <- float32 damage
             pool.Team.[pool.Count] <- byte team
             pool.Piercing.[pool.Count] <- 0uy
+            pool.Owner.[pool.Count] <- 0uy
             pool.Count <- pool.Count + 1
             true
+
+    /// Merkt die Quelle des zuletzt erzeugten Bolts (direkt nach einem erfolgreichen spawn).
+    let tag (pool: LaserPool) (owner: int) =
+        if pool.Count > 0 then pool.Owner.[pool.Count - 1] <- byte owner
 
     /// Gibt den Platz frei: das letzte aktive Element rueckt nach.
     let kill (pool: LaserPool) (index: int) =
@@ -420,6 +436,7 @@ module LaserPool =
 
             pool.Team.[index] <- pool.Team.[last]
             pool.Piercing.[index] <- pool.Piercing.[last]
+            pool.Owner.[index] <- pool.Owner.[last]
 
         pool.Count <- last
 
@@ -433,7 +450,26 @@ module ParticleKind =
     [<Literal>]
     let Debris = 1
 
-/// Partikel. Pro Partikel: [x, y, z, vx, vy, vz, Restleben, Gesamtleben, Groesse, r, g, b]
+    /// Additiver Leuchtstrich entlang der Flugrichtung (Funken, gluehende Splitter).
+    [<Literal>]
+    let Streak = 2
+
+    /// Sich ausdehnender Leuchtring (Stosswelle, Schildtreffer). Die Achse ist die
+    /// Ringnormale; ohne Achse schaut der Ring zur Kamera. Groesse = Endradius.
+    [<Literal>]
+    let Ring = 3
+
+    /// Nachgluehende Wolke: waechst langsam und verglimmt spaet.
+    [<Literal>]
+    let Smoke = 4
+
+    /// Unsichtbarer Zuender einer Folgeexplosion (Groesse = Explosionsgroesse,
+    /// r = Stufe, g = Zerstoerungsklasse). Zuendet, wenn sein Leben ablaeuft.
+    [<Literal>]
+    let Fuse = 5
+
+/// Partikel. Pro Partikel:
+/// [x, y, z, vx, vy, vz, Restleben, Gesamtleben, Groesse, r, g, b, Achse x, Achse y, Achse z]
 type ParticlePool =
     { Data: JS.Float32Array
       Kind: JS.Uint8Array
@@ -444,7 +480,7 @@ type ParticlePool =
 module ParticlePool =
 
     [<Literal>]
-    let Stride = 12
+    let Stride = 15
 
     /// Abbremsung pro Sekunde (Funken und Truemmer kommen langsam zur Ruhe).
     [<Literal>]
@@ -457,7 +493,7 @@ module ParticlePool =
           Count = 0 }
 
     /// Ist der Pool voll, wird der Partikel verworfen.
-    let spawn
+    let spawnAxis
         (pool: ParticlePool)
         (kind: int)
         (x: float)
@@ -471,6 +507,9 @@ module ParticlePool =
         (r: float)
         (g: float)
         (b: float)
+        (ax: float)
+        (ay: float)
+        (az: float)
         =
         if pool.Count < pool.Capacity then
             let o = pool.Count * Stride
@@ -487,8 +526,14 @@ module ParticlePool =
             d.[o + 9] <- float32 r
             d.[o + 10] <- float32 g
             d.[o + 11] <- float32 b
+            d.[o + 12] <- float32 ax
+            d.[o + 13] <- float32 ay
+            d.[o + 14] <- float32 az
             pool.Kind.[pool.Count] <- byte kind
             pool.Count <- pool.Count + 1
+
+    let spawn pool kind x y z vx vy vz life size r g b =
+        spawnAxis pool kind x y z vx vy vz life size r g b 0.0 0.0 0.0
 
     /// Bewegt alle Partikel und entfernt abgelaufene (swap-remove).
     let update (pool: ParticlePool) (dt: float) =
@@ -781,8 +826,10 @@ module AsteroidField =
 /// Kurzlebige Point Lights fuer Explosionen. Pro Licht:
 /// [x, y, z, Reichweite, r, g, b, Intensitaet]
 module Flashes =
+    // 6 von 8 Point Lights: Muendungs- und Trefferblitze teilen sich die Plaetze mit
+    // den Stufen einer Grossexplosion. Der Rest bleibt fuer Schild- und Triebwerkslicht.
     [<Literal>]
-    let Slots = 4
+    let Slots = 6
 
     [<Literal>]
     let Stride = 8
@@ -813,7 +860,10 @@ module World =
           SectorIndex = 0
           Enemies = Array.init maxEnemies (fun _ -> Ship.createInterceptor ())
           Lasers = LaserPool.create 512
-          Particles = ParticlePool.create 4096
+          // Schlimmster Fall der Kampfeffekte: 16 Gegner und der Zollkreuzer sterben
+          // gleichzeitig (Summe der CombatVfx.budget rund 4700). Nur aktive Partikel
+          // kosten Rechenzeit; die Reserve haelt Funken und Spuren ungedrosselt.
+          Particles = ParticlePool.create 6144
           Asteroids = AsteroidField.create 768
           Flashes = JS.Constructors.Float32Array.Create(Flashes.Slots * Flashes.Stride)
           Events = ResizeArray<GameEvent>(64)
@@ -1329,21 +1379,295 @@ module Effects =
             let v = float f.[o] * decay
             f.[o] <- float32 (if v < 0.02 then 0.0 else v)
 
+    /// Wie burst, aber als Kegel um die Richtung (nx, ny, nz): spread 0 ist ein Strahl,
+    /// 1 etwa ein Halbraum, groessere Werte naehern sich der Kugel.
+    let cone
+        (world: World)
+        (kind: int)
+        (count: int)
+        (x: float)
+        (y: float)
+        (z: float)
+        (vx: float)
+        (vy: float)
+        (vz: float)
+        (nx: float)
+        (ny: float)
+        (nz: float)
+        (spread: float)
+        (speedMin: float)
+        (speedMax: float)
+        (lifeMin: float)
+        (lifeMax: float)
+        (sizeMin: float)
+        (sizeMax: float)
+        (r: float)
+        (g: float)
+        (b: float)
+        =
+        let rng = world.Rng
+
+        for _ in 1..count do
+            randomDirection rng
+            let mutable dx = nx + float direction.[0] * spread
+            let mutable dy = ny + float direction.[1] * spread
+            let mutable dz = nz + float direction.[2] * spread
+            let length = sqrt (dx * dx + dy * dy + dz * dz)
+
+            if length > 1e-4 then
+                dx <- dx / length
+                dy <- dy / length
+                dz <- dz / length
+            else
+                dx <- nx
+                dy <- ny
+                dz <- nz
+
+            let speed = rng.Range(speedMin, speedMax)
+
+            ParticlePool.spawn
+                world.Particles
+                kind
+                x
+                y
+                z
+                (vx + dx * speed)
+                (vy + dy * speed)
+                (vz + dz * speed)
+                (rng.Range(lifeMin, lifeMax))
+                (rng.Range(sizeMin, sizeMax))
+                r
+                g
+                b
+
+    /// Drosselfaktor fuer kosmetische Partikel (siehe CombatVfx.throttle).
+    let private thrift (world: World) =
+        CombatVfx.throttle world.Particles.Count world.Particles.Capacity
+
     /// Kleiner Funkenregen an einem Einschlagpunkt.
     let sparks (world: World) (x: float) (y: float) (z: float) (count: int) (r: float) (g: float) (b: float) =
-        burst world ParticleKind.Glow count x y z 0.0 0.0 0.0 0.2 8.0 34.0 0.15 0.45 0.10 0.26 r g b
+        let n = CombatVfx.scaled count (thrift world)
+        burst world ParticleKind.Streak n x y z 0.0 0.0 0.0 0.2 10.0 38.0 0.15 0.45 0.10 0.22 r g b
 
-    /// Explosion eines Schiffs: Feuerball, Funken, Truemmer, Lichtblitz.
+    /// Stossring. Normale (0, 0, 0) richtet ihn zur Kamera aus.
+    let ring (world: World) x y z vx vy vz nx ny nz (life: float) (size: float) (r: float) (g: float) (b: float) =
+        ParticlePool.spawnAxis world.Particles ParticleKind.Ring x y z vx vy vz life size r g b nx ny nz
+
+    /// Stossring in einer zufaelligen Ebene.
+    let private tiltedRing (world: World) x y z vx vy vz life size r g b =
+        randomDirection world.Rng
+        ring world x y z vx vy vz (float direction.[0]) (float direction.[1]) (float direction.[2]) life size r g b
+
+    /// Huellentreffer: Funkenfaecher von der Oberflaeche weg, gluehende Splitter, Einschlagblitz.
+    /// (nx, ny, nz) ist die Oberflaechennormale, (vx, vy, vz) die Geschwindigkeit des Ziels.
+    let hullHit (world: World) x y z nx ny nz vx vy vz (radius: float) (damage: float) =
+        let scale = CombatVfx.hitScale radius
+        let count = CombatVfx.scaled (CombatVfx.hitSparks radius damage) (thrift world)
+        let thick = sqrt scale
+        cone world ParticleKind.Streak count x y z vx vy vz nx ny nz 0.9 18.0 (48.0 + 10.0 * scale) 0.15 0.5 (0.10 * thick) (0.20 * thick) 1.6 0.9 0.35
+        // Gluehende Splitter: langsamer, groesser, kuehlen lange nach
+        cone world ParticleKind.Streak (1 + count / 4) x y z vx vy vz nx ny nz 0.7 6.0 22.0 0.5 1.1 (0.16 * thick) (0.28 * thick) 1.5 0.5 0.12
+        ParticlePool.spawn world.Particles ParticleKind.Debris x y z (vx + nx * 9.0) (vy + ny * 9.0) (vz + nz * 9.0) 1.4 (0.14 * scale) 0.30 0.30 0.34
+        ParticlePool.spawn world.Particles ParticleKind.Glow x y z vx vy vz 0.11 (1.3 * scale) 1.7 1.1 0.55
+        flash world x y z (10.0 + 4.0 * scale) 1.0 0.7 0.4 1.6
+
+    /// Schildtreffer: die Blase leuchtet an der Trefferstelle auf - zwei Ringe laufen
+    /// ueber die Schildflaeche, dazu ein kurzer Kern und wenige blaue Funken.
+    let shieldHit (world: World) x y z nx ny nz vx vy vz (radius: float) =
+        let scale = CombatVfx.hitScale radius
+        let px = x + nx * 0.25
+        let py = y + ny * 0.25
+        let pz = z + nz * 0.25
+        ring world px py pz vx vy vz nx ny nz 0.26 (1.5 * scale) 0.45 1.05 1.9
+        ring world px py pz vx vy vz nx ny nz 0.42 (2.9 * scale) 0.16 0.50 1.05
+        ParticlePool.spawn world.Particles ParticleKind.Glow px py pz vx vy vz 0.13 (1.5 * scale) 0.55 1.1 1.9
+        cone world ParticleKind.Streak (CombatVfx.scaled 5 (thrift world)) px py pz vx vy vz nx ny nz 1.6 10.0 30.0 0.12 0.32 0.09 0.16 0.4 0.85 1.6
+        flash world x y z (10.0 + 4.0 * scale) 0.3 0.7 1.0 1.6
+
+    /// Lichtblitz an einer Rohrmuendung. Den farbigen Muendungsstern zeichnet Main
+    /// aus dem jungen Bolt (Farbe der Quelle).
+    let muzzleFlash (world: World) x y z (size: float) (player: bool) =
+        if player then flash world x y z (8.0 + size * 5.0) 0.45 1.0 0.85 1.1
+        else flash world x y z (8.0 + size * 5.0) 1.0 0.42 0.2 0.9
+
+    /// Feuerball-Baustein mit Radius `s`: Feuer, heisser Kern, kurzer Lichtpuls.
+    let private fireball (world: World) x y z vx vy vz (s: float) (fire: int) (core: int) =
+        // Grosse Feuerbaelle stehen laenger; viele ueberlagerte Scheiben werden gedimmt,
+        // damit Struktur bleibt statt einer weissen Flaeche.
+        let slow = 0.8 + Math.Min(1.6, s * 0.04)
+        let dim = if fire > 30 then 0.7 else 1.0
+        burst world ParticleKind.Glow fire x y z vx vy vz (s * 0.5) (1.0 + s * 0.3) (4.0 + s * 1.4) (0.4 * slow) (1.0 * slow) (s * 0.45) s dim (0.5 * dim) (0.14 * dim)
+        burst world ParticleKind.Glow core x y z vx vy vz (s * 0.2) 0.5 (2.0 + s * 0.4) (0.22 * slow) (0.45 * slow) (s * 0.8) (s * 1.4) 1.6 1.4 1.0
+        ParticlePool.spawn world.Particles ParticleKind.Glow x y z vx vy vz (0.16 * slow) (s * 3.0) 1.2 1.05 0.8
+
+    /// Funken (schnell, kurz) und gluehende Splitter (langsam, lang) einer Explosion.
+    let private shrapnel (world: World) x y z vx vy vz (s: float) (sparkCount: int) (shards: int) =
+        let thick = 1.0 + Math.Min(2.0, s * 0.05)
+        burst world ParticleKind.Streak sparkCount x y z vx vy vz (s * 0.3) 25.0 (70.0 + s * 3.0) 0.4 (1.0 + thick * 0.3) (0.10 * thick) (0.24 * thick) 1.5 1.0 0.45
+        burst world ParticleKind.Streak shards x y z vx vy vz (s * 0.4) 8.0 (30.0 + s * 1.5) 0.8 (1.4 + thick * 0.5) (0.16 * thick) (0.32 * thick) 1.5 0.55 0.12
+
+    /// Kleine Wrackteile und grosse, traege Rumpfbrocken.
+    let private wreckage (world: World) x y z vx vy vz (s: float) (debris: int) (chunks: int) =
+        let grow = 1.0 + Math.Min(3.0, s * 0.08)
+        burst world ParticleKind.Debris debris x y z vx vy vz (s * 0.4) 8.0 (36.0 + s) 1.5 3.5 (0.2 * grow) (0.6 * grow) 0.32 0.32 0.36
+        burst world ParticleKind.Debris chunks x y z vx vy vz (s * 0.5) 2.0 (8.0 + s * 0.5) 3.5 6.0 (s * 0.12) (s * 0.28) 0.24 0.25 0.29
+
+    /// Nachgluehende Wolken.
+    let private afterglow (world: World) x y z vx vy vz (s: float) (count: int) =
+        let slow = 0.8 + Math.Min(1.2, s * 0.03)
+        burst world ParticleKind.Smoke count x y z vx vy vz (s * 0.6) 1.0 (3.0 + s * 0.5) (1.6 * slow) (3.2 * slow) (s * 0.5) s 0.36 0.13 0.05
+
+    /// Kleine Schiffe: ein schneller Feuerball mit Funken und Truemmern.
+    let private blastLight (world: World) x y z vx vy vz (s: float) =
+        let r = CombatVfx.recipe CombatVfx.TierLight
+        fireball world x y z vx vy vz (s * 1.25) r.Fire r.Core
+        shrapnel world x y z vx vy vz s r.Sparks r.Shards
+        wreckage world x y z vx vy vz s r.Debris r.Chunks
+        ring world x y z vx vy vz 0.0 0.0 0.0 0.32 (s * 4.5) 0.7 0.42 0.2
+        flash world x y z (s * r.FlashRange) 1.0 0.62 0.25 r.FlashIntensity
+
+    /// Folgeexplosion (CombatVfx.SecondaryParticles Partikel).
+    let private secondary (world: World) x y z vx vy vz (s: float) =
+        fireball world x y z vx vy vz s 9 3
+        shrapnel world x y z vx vy vz s 12 5
+        flash world x y z (12.0 + s * 14.0) 1.0 0.66 0.3 3.5
+
+    /// Hauptexplosion schwerer Schiffe und Kernbruch der Grossschiffe
+    /// (CombatVfx.finaleParticles Partikel).
+    let private finale (world: World) (tier: int) x y z vx vy vz (s: float) =
+        if tier >= CombatVfx.TierCruiser then
+            fireball world x y z vx vy vz (s * 0.8) 90 20
+            shrapnel world x y z vx vy vz s 140 50
+            wreckage world x y z vx vy vz s 40 0
+            afterglow world x y z vx vy vz s 40
+            tiltedRing world x y z vx vy vz 1.7 (s * 8.0) 1.0 0.62 0.3
+            tiltedRing world x y z vx vy vz 2.2 (s * 5.5) 0.5 0.25 0.12
+            ring world x y z vx vy vz 0.0 0.0 0.0 0.45 (s * 3.5) 0.8 0.74 0.6
+            flash world x y z (s * 14.0) 1.0 0.8 0.55 12.0
+        elif tier = CombatVfx.TierCapital then
+            fireball world x y z vx vy vz (s * 1.15) 44 10
+            shrapnel world x y z vx vy vz s 90 30
+            wreckage world x y z vx vy vz s 20 0
+            afterglow world x y z vx vy vz s 22
+            tiltedRing world x y z vx vy vz 1.1 (s * 7.0) 1.0 0.62 0.3
+            tiltedRing world x y z vx vy vz 1.5 (s * 4.5) 0.5 0.25 0.12
+            ring world x y z vx vy vz 0.0 0.0 0.0 0.35 (s * 3.5) 0.8 0.74 0.6
+            flash world x y z (s * 22.0) 1.0 0.8 0.55 11.0
+        else
+            fireball world x y z vx vy vz (s * 1.15) 26 7
+            shrapnel world x y z vx vy vz s 44 14
+            wreckage world x y z vx vy vz s 10 0
+            afterglow world x y z vx vy vz s 10
+            tiltedRing world x y z vx vy vz 0.7 (s * 6.5) 0.9 0.55 0.26
+            ring world x y z vx vy vz 0.0 0.0 0.0 0.3 (s * 5.0) 1.1 0.9 0.6
+            flash world x y z (s * 26.0) 1.0 0.68 0.32 9.0
+
+    /// Mehrstufige Zerstoerung. Die erste Stufe verdeckt das verschwindende Modell
+    /// (Feuerbaelle entlang der Rumpfachse von `aft` bis `fore`, Radius `girth`),
+    /// Zuender loesen danach Folgeexplosionen und die Hauptexplosion (Groesse `size`) aus.
+    let private breakup (world: World) (tier: int) x y z vx vy vz ax ay az (aft: float) (fore: float) (girth: float) (size: float) =
+        let r = CombatVfx.recipe tier
+        let rng = world.Rng
+        let points = CombatVfx.blastPoints tier
+        // Grossschiffe verschwinden auf ganzer Laenge: groessere Baelle schliessen die Luecken
+        let swell = if tier >= CombatVfx.TierCapital then 1.4 else 1.0
+
+        for k in 0 .. points - 1 do
+            let t = aft + (fore - aft) * (float k + 0.5) / float points
+            let px = x + ax * t
+            let py = y + ay * t
+            let pz = z + az * t
+            fireball world px py pz vx vy vz (girth * swell) (r.Fire / points) (Math.Max(1, r.Core / points))
+            shrapnel world px py pz vx vy vz girth (r.Sparks / points) (r.Shards / points)
+            wreckage world px py pz vx vy vz girth (r.Debris / points) (r.Chunks / points)
+            afterglow world px py pz vx vy vz girth (r.Smoke / points)
+
+        ring world x y z vx vy vz 0.0 0.0 0.0 0.4 (girth * 5.0) 0.8 0.5 0.24
+        flash world x y z (size * r.FlashRange) 1.0 0.62 0.25 r.FlashIntensity
+
+        for i in 0 .. r.Secondaries - 1 do
+            let t = rng.Range(aft, fore)
+            randomDirection rng
+            let offset = girth * 0.7 * rng.NextFloat()
+            let dx = float direction.[0]
+            let dy = float direction.[1]
+            let dz = float direction.[2]
+
+            ParticlePool.spawn
+                world.Particles
+                ParticleKind.Fuse
+                (x + ax * t + dx * offset)
+                (y + ay * t + dy * offset)
+                (z + az * t + dz * offset)
+                (vx + dx * 3.0)
+                (vy + dy * 3.0)
+                (vz + dz * 3.0)
+                (CombatVfx.secondaryTime tier i)
+                (girth * swell * rng.Range(0.55, 0.9))
+                0.0
+                (float tier)
+                0.0
+
+        if r.Finale > 0.0 then
+            ParticlePool.spawn world.Particles ParticleKind.Fuse x y z vx vy vz r.Finale size 1.0 (float tier) 0.0
+
+    /// Zuendet abgelaufene Zuender. Muss vor ParticlePool.update laufen (das entfernt sie).
+    let updateFuses (world: World) (dt: float) =
+        let pool = world.Particles
+        let d = pool.Data
+        // Neue Partikel haengen hinten an; nur den Bestand von vorher pruefen.
+        let count = pool.Count
+
+        for i in 0 .. count - 1 do
+            if int pool.Kind.[i] = ParticleKind.Fuse then
+                let o = i * ParticlePool.Stride
+
+                if float d.[o + 6] <= dt then
+                    let x = float d.[o]
+                    let y = float d.[o + 1]
+                    let z = float d.[o + 2]
+                    let vx = float d.[o + 3]
+                    let vy = float d.[o + 4]
+                    let vz = float d.[o + 5]
+                    let size = float d.[o + 8]
+
+                    if d.[o + 9] > 0.5f then finale world (int d.[o + 10]) x y z vx vy vz size
+                    else secondary world x y z vx vy vz size
+
+    /// Explosion ohne Rumpfbezug (Geschuetz, Torpedotreffer): bis Groesse 6,5 ein
+    /// schneller Feuerball, darueber mit Folgeexplosionen und Stossring.
     let shipExplosion (world: World) (x: float) (y: float) (z: float) (vx: float) (vy: float) (vz: float) (size: float) =
-        // Feuerball: grosse, langsame Leuchtpunkte
-        burst world ParticleKind.Glow 26 x y z vx vy vz (size * 0.6) 2.0 14.0 0.5 1.2 (size * 0.5) (size * 1.2) 1.0 0.5 0.14
-        // Heisser Kern
-        burst world ParticleKind.Glow 8 x y z vx vy vz (size * 0.2) 0.5 4.0 0.25 0.5 (size * 0.8) (size * 1.5) 1.6 1.4 1.0
-        // Funken
-        burst world ParticleKind.Glow 70 x y z vx vy vz 0.3 25.0 85.0 0.5 1.4 0.12 0.3 1.4 1.0 0.5
-        // Wrackteile
-        burst world ParticleKind.Debris 22 x y z vx vy vz (size * 0.4) 8.0 40.0 1.5 3.5 0.2 0.6 0.32 0.32 0.36
-        flash world x y z (size * 22.0) 1.0 0.62 0.25 7.0
+        if CombatVfx.tier size = CombatVfx.TierLight then blastLight world x y z vx vy vz size
+        else breakup world CombatVfx.TierHeavy x y z vx vy vz 0.0 0.0 1.0 0.0 0.0 (size * 0.8) size
+
+    /// Zerstoerung eines Schiffs, gestaffelt nach Huellradius. Der Spieler bekommt
+    /// unabhaengig von der Groesse die schwere Variante.
+    let shipDestruction (world: World) (ship: Ship) =
+        let p = ship.Position
+        let v = ship.Velocity * 0.5
+        let player = ship.Team = Team.Player
+        let size = if player then ship.Radius * 0.8 else ship.Radius
+        let tier = if player then CombatVfx.TierHeavy else CombatVfx.tier ship.Radius
+
+        if tier = CombatVfx.TierLight then
+            blastLight world p.X p.Y p.Z v.X v.Y v.Z size
+        else
+            // Rumpfachse: +Z zeigt zum Heck. Der Guertel folgt der Rumpfbreite.
+            let axis = Quat.rotateVec3 ship.Rotation Vec3.unitZ
+            let c = p + Quat.rotateVec3 ship.Rotation ship.ObbCenter
+            let half = ship.ObbHalf.Z * 0.8
+            let girth = if tier = CombatVfx.TierHeavy then size * 0.8 else Math.Max(ship.ObbHalf.X, ship.ObbHalf.Y * 2.0)
+            breakup world tier c.X c.Y c.Z v.X v.Y v.Z axis.X axis.Y axis.Z (-half) half girth size
+
+    /// Grossexplosion des Zollkreuzers: Rumpf von `aft` bis `fore` entlang `axis`.
+    let cruiserBreakup (world: World) (center: Vec3) (axis: Vec3) (aft: float) (fore: float) (girth: float) =
+        breakup world CombatVfx.TierCruiser center.X center.Y center.Z 0.0 0.0 0.0 axis.X axis.Y axis.Z aft fore girth (girth * 1.5)
+
+    /// Kleine Vorexplosion auf der Huelle eines schwer angeschlagenen Schiffs.
+    let hullPop (world: World) x y z vx vy vz (s: float) =
+        fireball world x y z vx vy vz s 4 1
+        burst world ParticleKind.Streak 6 x y z vx vy vz 0.2 12.0 40.0 0.2 0.6 0.10 0.2 1.5 0.9 0.4
+        flash world x y z (8.0 + s * 10.0) 1.0 0.6 0.3 1.8
 
     /// Zerplatzen eines Asteroiden: Staubwolke, Gesteinssplitter, schwacher Blitz.
     let rockBurst
@@ -1449,8 +1773,7 @@ module Damage =
                 target.PrevPosition <- target.Position
                 target.PrevRotation <- target.Rotation
                 let p = target.Position
-                let v = target.Velocity
-                Effects.shipExplosion world p.X p.Y p.Z (v.X * 0.5) (v.Y * 0.5) (v.Z * 0.5) (if target.Team = Team.Player then target.Radius * 0.8 else target.Radius)
+                Effects.shipDestruction world target
                 let slot = if player then -1 else world.Enemies |> Array.tryFindIndex (fun ship -> obj.ReferenceEquals(ship, target)) |> Option.defaultValue -1
                 world.Events.Add(ShipDestroyed(target.Team, p, slot))
                 // Das Wrack steht still (sonst zoege der Raumstaub weiter Streifen)
@@ -1552,7 +1875,9 @@ module CapitalCombat =
         struct (nearest,part)
 
     let hit world state part amount (point: Vec3) =
-        Effects.sparks world point.X point.Y point.Z 8 1.2 0.74 0.34
+        // Panzerung: Funkenfaecher vom Rumpf weg, im Massstab des Kreuzers
+        let n = Vec3.normalize (point - CapitalFlight.position)
+        Effects.hullHit world point.X point.Y point.Z n.X n.Y n.Z 0.0 0.0 0.0 14.0 amount
         let mutable destroyed = false
         if part = 2 then state.WingHull <- max 0.0 (state.WingHull - amount)
         elif part >= 0 then
@@ -1560,7 +1885,7 @@ module CapitalCombat =
             state.Guns.[part] <- max 0.0 (prev - amount)
             if prev > 0.0 && state.Guns.[part] = 0.0 then
                 destroyed <- true
-                Effects.shipExplosion world point.X point.Y point.Z 0.0 0.0 0.0 4.0
+                Effects.shipExplosion world point.X point.Y point.Z 0.0 0.0 0.0 CapitalFlight.gunRadius
         world.Events.Add(CapitalHit(point, part, destroyed))
 
     let defend (world: World) state dt =
@@ -1575,6 +1900,8 @@ module CapitalCombat =
                 let p = gun + direction * CapitalFlight.muzzleReach
                 let v = direction * 385.0
                 if LaserPool.spawn world.Lasers p.X p.Y p.Z v.X v.Y v.Z q.X q.Y q.Z q.W 4.0 Team.Enemy then
+                    LaserPool.tag world.Lasers CombatVfx.OwnerBattery
+                    Effects.muzzleFlash world p.X p.Y p.Z 12.0 false
                     world.Events.Add(CapitalGunFired p)
                 state.NextGun <- 1-i
                 state.Volley <- if state.Guns.[1-i] > 0.0 then 2.6 else 4.2
@@ -1610,14 +1937,40 @@ module Physics =
         let right = ship.Position + Quat.rotateVec3 q ship.GunRight
         let dmg = if ship.Overdrive > 0.0 then ship.LaserDamage * 1.3 else ship.LaserDamage
 
-        let leftFired = LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-        let rightFired = LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-        if leftFired || rightFired then world.Events.Add(LaserFired(ship.Team, ship.Position, slot))
+        let owner = if ship.Team = Team.Player then CombatVfx.OwnerPlayer else CombatVfx.OwnerEnemySlot + Math.Max(0, slot)
+        let mutable leftFired = false
+        let mutable rightFired = false
+        if ship.Convergence > 1.0 then
+            // Beide Bolts laufen auf den Punkt `Convergence` vor der Nase zu.
+            let focus = Vec3.mulAdd ship.Position forward ship.Convergence
+            let l = Vec3.normalize (focus - left)
+            let r = Vec3.normalize (focus - right)
+            leftFired <- LaserPool.spawn world.Lasers left.X left.Y left.Z (l.X * Combat.LaserSpeed + ship.Velocity.X) (l.Y * Combat.LaserSpeed + ship.Velocity.Y) (l.Z * Combat.LaserSpeed + ship.Velocity.Z) q.X q.Y q.Z q.W dmg ship.Team
+            if leftFired then LaserPool.tag world.Lasers owner
+            rightFired <- LaserPool.spawn world.Lasers right.X right.Y right.Z (r.X * Combat.LaserSpeed + ship.Velocity.X) (r.Y * Combat.LaserSpeed + ship.Velocity.Y) (r.Z * Combat.LaserSpeed + ship.Velocity.Z) q.X q.Y q.Z q.W dmg ship.Team
+            if rightFired then LaserPool.tag world.Lasers owner
+        else
+            leftFired <- LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
+            if leftFired then LaserPool.tag world.Lasers owner
+            rightFired <- LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
+            if rightFired then LaserPool.tag world.Lasers owner
+        if leftFired || rightFired then
+            let m = (left + right) * 0.5 + forward * 0.8
+            Effects.muzzleFlash world m.X m.Y m.Z ship.Radius (ship.Team = Team.Player)
+            world.Events.Add(LaserFired(ship.Team, ship.Position, slot))
+
 
     /// Flugmodell, Bewaffnung und Schildregeneration eines Schiffs.
     let private stepShip (world: World) (ship: Ship) slot (dt: float) =
         if ship.Alive then
             Flight.step ship dt
+            let hull = StationCollision.forSector world.SectorIndex
+            match StationCollision.move hull ship.Radius ship.PrevPosition ship.Position ship.Velocity with
+            | ValueSome (struct (previous, position, velocity)) ->
+                ship.PrevPosition <- previous
+                ship.Position <- position
+                ship.Velocity <- velocity
+            | ValueNone -> ()
 
             if ship.Overdrive > 0.0 then
                 ship.Overdrive <- Math.Max(0.0, ship.Overdrive - dt)
@@ -1643,17 +1996,34 @@ module Physics =
                 ship.TrailTimer <- 0.045
                 let hullRatio = ship.Hull / ship.MaxHull
 
+                let v = ship.Velocity
+                let trails = CombatVfx.trailsAllowed world.Particles.Count world.Particles.Capacity
+
                 if hullRatio < 0.42 then
                     let p = ship.Position + Quat.rotateVec3 ship.Rotation (Vec3(0.0, 0.1, 1.4))
-                    let v = ship.Velocity
                     Effects.burst world ParticleKind.Glow 2 p.X p.Y p.Z (v.X * 0.35) (v.Y * 0.35) (v.Z * 0.35) 0.5 3.0 11.0 0.25 0.55 0.18 0.42 1.2 0.45 0.12
 
-                if ship.Team = Team.Player && ship.Boost > 0.45 then
-                    let pL = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineLeft
-                    let pR = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineRight
-                    let v = ship.Velocity
-                    Effects.burst world ParticleKind.Glow 1 pL.X pL.Y pL.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.15 2.0 8.0 0.12 0.26 0.12 0.24 0.25 0.85 1.4
-                    Effects.burst world ParticleKind.Glow 1 pR.X pR.Y pR.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.15 2.0 8.0 0.12 0.26 0.12 0.24 0.25 0.85 1.4
+                    // Schwere Schiffe kuendigen ihr Ende an: Vorexplosionen auf der Huelle
+                    if hullRatio < 0.25 && ship.Radius >= 6.5 && world.Rng.NextFloat() < 0.07 then
+                        let h = ship.ObbHalf
+                        let local = Vec3(world.Rng.Range(-h.X, h.X), h.Y * 0.6, world.Rng.Range(-h.Z, h.Z))
+                        let p = ship.Position + Quat.rotateVec3 ship.Rotation (ship.ObbCenter + local)
+                        Effects.hullPop world p.X p.Y p.Z v.X v.Y v.Z (ship.Radius * 0.16)
+
+                if not trails then
+                    ()
+                elif ship.Team = Team.Player then
+                    if ship.Boost > 0.45 then
+                        // Boostspur: zwei helle Baender hinter den Duesen
+                        let pL = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineLeft
+                        let pR = ship.Position + Quat.rotateVec3 ship.Rotation ShipHardpoints.playerEngineRight
+                        Effects.burst world ParticleKind.Glow 2 pL.X pL.Y pL.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.12 1.0 5.0 0.28 0.55 0.22 0.40 0.22 0.80 1.40
+                        Effects.burst world ParticleKind.Glow 2 pR.X pR.Y pR.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) 0.12 1.0 5.0 0.28 0.55 0.22 0.40 0.22 0.80 1.40
+                elif ship.Boost > 0.3 || Vec3.lengthSq v > 34.0 * 34.0 then
+                    // Schnelle Gegner ziehen eine kurze Glutspur vom Heck
+                    let p = ship.Position + Quat.rotateVec3 ship.Rotation (ship.ObbCenter + Vec3(0.0, 0.0, ship.ObbHalf.Z))
+                    let s = 0.16 + ship.Radius * 0.035
+                    Effects.burst world ParticleKind.Glow 1 p.X p.Y p.Z (v.X * 0.2) (v.Y * 0.2) (v.Z * 0.2) (s * 0.5) 1.0 4.0 0.30 0.55 s (s * 1.7) 1.25 0.50 0.16
 
         if ship.HitFlash > 0.0 then
             ship.HitFlash <- Math.Max(0.0, ship.HitFlash - dt * 6.0)
@@ -1684,6 +2054,7 @@ module Physics =
     /// Bewegt alle Bolts und wertet Treffer aus (Asteroiden, gegnerische Schiffe).
     let private updateLasers (world: World) (dt: float) =
         let pool = world.Lasers
+        let station = StationCollision.forSector world.SectorIndex
         let d = pool.Data
         let field = world.Asteroids
         let a = field.Data
@@ -1751,7 +2122,10 @@ module Physics =
                     capitalPart <- part
             | None -> ()
 
-            if hitT <= 1.0 then
+            let stationT = StationCollision.laserHit station x0 y0 z0 x1 y1 z1
+            if stationT <= 1.0 && stationT <= hitT then
+                LaserPool.kill pool i
+            elif hitT <= 1.0 then
                 let hx = x0 + (x1 - x0) * hitT
                 let hy = y0 + (y1 - y0) * hitT
                 let hz = z0 + (z1 - z0) * hitT
@@ -1788,13 +2162,35 @@ module Physics =
                 else
                     let target = if hitShip = -1 then world.Player else enemies.[hitShip]
 
-                    // Schildtreffer funken blau, Huellentreffer orange
-                    if target.Shield > 0.0 then
-                        Effects.sparks world hx hy hz 7 0.4 0.8 1.5
-                    else
-                        Effects.sparks world hx hy hz 9 1.5 0.8 0.3
+                    // Schildtreffer: Ringe auf der Blase; Huellentreffer: Funken und Splitter.
+                    // Beides von der Oberflaeche weg und im Massstab des Ziels.
+                    let tp = target.Position
+                    let tv = target.Velocity
+                    let mutable nx = hx - tp.X
+                    let mutable ny = hy - tp.Y
+                    let mutable nz = hz - tp.Z
+                    let nl = sqrt (nx * nx + ny * ny + nz * nz)
 
-                    Effects.flash world hx hy hz 14.0 1.0 0.7 0.4 1.6
+                    if nl > 1e-4 then
+                        nx <- nx / nl
+                        ny <- ny / nl
+                        nz <- nz / nl
+                    else
+                        ny <- 1.0
+
+                    if target.Shield > 0.0 then
+                        Effects.shieldHit world hx hy hz nx ny nz tv.X tv.Y tv.Z target.Radius
+                    else
+                        Effects.hullHit world hx hy hz nx ny nz tv.X tv.Y tv.Z target.Radius damage
+                    if hitShip = -1 then
+                        // Gegen die Relativbewegung des Bolts zurueck liegt der Schuetze.
+                        let pv = world.Player.Velocity
+                        let sx = pv.X - float d.[o + 3]
+                        let sy = pv.Y - float d.[o + 4]
+                        let sz = pv.Z - float d.[o + 5]
+                        let length = sqrt (sx * sx + sy * sy + sz * sz)
+                        if length > 1e-6 then
+                            world.Events.Add(PlayerHitFrom(Vec3(sx / length, sy / length, sz / length)))
                     Damage.hitShip world target damage (pool.Piercing.[i] <> 0uy)
 
                 LaserPool.kill pool i
@@ -1862,6 +2258,8 @@ module Physics =
 
                             if impact > 6.0 then
                                 world.Events.Add(CollisionImpact(ship.Position, impact, ship.Team = Team.Player))
+                                if ship.Team = Team.Player then
+                                    world.Events.Add(PlayerHitFrom(Vec3.normalize (Vec3(-nx, -ny, -nz))))
                                 Damage.ship world ship ((impact - 6.0) * 0.9)
                                 // Wer schnell genug rammt, zertruemmert kleine Brocken
                                 Damage.asteroid world k (impact * 0.5) ship.Team
@@ -1907,6 +2305,8 @@ module Physics =
                         let mz = (a.Position.Z + b.Position.Z) * 0.5
                         Effects.sparks world mx my mz 14 1.5 0.9 0.4
                         world.Events.Add(CollisionImpact(Vec3(mx, my, mz), impact, a.Team = Team.Player || b.Team = Team.Player))
+                        if a.Team = Team.Player then world.Events.Add(PlayerHitFrom(Vec3(nx, ny, nz)))
+                        elif b.Team = Team.Player then world.Events.Add(PlayerHitFrom(Vec3(-nx, -ny, -nz)))
                         Damage.ship world a ((impact - 5.0) * 0.8)
                         Damage.ship world b ((impact - 5.0) * 0.8)
 
@@ -1941,5 +2341,6 @@ module Physics =
             for j in i + 1 .. enemies.Length - 1 do
                 collideShips world enemies.[i] enemies.[j]
 
+        Effects.updateFuses world dt
         ParticlePool.update world.Particles dt
         Effects.updateFlashes world dt

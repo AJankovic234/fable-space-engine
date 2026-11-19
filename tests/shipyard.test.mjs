@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ShipCatalog_create as fleet, ShipCatalog_equip as equip, RefitOrder } from '../build/ShipCatalog.js';
+import { ShipCatalog_create as fleet, ShipCatalog_equip as equip, ShipCatalog_startFleet as startFleet, ShipCatalog_valid as valid, RefitOrder } from '../build/ShipCatalog.js';
 import { TradeSystem_createCargo as hold, TradeSystem_upgradeHullCargo as expand } from '../build/TradeSystem.js';
 import { Damage_ship as hit, Physics_step as step, WorldModule_create as world } from '../build/PhysicsAndPool.js';
 import { Mission_applyLoadout as loadout, Mission_resetPlayer as reset } from '../build/Mission.js';
@@ -8,6 +8,19 @@ import { Mission_applyLoadout as loadout, Mission_resetPlayer as reset } from '.
 const hull = i => new RefitOrder(0, [i]);
 const kit = i => new RefitOrder(1, [i]);
 const standard = { SignalLevel: 0, FixerLevel: 0 };
+
+test('a new pilot owns the chosen hull and buys the cutter at the same shipyard as any other hull', () => {
+  for (let i = 0; i < 4; i++) {
+    const ships = startFleet(i);
+    assert.equal(ships.Active, i);
+    assert.equal(ships.Owned, 1 << i);
+    assert.ok(valid(ships));
+  }
+  const ships = startFleet(2), cargo = hold(8);
+  assert.equal(equip(ships, cargo, 199, true, hull(0)).tag, 1);
+  assert.equal(equip(ships, cargo, 200, true, hull(0)).fields[0], 200);
+  assert.equal(equip(ships, cargo, 0, true, hull(2)).fields[0], 0);
+});
 
 test('changing hulls preserves paid expansions and cargo, and owned ships are free to fly again', () => {
   const ships = fleet(), cargo = hold(24);

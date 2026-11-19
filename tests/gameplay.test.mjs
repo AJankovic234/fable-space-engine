@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EnemyProfiles_profile as profile, EnemyProfiles_configure as configure } from "../build/EnemyProfiles.js";
+import { EnemyProfiles_profile as profile, EnemyProfiles_configure as configure, EnemyProfiles_hitPadding as hitPadding } from "../build/EnemyProfiles.js";
+import { EnemyMeshes_hull as hull } from "../build/EnemyMeshes.js";
+import { ShipHardpoints_interceptorScale as enemyScale } from "../build/ProceduralMeshes.js";
 import { AI_createBrain as createBrain, AI_reset as resetBrain, AI_update as updateAI } from "../build/AI.js";
 import {
   ShipModule_createInterceptor as createEnemy,
@@ -18,7 +20,8 @@ import {
 import { Vec3, Vec3Module_zero as zero, QuatModule_identity as identity } from "../build/Math3D.js";
 
 const roles = [0, 1, 2, 3, 4];
-const heavyRoles = [2, 3, 4];
+// Der Bomber fliegt einen Anlauf je Salve und dreht dann ab (tests/combat.test.mjs).
+const heavyRoles = [2, 4];
 const close = (actual, expected, label) =>
   assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} != ${expected}`);
 const vector = (value) => [value.X, value.Y, value.Z];
@@ -59,22 +62,18 @@ test("five finite, distinct enemy profiles remain slower than the former interce
     for (const [key, value] of Object.entries(p)) {
       if (typeof value === "number") assert.ok(Number.isFinite(value), `${p.Name}.${key}`);
     }
-    for (const value of [...vector(p.Scale), ...vector(p.Tint)]) assert.ok(Number.isFinite(value));
+    for (const value of vector(p.Tint)) assert.ok(Number.isFinite(value));
     assert.ok(p.CruiseSpeed > 0 && p.CruiseSpeed + p.BoostSpeed < 62, p.Name);
     assert.ok(p.Hull > 0 && p.Shield >= 0, p.Name);
-    assert.ok(p.Scale.X > 0);
-    assert.equal(p.Scale.X, p.Scale.Y);
-    assert.equal(p.Scale.X, p.Scale.Z);
     assert.match(p.Color, /^#[0-9a-f]{6}$/i);
   }
   for (const values of [profiles.map(p => p.Name), profiles.map(p => p.CruiseSpeed),
-    profiles.map(p => p.Scale.X), profiles.map(p => p.Hull + p.Shield)]) {
+    roles.map(role => hull(role).Radius), profiles.map(p => p.Hull + p.Shield)]) {
     assert.equal(new Set(values).size, 5);
   }
 });
 
 test("reused enemy slots configure absolutely and keep collider and guns aligned with their mesh", () => {
-  const base = createEnemy();
   const reused = createEnemy();
   for (const role of roles) {
     const fresh = createEnemy();
@@ -84,10 +83,16 @@ test("reused enemy slots configure absolutely and keep collider and guns aligned
     assert.deepEqual(configuredStats(reused), configuredStats(fresh));
     configure(reused, role, 4);
     assert.deepEqual(configuredStats(reused), configuredStats(fresh));
-    const scale = profile(role).Scale.X;
-    close(reused.Radius, base.Radius * scale, "radius");
-    for (const name of ["ObbCenter", "ObbHalf", "GunLeft", "GunRight"]) {
-      vector(reused[name]).forEach((value, axis) => close(value, vector(base[name])[axis] * scale, name));
+    // Collider and muzzles come from the role's own model, drawn at the shared enemy scale.
+    // Only the flat scout gets a small hit margin beyond its hull.
+    const model = hull(role);
+    const padding = vector(hitPadding(role));
+    assert.deepEqual(padding, role === 1 ? [0.3, 0.45, 0] : [0, 0, 0]);
+    const half = vector(model.ObbHalf).map((value, axis) => value + padding[axis]);
+    close(reused.Radius, (Math.hypot(...vector(model.ObbCenter)) + Math.hypot(...half)) * enemyScale, "radius");
+    vector(reused.ObbHalf).forEach((value, axis) => close(value, half[axis] * enemyScale, "ObbHalf"));
+    for (const name of ["ObbCenter", "GunLeft", "GunRight"]) {
+      vector(reused[name]).forEach((value, axis) => close(value, vector(model[name])[axis] * enemyScale, name));
     }
     resetShip(reused, zero, identity);
     assert.equal(reused.Hull, reused.MaxHull);

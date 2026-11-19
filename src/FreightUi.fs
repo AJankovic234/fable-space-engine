@@ -28,7 +28,7 @@ module FreightUi =
         (button "freight-route").addEventListener ("click", fun _ -> (button "tab-routes").click (); (button "tab-routes").focus ())
         ui
 
-    let refresh ui cargo port trading =
+    let refresh ui cargo port trading terms escortPort credits =
         show (get "freight-board") trading
         if trading then
             show (get "freight-offers") cargo.Freight.IsNone
@@ -55,12 +55,21 @@ module FreightUi =
                 let free = TradeSystem.freeVolume cargo
                 ui.Select <- fun () ->
                     let target = int ui.Destination.value
+                    let fee = TradeRoutes.convoyFee terms escortPort target
+                    (get "freight-passage").textContent <-
+                        if fee = 0 then "Die Station stellt die Ladung. Die sichere Überfahrt ist kostenlos."
+                        elif credits < fee then
+                            sprintf "Die Station stellt die Ladung. Für das Geleit fehlen %d CR. Der Eigenflug ist kostenlos." (fee - credits)
+                        else
+                            sprintf "Die Station stellt die Ladung. Geleit kostet %d CR. Bis zur Ablieferung bleiben dir damit %d CR." fee (credits - fee)
                     ui.Offers |> Array.iteri (fun i offer ->
                         let tonnes = Freight.sizes.[i]
                         offer.disabled <- tonnes > free
                         offer.textContent <- sprintf "%d t · %d CR" tonnes (Freight.fee target tonnes)
-                        let action = if offer.disabled then sprintf "%d t Platz fehlen" (tonnes-free) else "Auftrag annehmen"
                         let detail = document.createElement "small"
-                        detail.textContent <- action
+                        detail.textContent <-
+                            if offer.disabled then sprintf "%d t Platz fehlen" (tonnes - free)
+                            elif tonnes = free then "Annehmen · füllt den Frachtraum"
+                            else sprintf "Annehmen · danach %d t frei" (free - tonnes)
                         offer.appendChild detail |> ignore)
                 ui.Select ()

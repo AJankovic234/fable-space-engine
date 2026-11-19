@@ -11,6 +11,7 @@
   <!-- Kompilierreihenfolge = Abhaengigkeitsreihenfolge (F# ist reihenfolgesensitiv). -->
   <ItemGroup>
     <Compile Include="Math3D.fs" />
+    <Compile Include="CombatVfx.fs" />
     <Compile Include="PilotSkills.fs" />
     <Compile Include="Universe.fs" />
     <Compile Include="CapitalFlight.fs" />
@@ -19,7 +20,15 @@
     <Compile Include="WebGLRenderer.fs" />
     <Compile Include="GlbLoader.fs" />
     <Compile Include="ProceduralMeshes.fs" />
+    <Compile Include="AsteroidMeshes.fs" />
+    <Compile Include="Traffic.fs" />
     <Compile Include="CapitalMeshes.fs" />
+    <Compile Include="SovereignMeshes.fs" />
+    <Compile Include="LandmarkMeshes.fs" />
+    <Compile Include="StationMeshes.fs" />
+    <Compile Include="StationCollision.fs" />
+    <Compile Include="EnemyMeshes.fs" />
+    <Compile Include="PlayerMeshes.fs" />
     <Compile Include="UpgradeMeshes.fs" />
     <Compile Include="Input.fs" />
     <Compile Include="PhysicsAndPool.fs" />
@@ -35,8 +44,10 @@
     <Compile Include="Blockade.fs" />
     <Compile Include="Turret.fs" />
     <Compile Include="AI.fs" />
+    <Compile Include="Encounters.fs" />
     <Compile Include="FlightSchool.fs" />
     <Compile Include="Camera.fs" />
+    <Compile Include="CombatFeedback.fs" />
     <Compile Include="SkyBackdrop.fs" />
     <Compile Include="Sound.fs" />
     <Compile Include="StoryRadio.fs" />
@@ -44,8 +55,11 @@
     <Compile Include="GameSave.fs" />
     <Compile Include="SaveStore.fs" />
     <Compile Include="SaveUi.fs" />
+    <Compile Include="HudLayout.fs" />
+    <Compile Include="HudContacts.fs" />
     <Compile Include="HUD.fs" />
     <Compile Include="ShipyardUi.fs" />
+    <Compile Include="StartHangar.fs" />
     <Compile Include="FreightUi.fs" />
     <Compile Include="Shop.fs" />
     <Compile Include="SkillUi.fs" />

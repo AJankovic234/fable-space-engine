@@ -59,6 +59,65 @@ kbd{font:11px Consolas,monospace;border:1px solid #476373;border-radius:4px;padd
 #kit-heading { font-size: 20px; margin-top: 26px; }
 .yard-caption { margin: 0 0 16px; font-size: 14px; color: #a7c2c8; }
 #hull-cards, #ship-kits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; }
+
+#start-hangar {
+  box-sizing: border-box; width: min(950px, calc(100% - 28px)); max-height: calc(100dvh - 24px);
+  padding: 0; overflow-y: auto; border: 1px solid #516974; border-radius: 9px;
+  background: #0b161f; color: #e6eff1; font-family: GameUI, "Segoe UI", sans-serif;
+  box-shadow: 0 22px 90px #000a;
+}
+#start-hangar::backdrop { background: #030a11da; }
+.start-header, .start-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; }
+.start-header { border-bottom: 1px solid #2d434e; }
+.start-header h2 { margin: 0; font-size: clamp(22px, 3vw, 31px); }
+.start-header > span, #start-role, .start-choice legend, .start-stats dt {
+  color: #a5bdc7; font: 11px/1.4 Consolas, monospace; letter-spacing: .06em; text-transform: uppercase;
+}
+.start-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(228px, 1fr); }
+.start-preview { min-width: 0; background: #101e28; }
+.start-stage {
+  display: grid; place-items: center; height: clamp(160px, 28vh, 270px);
+  background: radial-gradient(ellipse at 50% 78%, #345361 0%, #1b303c 38%, #101e28 76%);
+}
+.start-stage img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.start-details { padding: 2px 24px 22px; }
+#start-role { margin: 0; color: #9dd2d4; }
+#start-name { margin: 2px 0 7px; font-size: clamp(27px, 4vw, 39px); line-height: 1.1; }
+#start-brief { margin: 0; min-height: 3.1em; font-size: 14px; line-height: 1.5; color: #c4d1d6; }
+.start-stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; padding-top: 12px; margin: 12px 0 0; border-top: 1px solid #354954; }
+.start-stats dt { font-size: 10px; letter-spacing: 0; }
+.start-stats dd { margin: 3px 0 0; font: 600 16px/1.2 Consolas, monospace; }
+.start-choice { box-sizing: border-box; min-width: 0; margin: 16px 18px; padding: 0; border: 0; }
+.start-choice legend { margin: 0 0 8px; padding: 0; }
+#start-hulls { display: grid; gap: 7px; }
+.start-option {
+  position: relative; display: grid; grid-template-columns: 38% 1fr; align-items: center; gap: 8px;
+  min-height: 61px; border: 1px solid #344953; border-radius: 4px; background: #14242e; cursor: pointer;
+}
+.start-option img { width: 100%; height: 54px; object-fit: contain; }
+.start-option strong, .start-option small { display: block; }
+.start-option strong { font-size: 15px; }
+.start-option small { margin-top: 1px; color: #a9c1c8; font-size: 12px; }
+.start-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.start-option:hover { background: #213540; }
+.start-option:has(input:checked) { background: #213943; border-color: #8cc4c9; box-shadow: inset 3px 0 #8cc4c9; }
+.start-option:has(input:focus-visible), .start-actions button:focus-visible { outline: 2px solid #edc691; outline-offset: 2px; }
+.start-actions { flex-direction: row-reverse; border-top: 1px solid #2d434e; }
+.start-actions button { min-height: 40px; padding: 8px 16px; border: 1px solid #526772; border-radius: 4px; background: #13232d; color: #e5eff0; font: 600 14px GameUI, "Segoe UI", sans-serif; cursor: pointer; }
+#start-launch { border-color: #a6d5d5; background: #aad9d7; color: #0b2025; }
+@media (max-width: 660px) {
+  .start-layout { display: flex; flex-direction: column; }
+  .start-choice { order: -1; margin: 12px 15px; }
+  #start-hulls { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .start-option { min-height: 46px; gap: 4px; grid-template-columns: 28% 1fr; }
+  .start-option img { height: 40px; }
+  .start-option strong { font-size: 13px; }
+  .start-stage { height: clamp(122px, 23vh, 188px); }
+  .start-header, .start-actions { padding: 12px 15px; }
+  .start-header > span { text-align: right; max-width: 110px; font-size: 10px; }
+  .start-details { padding: 0 15px 14px; }
+  #start-brief { min-height: 0; }
+}
 .hull-card, .kit-card { display: flex; flex-direction: column; min-width: 0; border: 1px solid #395261; border-radius: 6px; overflow: hidden; background: #101e28; }
 .hull-card[data-active=true], .kit-card[data-active=true] { border-color: #76baac; }
 .hull-art { aspect-ratio: 1.8; background: radial-gradient(ellipse at 47% 64%, #354851, #182a34 60%, #0b1823); border-bottom: 1px solid #314653; }
@@ -508,15 +567,30 @@ button[data-recording]:focus-visible, #contact-home:focus-visible { outline: 2px
   position: fixed; inset: 0; z-index: 30;
   background: #04070c; color: #f6f3ea; overflow: hidden;
   font-family: GameUI, "Segoe UI", sans-serif;
-  transition: opacity .85s ease;
+  transition: opacity .85s ease, background .45s ease;
+}
+#intro-film[data-live3d="true"] { background: transparent; }
+#intro-film[data-freeze3d="true"] .intro-grain {
+  backdrop-filter: contrast(1.22) saturate(1.15);
+  background:
+    radial-gradient(circle at 50% 45%, transparent 32%, rgba(2,5,10,0.78) 100%),
+    radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px) 0 0 / 6px 6px;
 }
 #intro-film.is-ending { opacity: 0; }
-#intro-bg {
+#intro-film.is-shake .intro-stage { animation: intro-shake .28s ease-out; }
+@keyframes intro-shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-4px, 3px); }
+  55% { transform: translate(3px, -2px); }
+  100% { transform: translate(0, 0); }
+}
+.intro-bg {
   position: absolute; inset: -6%; background-size: cover; background-position: center;
   filter: contrast(1.18) saturate(0.92) brightness(0.55);
-  transform: scale(1.06);
+  transform: scale(1.06); opacity: 0; transition: opacity .65s ease;
 }
-#intro-bg.is-zooming { animation: intro-kenburns 4.8s cubic-bezier(.16,.84,.3,1) forwards; }
+.intro-bg.is-active { opacity: 1; }
+.intro-bg.is-zooming { animation: intro-kenburns 5.2s cubic-bezier(.16,.84,.3,1) forwards; }
 @keyframes intro-kenburns {
   from { transform: scale(1.16) rotate(-0.6deg); }
   to { transform: scale(1.03) rotate(0.4deg); }
@@ -591,6 +665,19 @@ button[data-recording]:focus-visible, #contact-home:focus-visible { outline: 2px
 }
 #intro-film[data-kind="finale"] #intro-card { text-align: center; border-left: 0; border-top: 6px solid var(--intro-accent); border-bottom: 6px solid var(--intro-accent); max-width: 760px; }
 #intro-tagline { margin: 0; font: 600 clamp(16px, 2vw, 23px)/1.35 GameUI, "Segoe UI", sans-serif; color: #e2ecef; }
+#intro-play-cta {
+  margin-top: 20px; padding: 11px 22px; border: 1px solid var(--intro-accent); border-radius: 4px;
+  background: var(--intro-accent); color: #09121a; font: 700 13px Consolas, monospace; letter-spacing: .08em;
+  text-transform: uppercase; cursor: pointer;
+}
+#intro-play-cta:hover { filter: brightness(1.12); }
+.intro-chapters { display: flex; gap: 4px; }
+.intro-chapter {
+  border: 1px solid #2b4252; border-radius: 3px; background: #0c1720; color: #7e98a8;
+  padding: 4px 7px; font: 10px Consolas, monospace; cursor: pointer;
+}
+.intro-chapter[aria-current="step"] { border-color: var(--intro-accent); color: var(--intro-accent); background: #1a242c; }
+.intro-chapter:hover { color: #e4f3f7; border-color: #6f94a8; }
 #intro-caption { text-align: center; max-width: 760px; }
 #intro-caption.is-in { animation: intro-cap .45s ease-out forwards; }
 @keyframes intro-cap { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
@@ -638,3 +725,10 @@ button[data-recording]:focus-visible, #contact-home:focus-visible { outline: 2px
   border-color: #5ea3b2;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
 }
+#menu-chronik { margin-top: 10px; border: 1px solid #2b4453; border-radius: 5px; background: rgba(9, 20, 29, 0.82); padding: 9px 12px; }
+#menu-chronik summary { cursor: pointer; font: 11px Consolas, monospace; letter-spacing: .08em; color: #9fd4df; text-transform: uppercase; }
+.chronik-grid { display: grid; gap: 10px; margin-top: 10px; }
+.chronik-card { padding: 10px 12px; border-left: 3px solid #e4b158; background: rgba(15, 31, 43, 0.88); border-radius: 3px; }
+.chronik-card .eyebrow { margin: 0 0 3px; font: 10px Consolas, monospace; color: #e4b158; letter-spacing: .12em; }
+.chronik-card h3 { margin: 0 0 5px; font-size: 15px; color: #f2f5f3; }
+.chronik-card p:last-child { margin: 0; font-size: 12px; line-height: 1.48; color: #b5cad4; }

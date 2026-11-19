@@ -12,22 +12,24 @@ Ein Klick ins Cockpit aktiviert die Maussteuerung. In der Flugpause (**P**) senk
 
 **U** wechselt den Mausmodus: *Wischen* (Standard, der Stick federt nach jeder Bewegung zur Mitte zurück) oder *Halten* (der Stick bleibt stehen, mit kleiner Totzone und feinerer Kurve um die Mitte; **X** zentriert). Der Modus wird pro Browser gemerkt. Das **Mausrad** regelt den Schub, **→** setzt Vollschub, **←** Nullschub. **H** zeigt gehalten den Heckblick, **F3** die Bildrate. Gibt **Esc** die Maus frei oder verliert das Fenster den Fokus, pausiert der Flug; **P**, **Enter** oder ein Klick setzen ihn fort.
 
-**L** koppelt den Schub an das Tempo des erfassten Ziels, bis du selbst Schub gibst oder bremst. Mit gehaltener **mittlerer Maustaste** siehst du dich frei um, **Bild ↑ / ↓** ändert den Abstand der Verfolgerkamera, **F4** schaltet die Sonnenschatten um. Die Mausempfindlichkeit lässt sich auch im Hauptmenü per Regler einstellen.
+**L** koppelt den Schub an das Tempo des erfassten Ziels, bis du selbst Schub gibst oder bremst. **N** erfasst das nächstgelegene Ziel, jeder weitere Druck das nächstfernere. Mit gehaltener **mittlerer Maustaste** siehst du dich frei um, **Bild ↑ / ↓** ändert den Abstand der Verfolgerkamera, **F4** schaltet die Sonnenschatten um. Die Mausempfindlichkeit lässt sich auch im Hauptmenü per Regler einstellen.
 
 Der Booster zehrt von einem Vorrat: voll reicht er für 8 s Dauerboost und erholt sich in 6 s. Ein leergeflogener Vorrat sperrt den Booster, bis 30 % zurück sind (Balken rot).
 
 ## Eigene Schiffe und Spezialausrüstung
 
-Im Handelsflug öffnet **Schiffe** am Dock den Hangar. Auf Kestrel und den übrigen Ausrüstungshäfen kannst du einen Rumpf kaufen und direkt damit ablegen. Auf Drift-9 kannst du das Angebot ansehen. Die Karten zeigen Laderaum, Reisetempo und Laserschaden mit deinen aktuellen Einbauten.
+Bei einem neuen Handelsflug wählst du in Kestrel dein Startschiff. Es gehört dir ab der ersten Flugstunde. Die Schwierigkeit ergibt sich aus Startkapital und Flugeigenschaften. Im Eisvogel kannst du sofort einen Großauftrag fliegen und Geleitschutz bezahlen. Beim Sperber füllt ein Kleinauftrag bereits den Laderaum, dafür ist er schnell und im Gefecht wendig. [Schiffswahl am Start](artifacts/werft/startschiff-auswahl.webp) · [Die vier Schiffe im Flug](artifacts/werft/startschiffe-im-flug.webp)
 
-| Rumpf | Preis | Grundladeraum | Reisetempo | Laserschaden pro Treffer |
-| --- | ---: | ---: | ---: | ---: |
-| Bergungskutter | Startschiff | 16 t | 60 m/s | 12 |
-| Lastkahn | 380 CR | 32 t | 48 m/s | 10 |
-| Sperber | 320 CR | 8 t | 82 m/s | 16 |
-| Eisvogel | 540 CR | 24 t | 74 m/s | 9 |
+| Startschiff | Handelsstart | Startkapital | Grundladeraum | Reisetempo | Laserschaden pro Treffer | Späterer Kaufpreis |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Eisvogel | Entspannt | 300 CR | 24 t | 74 m/s | 9 | 540 CR |
+| Bergungskutter | Standard | 200 CR | 16 t | 60 m/s | 12 | 200 CR |
+| Lastkahn | Anspruchsvoll | 110 CR | 32 t | 48 m/s | 10 | 380 CR |
+| Sperber | Experte | 60 CR | 8 t | 82 m/s | 16 | 320 CR |
 
-Der Eisvogel ist ein Frachtkurier mit zwei Kufen. Sein Grundladeraum fasst einen kompletten 24-t-Großauftrag. In der Außenansicht sitzen die versiegelten Kisten paarweise auf den Kufen. Mit Kurierdüsen erreicht er 86 m/s Reisegeschwindigkeit. [Werftkarte](public/assets/ships/eisvogel.webp) · [Im Flug mit voller Ladung](artifacts/werft/eisvogel-im-flug.webp) · [Blender-Szene](artifacts/werft/eisvogel.blend)
+Über **Schiffe** kannst du am Dock weitere Rümpfe kaufen. Auf Drift-9 kannst du das Angebot ansehen. Die Werftkarten berücksichtigen deine aktuellen Einbauten. Beim Wechsel behältst du dein Guthaben.
+
+Der Eisvogel ist ein Frachtkurier mit zwei Kufen. Sein Grundladeraum fasst einen kompletten 24-t-Großauftrag. In der Außenansicht sitzen die versiegelten Kisten paarweise auf den Kufen. Die Kufen laufen vorn in flache Schnäbel aus, unter denen die Arbeitslaser sitzen. Mit Kurierdüsen erreicht er 86 m/s Reisegeschwindigkeit. [Werftkarte](public/assets/ships/eisvogel.webp) · [Im Flug mit voller Ladung](artifacts/werft/eisvogel-im-flug.webp) · [Blender-Szene](artifacts/werft/eisvogel.blend)
 
 Der Lastkahn dreht langsamer, der Sperber schneller als der Kutter. Gekaufte Rümpfe bleiben in deiner Flotte. Beim kostenlosen Wechsel ziehen Ladung, bezahlte Frachtraumerweiterungen, Waffen und Turret mit um. Bei Platzmangel zeigt die Werft, wie viele Tonnen du zuerst entladen musst. Ein Wechsel übernimmt auch die vorhandenen Schäden.
 
@@ -37,7 +39,7 @@ Unter **Ausrüstung** lassen sich Laser, Schild und Panzerung unabhängig bis St
 
 ## Frachtaufträge
 
-Unter **Handelsmarkt → Frachtbörse** wählst du einen Nachbarhafen und nimmst eine Sendung zu 8 oder 24 t an. Die Station stellt die Ladung. Du kannst einen Auftrag gleichzeitig fliegen und den freien Platz für eigene Waren nutzen. Die verplombten Kisten sind außen am Schiff sichtbar.
+Unter **Handelsmarkt → Frachtbörse** wählst du einen Nachbarhafen und nimmst eine Sendung zu 8 oder 24 t an. Die Station stellt die Ladung. Vor der Annahme siehst du, wie viel Platz für eigene Waren bleibt und wie viel Geld du nach der Geleitbuchung noch hättest. Du kannst einen Auftrag gleichzeitig fliegen. Die verplombten Kisten sind außen am Schiff sichtbar.
 
 Auf Kestrel bringen 8 t Bohrkronen nach Helios **76 CR**, 24 t bringen **172 CR**. Im Eigenflug trägst du das Piratenrisiko. Regulärer Geleitschutz kostet auf dieser Strecke 50 CR. Auf der Routenkarte siehst du das erwartete Gesamtergebnis aus Warenverkauf, Honorar und Geleit. Am Ziel verkaufst du deine Waren am Markt und quittierst die Auftragsladung separat in der Frachtbörse. Erst die Quittung zahlt das Honorar aus. Am Ausgangshafen kannst du die Sendung unbezahlt zurückgeben.
 
@@ -51,7 +53,7 @@ Mit dem Frachtbrief nennen Cockpit und Auftragsfenster den nächsten Hafen. Unte
 
 Die Werft auf Kepler hat einen Bauplatz. Für den Bomber braucht sie zwei Plasmakerne und eine Einheit Titanschrott im Frachtraum. Nach einer erfolgreichen Routenreise steht er in Helios bereit. Alternativ baut die Werft einen Transporter für Treibstofflieferungen oder eine Eskorte für gebührenfreien Geleitschutz zum eingestellten Zielhafen.
 
-Im Auftragsfenster von Helios wählst du den Einsatz. Im Bomber hältst du den Kreuzer zwischen 35 und 420 Metern im Visier. Nach dem Zielton löst **J** einen Torpedo aus. Zwei Einschläge brechen den Panzerrumpf. Laser können die rot markierten Außenbatterien und die beiden Abfangjäger zerstören. Als Eskorte fliegst du deinen Kutter und schützt *Kepler Zwei* vor den Abfangjägern. Die Bomberbesatzung erfasst den Kreuzer und feuert selbst.
+Im Auftragsfenster von Helios wählst du den Einsatz. Im Bomber hältst du den Kreuzer zwischen 35 und 420 Metern im Visier. Nach dem Zielton löst **J** einen Torpedo aus. Zwei Einschläge brechen den Panzerrumpf. Laser können die rot markierten Außenbatterien und die beiden Abfangjäger zerstören. Als Eskorte fliegst du dein eigenes Schiff und schützt *Kepler Zwei* vor den Abfangjägern. Die Bomberbesatzung erfasst den Kreuzer und feuert selbst.
 
 **B** bringt dich zum Dock zurück. Beim nächsten Versuch bekommt der Bomber neue Torpedos. Schäden am Kreuzer und besiegte Abfangjäger bleiben im Spielstand, ebenso ein bereits gestarteter Torpedo beim Laden eines laufenden Einsatzes. Nach dem Durchbruch erhält Frachter Sechs Einflugfreigabe. Drei Lieferungen füllen das Medizinlager auf, die erste bei der Freigabe und die beiden folgenden beim erneuten Anflug auf Helios.
 
@@ -61,11 +63,11 @@ Auch das Gestein wechselt mit dem Sektor. Kestrel hat staubige Schichtfelsen, He
 
 Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Am Äther-Relais sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis.
 
-Der Bergungskutter trägt backbord einen offenen Frachtkorb und steuerbord einen Bergekran. Beim Einkauf oder Bergen füllen sich bis zu drei Plätze im Korb. Zwischen den gelben Holmen sind gestapelte Titanplatten, Druckbehälter oder versiegelte Transportkisten zu sehen. Welche Waren außen liegen, hängt von ihrem Volumenanteil an der Ladung ab. Alle sechs Stationen haben einen gemeinsamen Andockring und Aufbauten für ihren jeweiligen Betrieb. Asteroiden zeigen Schichtungen unabhängig vom Erzvorrat.
+Der Bergungskutter trägt backbord einen offenen Frachtkorb und steuerbord einen Bergekran. Beim Einkauf oder Bergen füllen sich bis zu drei Plätze im Korb. Zwischen den gelben Holmen sind gestapelte Titanplatten, Druckbehälter oder versiegelte Transportkisten zu sehen. Welche Waren außen liegen, hängt von ihrem Volumenanteil an der Ladung ab. Alle sechs Stationen haben einen gemeinsamen Andockring und einen eigenen Baukörper: Kestrel verarbeitet einen angeleinten Erzbrocken, Helios trägt drei Schmelztürme, Drift-9 besteht aus vertäuten Marktschiffen, in Keplers Trockendock liegt ein Schwerkreuzer im Bau, Theta trägt zwei große Schüsseln und Morgenlicht Panzerflanken mit Verteidigungstürmen. Die Baukörper sind fest: Schiffe und Laser prallen daran ab. Andockring und Anflugschneise bleiben frei. Über Morgenlicht liegt Vances Flaggschiff *AETHER Sovereign* als Kulisse. Asteroiden zeigen Schichtungen unabhängig vom Erzvorrat.
 
 Der Kepler-Bomber trägt seine beiden Torpedos über den Tragflächen. In der Verfolgeransicht siehst du nach jedem Abschuss die freie Schiene. Am Zollkreuzer sitzt die Brücke über der seitlichen Kontrollbucht. Nach dem ersten Torpedotreffer ist das mittlere Schott aufgerissen, dahinter glüht eine Leitung.
 
-Im Handelsflug liegt ein ziviler Containerfrachter am Außenliegeplatz, ein zweiter fliegt eine Warteschleife über der Station. Beide sind Kulisse. Auf den Routenkarten zeigen [sechs gerenderte Stationsansichten](public/assets/port-portraits.webp) die Zielhäfen. Freigelegtes Erz besteht aus mehreren verwachsenen Kristallspitzen. Drohne, Späher, Kanonenboot, Bomber und Kommandoschiff haben eigene 3D-Silhouetten.
+Im Handelsflug liegt ein ziviler Containerfrachter am Außenliegeplatz, ein zweiter fliegt eine Warteschleife über der Station. Dazu pendeln drei oder vier Shuttles zwischen Station, Toren und Warteposition. Alle sind Kulisse ohne Kollision. Auf den Routenkarten zeigen [sechs gerenderte Stationsansichten](public/assets/port-portraits.webp) die Zielhäfen. Freigelegtes Erz besteht aus mehreren verwachsenen Kristallspitzen. Drohne, Späher, Kanonenboot, Bomber und Kommandoschiff haben eigene 3D-Silhouetten: Ringdrohne, Nadel-Späher, Breitseiten-Kanonenboot, Nutzlast-Bomber und eine 24 m lange Kommando-Korvette mit goldenem Bug. Jeder Gegner trägt ein Positionslicht in seiner Rollenfarbe, das auch auf große Entfernung sichtbar bleibt. Piraten im Handelsflug erkennst du an verwitterter Lackierung und flackernden grünen oder bernsteinfarbenen Lichtern, AETHER-Kräfte an Elfenbein, Gold und roten Doppelblitzen.
 
 Fünf Bojenpaare markieren den Stationsanflug. Bei freiem Dock läuft ein türkises Lichtsignal von außen zur Station. Bei Kampfsperre leuchten alle Bojen durchgehend bernsteinfarben. Die HUD-Anzeige gibt weiterhin die Entfernung und den Andockstatus an.
 
@@ -118,6 +120,12 @@ Create a single illustrated equipment catalog strip for an industrial space trad
 
 </details>
 
+## Im Gefecht
+
+Das gewählte Ziel trägt einen goldenen Rahmen. Links unten zeigt die Zielanzeige Rolle, Entfernung, Annäherung, Schild, Hülle und Zustand. Lädt ein schwerer Gegner eine Salve, erscheint dort **„LÄDT AUF“** mit Fortschrittsbalken, und seine Rohre glühen auf. Schwere Salven zielen auf den Kurs, den du beim Aufglühen fliegst: Wechsle danach die Richtung. Im Kampf schrumpfen Stations- und Tormarker zu kleinen Symbolen. Im Gravidar steht ein Quadrat für die Station, eine Raute für ein Tor, ein roter Punkt für einen Gegner und ein goldener Ring für das gewählte Ziel; die Linie zum Fußpunkt zeigt die Höhe relativ zu deinem Schiff.
+
+Eigene Schüsse sind kühl gefärbt (Bordkanone grün, Impulsfokus violett, Turret blau), gegnerische warm (Bomber magenta, Kommandoschiff gold). Treffer auf einen Schild zeigen blaue Ringe und eine blaue Treffermarke, Treffer auf die Hülle Funken und eine helle Marke. Ein rotes Kreuz bestätigt den Abschuss. Rote Bögen um die Bildmitte zeigen, aus welcher Richtung du getroffen wirst. Schwere Schiffe brennen unter einem Viertel Hülle sichtbar und zerbrechen in mehreren Stufen.
+
 ## Spielstände
 
 Lokale Spielstände im Browser: ein Autosave und drei manuelle Slots. Automatisch
@@ -140,11 +148,11 @@ Umzug auf einen anderen Browser. Speicherfehler werden sichtbar gemeldet.
 
 ## Aktueller Standard: Handelsflug
 
-**Enter/Klick** beginnt ohne vorhandenen Spielstand eine Handelsreise; sonst wird
-der letzte Stand fortgesetzt. **F2** startet im Titelbild die bisherige
-Kampfmission „Operation Morgenlicht“. Der Handelsflug hat keine Pflichtwellen und
-kein erzwungenes Ende: Start mit **200 CR**, leerer Fracht und stillstehendem Schiff
-nahe Kestrel. Erstes Ziel: Erz kaufen oder bergen, nach Helios bringen und verkaufen.
+**Enter/Klick** öffnet beim ersten Handelsflug die Schiffswahl. Bei einem
+vorhandenen Spielstand setzt du den Flug fort. Über **Spielstände → Neuer Handelsflug**
+kannst du erneut ein Startschiff wählen. **F2** startet im Titelbild die Kampfmission
+„Operation Morgenlicht“. Der Handelsflug beginnt mit leerem Laderaum nahe Kestrel.
+Ein erstes Handelsziel ist, Erz zu kaufen oder zu bergen und es in Helios zu verkaufen.
 
 - Der Kutter erreicht **60 m/s** bei Vollschub und mit Booster bis zu **135 m/s**.
   **↑ / R** erhöht den Schub, **↓ / F** nimmt ihn zurück. Kurzes Antippen erlaubt langsame
@@ -175,10 +183,18 @@ verbessere dein Schiff und zerstöre im letzten Abschnitt das Kommandoschiff sam
 Eskorte. Der Abschluss ist ein Sieg; ein neuer Versuch beginnt ohne Aufrüstungen.
 
 - 4, 6, 8, 10, 12 und 14 Gegner pro Abschnitt. Drei beginnen den Angriff;
-  Verstärkung trifft in Zweiergruppen mit fünf Sekunden Abstand ein.
+  Verstärkung trifft in Zweiergruppen mit fünf Sekunden Abstand ein. Im letzten
+  Abschnitt hält das Kommandoschiff vier Schiffe zurück und ruft je Phasenwechsel zwei.
 - Fünf erkennbare Rollen: Drohne, Späher, Kanonenboot, Bomber und Kommandoschiff.
   Farbe, Größe, Tempo, Wendigkeit und Angriffsmuster unterscheiden sich.
   Schwere Gegner laden ihre Salven sichtbar auf. Keine endlose HP-Eskalation.
+  Drohnen greifen im Schwarm und im selben Takt an. Späher flankieren, feuern im
+  Vorbeiflug und sprinten weg. Das Kanonenboot hält rund 230 m und zeigt in der
+  Feuerpause die Breitseite. Der Bomber fliegt Anläufe mit einer Sechsersalve.
+- Das Kommandoschiff (400 Hülle, 160 Schild) kämpft in drei Phasen. Bei 66 % und
+  33 % Hülle ist es 3 s durch einen Schildstoß geschützt, lädt den Schild neu und
+  ruft zwei Eskorten. Ab der zweiten Phase feuern seine Seitenbatterien Fächer, in
+  der dritten rückt es auf 170 m heran und feuert in kürzeren Abständen.
 - Jeder Gegnerabschuss gibt **100 Credits**. Punkte bleiben eine separate Flugwertung.
 - Rund ein Viertel der Asteroiden enthält Mineralien. Alle Asteroiden sehen vor dem
   Treffer wie gewöhnliches Gestein aus: keine Erzfarbe, Kristalle oder Markierungen.
