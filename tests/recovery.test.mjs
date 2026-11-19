@@ -25,7 +25,7 @@ test('every sector archive answers a manual scan at the spherical boundary and p
     assert.equal(scan(pilot, sector, source, source).tag, 1, 'already on file at zero distance');
     assert.equal(points(pilot), before + 1);
   }
-  assert.equal(pilot.Relics, 63);
+  assert.equal(pilot.Relics, (1 << sectors.length) - 1);
 });
 
 test('RT-9 doubles the active scan range even directly above or behind the ship', () => {

@@ -3,11 +3,19 @@ namespace SpaceEngine
 open Fable.Core
 open Browser.Types
 
-/// Hintergrund und sechs lokale Himmelsansichten werden einmalig auf der GPU erzeugt.
+/// Der Sternenhintergrund wird einmalig auf der GPU erzeugt. Die Himmelskörper des
+/// aktuellen Sektors entstehen beim Sektorwechsel in Bildschirmauflösung, damit Planetenrand
+/// und Oberfläche scharf bleiben statt aus einem kleinen Atlas vergrößert zu werden.
 type SkyBackdrop =
     { Program: WebGLProgram
       Texture: WebGLTexture
-      Bodies: WebGLTexture
+      mutable Bodies: WebGLTexture
+      /// Sonnenrichtungen der sechs Ansichten für deren Shader.
+      BodySuns: JS.Float32Array
+      MaxBodyWidth: int
+      /// Ansicht und Breite der aktuellen Textur; -1 = noch keine erzeugt.
+      mutable BodyCell: int
+      mutable BodyWidth: int
       SectorCells: int[]
       Vao: WebGLVertexArrayObject
       UView: WebGLUniformLocation
@@ -102,6 +110,8 @@ const vec2 SKY_SIZE = vec2(2.52, 1.70);
 """
     let private bodyFragment = bakeHeader + windowShader + """
 uniform vec3 uSuns[6];
+uniform int uCell;
+uniform vec2 uJitter;
 const vec3 SUN = vec3(0.8393, 0.4519, 0.3013);
 vec4 kestrel(vec3 d) {
     vec3 color = vec3(0.0);
@@ -165,7 +175,7 @@ vec4 kestrel(vec3 d) {
     return vec4(color,coverage);
 }
 
-// Alle folgenden Oberflächen rechnen nur beim Erzeugen des kleinen Atlasses.
+// Alle folgenden Oberflächen rechnen nur beim Erzeugen der Sektoransicht.
 vec4 world(vec3 d, vec3 center, float radius, vec3 sunDir, int kind) {
     float miss = length(cross(d,center)) - radius;
     vec3 air = kind==1 ? vec3(0.64,0.10,0.015) :
@@ -248,11 +258,8 @@ vec4 eclipse(vec2 p) {
     return vec4(mix(radiance,night,cover),max(cover,photosphere));
 }
 
-void main() {
-    vec2 grid=vUv*vec2(3,2);
-    ivec2 tile=ivec2(floor(grid));
-    int sector=tile.x+tile.y*3;
-    vec2 local=fract(grid), p=SKY_MIN+SKY_SIZE*local;
+vec4 view(int sector, vec2 local) {
+    vec2 p=SKY_MIN+SKY_SIZE*local;
     vec3 d=normalize(vec3(p,-1.0));
     vec4 body;
     if (sector==0) body=kestrel(d);
@@ -274,8 +281,14 @@ void main() {
         }
     }
     vec2 margin=min(local,1.0-local);
-    body*=smoothstep(0.002,0.025,min(margin.x,margin.y));
-    outColor=vec4(sqrt(clamp(body.rgb*0.25,0.0,1.0)),body.a);
+    return body*smoothstep(0.002,0.025,min(margin.x,margin.y));
+}
+
+void main() {
+    // Ein Viertel je Durchgang: Vier versetzte Durchgänge addieren sich zum geglätteten Bild.
+    // Die Abtastungen stehen bewusst nicht im Shader, das vervielfacht dessen Übersetzungszeit.
+    vec4 body=view(uCell,vUv+uJitter);
+    outColor=0.25*vec4(sqrt(clamp(body.rgb*0.25,0.0,1.0)),body.a);
 }
 """
 
@@ -319,9 +332,7 @@ void main() {
     if (ray.z < -0.1) {
         vec2 local=(ray.xy/-ray.z-SKY_MIN)/SKY_SIZE;
         if (all(greaterThanEqual(local,vec2(0))) && all(lessThanEqual(local,vec2(1)))) {
-            vec2 cell=vec2(uSector%3,uSector/3);
-            vec2 atlasUv=(cell+local)/vec2(3,2);
-            vec4 body=texture(uBodies,atlasUv);
+            vec4 body=texture(uBodies,local);
             radiance=radiance*(1.0-body.a)+4.0*body.rgb*body.rgb;
         }
     }
@@ -331,6 +342,9 @@ void main() {
 
     [<Emit("$0.texImage2D($0.TEXTURE_2D, 0, $0.RGBA, $1, $2, 0, $0.RGBA, $0.UNSIGNED_BYTE, null)")>]
     let private allocate (gl: WebGL2RenderingContext) (width: int) (height: int) : unit = jsNative
+
+    [<Emit("$0.getParameter($0.FRAMEBUFFER_BINDING)")>]
+    let private currentFramebuffer (gl: WebGL2RenderingContext) : WebGLFramebuffer = jsNative
 
     let create (renderer: Renderer) : SkyBackdrop =
         let gl = renderer.Gl
@@ -342,36 +356,26 @@ void main() {
         gl.disable gl.CULL_FACE
         gl.disable gl.BLEND
         gl.bindVertexArray vao
-        let bake fragment width height wrap initialize =
-            let texture = gl.createTexture ()
-            gl.bindTexture (gl.TEXTURE_2D, texture)
-            allocate gl width height
-            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
-            gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-            gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0.0)
-            if gl.checkFramebufferStatus gl.FRAMEBUFFER <> gl.FRAMEBUFFER_COMPLETE then
-                failwith "Die Himmelstextur konnte nicht erstellt werden."
-            let generator = Renderer.linkProgram gl vertex fragment
-            gl.useProgram generator
-            initialize generator
-            gl.viewport (0.0, 0.0, float width, float height)
-            gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
-            gl.deleteProgram generator
-            texture
+        let texture = gl.createTexture ()
+        gl.bindTexture (gl.TEXTURE_2D, texture)
         let limit = unbox<int> (gl.getParameter gl.MAX_TEXTURE_SIZE)
         let width = min 3072 limit
-        let texture = bake galaxyFragment width (width / 2) gl.REPEAT ignore
-        // Einmalig maximal 16 MiB für alle sechs Vordergrundansichten zusammen.
-        let tileWidth = min 1024 (limit / 3)
-        let tileHeight = tileWidth * 2 / 3
-        let bodies =
-            bake bodyFragment (tileWidth * 3) (tileHeight * 2) gl.CLAMP_TO_EDGE (fun shader ->
-                let directions = JS.Constructors.Float32Array.Create (3 * atlasSectors.Length)
-                atlasSectors |> Array.iteri (fun i id ->
-                    Universe.tryFindSector id |> Option.iter (fun sector -> Vec3.writeTo directions (3 * i) sector.Atmosphere.SunDir))
-                gl.uniform3fv (gl.getUniformLocation (shader, "uSuns[0]"), directions))
+        allocate gl width (width / 2)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0.0)
+        if gl.checkFramebufferStatus gl.FRAMEBUFFER <> gl.FRAMEBUFFER_COMPLETE then
+            failwith "Die Himmelstextur konnte nicht erstellt werden."
+        let generator = Renderer.linkProgram gl vertex galaxyFragment
+        gl.useProgram generator
+        gl.viewport (0.0, 0.0, float width, float (width / 2))
+        gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
+        gl.deleteProgram generator
+        let directions = JS.Constructors.Float32Array.Create (3 * atlasSectors.Length)
+        atlasSectors |> Array.iteri (fun i id ->
+            Universe.tryFindSector id |> Option.iter (fun sector -> Vec3.writeTo directions (3 * i) sector.Atmosphere.SunDir))
         gl.bindFramebuffer (gl.FRAMEBUFFER, unbox null)
         gl.deleteFramebuffer framebuffer
         gl.bindVertexArray (unbox null)
@@ -382,8 +386,15 @@ void main() {
         gl.uniform1i (gl.getUniformLocation (program, "uBodies"), 1.0)
         { Program = program
           Texture = texture
-          Bodies = bodies
-          SectorCells = Universe.sectors |> Array.map (fun s -> atlasSectors |> Array.tryFindIndex ((=) s.Id) |> Option.defaultValue 0)
+          Bodies = unbox null
+          BodySuns = directions
+          MaxBodyWidth = min 4096 limit
+          BodyCell = -1
+          BodyWidth = 0
+          SectorCells =
+              Universe.sectors |> Array.map (fun s ->
+                  let template = Universe.skyTemplate s.Id
+                  atlasSectors |> Array.findIndex ((=) template))
           Vao = vao
           UView = gl.getUniformLocation (program, "uView")
           UHdr = gl.getUniformLocation (program, "uHdr")
@@ -392,13 +403,68 @@ void main() {
           USunColor = gl.getUniformLocation (program, "uSunColor")
           ULens = gl.getUniformLocation (program, "uLens") }
 
+    /// Breite der Sektoransicht für eine Zielhöhe in Pixeln: etwa ein Texel je Bildpunkt bei
+    /// normalem Sichtfeld, in 512er-Stufen, damit kleine Größenänderungen nichts neu erzeugen.
+    let bodyWidth (maxWidth: int) (targetHeight: float) : int =
+        let wanted = int (ceil (targetHeight * 2.2 / 512.0)) * 512
+        max (min 1024 maxWidth) (min maxWidth wanted)
+
+    let private bodyJitter = [| -0.375; -0.125; 0.125; -0.375; 0.375; 0.125; -0.125; 0.375 |]
+
+    /// Erzeugt die Himmelskörper einer Ansicht neu und stellt Ziel und Viewport wieder her.
+    let private bakeBodies (renderer: Renderer) (sky: SkyBackdrop) (cell: int) (width: int) =
+        let gl = renderer.Gl
+        let height = width * 2 / 3
+        let target = currentFramebuffer gl
+        if not (isNull (box sky.Bodies)) then gl.deleteTexture sky.Bodies
+        let texture = gl.createTexture ()
+        gl.bindTexture (gl.TEXTURE_2D, texture)
+        allocate gl width height
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        let framebuffer = gl.createFramebuffer ()
+        gl.bindFramebuffer (gl.FRAMEBUFFER, framebuffer)
+        gl.framebufferTexture2D (gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0.0)
+        gl.disable gl.CULL_FACE
+        gl.viewport (0.0, 0.0, float width, float height)
+        gl.clearColor (0.0, 0.0, 0.0, 0.0)
+        gl.clear gl.COLOR_BUFFER_BIT
+        gl.enable gl.BLEND
+        gl.blendFunc (gl.ONE, gl.ONE)
+        // Der Shader entsteht nur für diese eine Ansicht: Mit allen sechs Welten brauchte seine
+        // Übersetzung beim Start über eine Sekunde, obwohl immer nur eine sichtbar ist.
+        let generator = Renderer.linkProgram gl vertex (bodyFragment.Replace ("uniform int uCell;", "const int uCell = " + string cell + ";"))
+        gl.useProgram generator
+        gl.uniform3fv (gl.getUniformLocation (generator, "uSuns[0]"), sky.BodySuns)
+        let jitter = gl.getUniformLocation (generator, "uJitter")
+        gl.bindVertexArray sky.Vao
+        // Vier versetzte Abtastungen je Texel glätten Planetenrand, Ringkanten und Lavaadern.
+        for i in 0 .. 3 do
+            gl.uniform2f (jitter, bodyJitter.[2 * i] / float width, bodyJitter.[2 * i + 1] / float height)
+            gl.drawArrays (gl.TRIANGLES, 0.0, 3.0)
+        gl.deleteProgram generator
+        gl.disable gl.BLEND
+        gl.bindFramebuffer (gl.FRAMEBUFFER, target)
+        gl.deleteFramebuffer framebuffer
+        gl.viewport (0.0, 0.0, float renderer.Width, float renderer.Height)
+        gl.enable gl.CULL_FACE
+        renderer.BlendState <- -1
+        sky.Bodies <- texture
+        sky.BodyCell <- cell
+        sky.BodyWidth <- width
+
     let draw (renderer: Renderer) (sky: SkyBackdrop) (camera: Camera) (sector: int) =
         let gl = renderer.Gl
         gl.disable gl.DEPTH_TEST
         gl.depthMask false
+        let cell = if sector >= 0 && sector < sky.SectorCells.Length then sky.SectorCells.[sector] else 0
+        // Die dynamische Auflösung ändert nur die Renderskalierung; massgeblich ist die volle Zielhöhe.
+        let wanted = bodyWidth sky.MaxBodyWidth (float renderer.Height / max 0.5 renderer.RenderScale)
+        if cell <> sky.BodyCell || wanted > sky.BodyWidth then bakeBodies renderer sky cell wanted
         gl.useProgram sky.Program
         gl.uniform1i (sky.UHdr, if renderer.Post.Hdr then 1.0 else 0.0)
-        let cell = if sector >= 0 && sector < sky.SectorCells.Length then sky.SectorCells.[sector] else 0
         gl.uniform1i (sky.USector, float cell)
         gl.uniform3fv (sky.USun, renderer.Lights.SunDirection)
         gl.uniform3fv (sky.USunColor, renderer.Lights.SunColor)

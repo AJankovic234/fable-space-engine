@@ -523,7 +523,63 @@ module EnemyMeshes =
             bell b nozzle radius
         b.Build()
 
-    let private hulls = [| droneHull; scoutHull; gunshipHull; bomberHull; corvetteHull |]
+    // Sperrjaeger: zwei nach vorn gezogene Waffenarme um den schmalen Rumpf.
+    let private blockerStations =
+        [| -3.0, 0.49, -0.36, 0.30
+           -1.72, 1.29, -0.75, 0.78
+           0.46, 1.43, -0.86, 0.95
+           2.61, 1.19, -0.65, 0.74
+           3.56, 0.73, -0.41, 0.52 |]
+
+    let private blockerHull =
+        frame (Vec3(0.0, 0.13, -0.29)) (Vec3(4.75, 0.84, 4.02)) (Vec3(3.59, 0.0, -4.45)) [||] 1.2
+            [| Vec3(-0.74, -0.09, 3.79), 0.35; Vec3(0.74, -0.09, 3.79), 0.35 |]
+            (Vec3(0.0, 1.38, 2.66)) (mirrored (Vec3(4.78, 0.18, -3.06)))
+
+    let blocker () : MeshData =
+        let b = MeshBuilder()
+        let enamel = MeshColor.rgb 0.67 0.76 0.37
+        let accent = MeshColor.glow 0.83 1.0 0.30 0.96
+        let glass = MeshColor.glass 0.14 0.23 0.18 0.22
+        keel b blockerStations steel
+        belly b blockerStations 0.46 black
+        band b blockerStations -1.4 -1.08 0.035 enamel
+        b.Loft([| section 0.0 -2.18 0.18 0.25 0.43; section 0.0 -1.31 0.63 0.43 1.10
+                  section 0.0 0.51 0.61 0.72 1.16; section 0.0 1.09 0.38 0.74 0.96 |], true, true, glass)
+        ProceduralMeshes.beam b (Vec3(0.0, 1.10, -1.31)) (Vec3(0.0, 1.16, 0.51)) 0.04 steel
+        ProceduralMeshes.beam b (Vec3(0.0, 0.66, 2.05)) blockerHull.Beacon 0.1 graphite
+        lamp b blockerHull.Beacon 0.12 accent
+
+        let gun = blockerHull.GunRight
+        for side in [| -1.0; 1.0 |] do
+            let p x y z = Vec3(side*x, y, z)
+            // Volle Wurzel, geknickter Holm, schmaler Haken an der Fluegelspitze.
+            wing b (side*0.98) -0.92 2.92 0.27 (side*2.72) -1.04 2.72 0.31 -0.16 graphite
+            wing b (side*2.72) -1.04 2.72 0.31 (side*4.22) -4.06 0.14 0.24 -0.16 graphite
+            wing b (side*4.22) -4.06 0.14 0.24 (side*4.79) -4.26 -2.77 0.13 -0.16 steel
+            ProceduralMeshes.armorPanel b
+                [| p 1.16 0.13 -0.68; p 2.56 0.16 -0.78; p 2.90 0.17 1.98; p 1.17 0.13 2.55 |]
+                Vec3.unitY 0.065 ivory graphite
+            ProceduralMeshes.armorPanel b
+                [| p 2.74 0.17 -0.92; p 4.18 0.10 -3.82; p 4.25 0.10 -0.16; p 3.04 0.17 1.93 |]
+                Vec3.unitY 0.075 enamel graphite
+            ProceduralMeshes.beam b (p 1.17 0.14 -0.88) (p 2.72 0.18 -0.96) 0.065 accent
+            ProceduralMeshes.beam b (p 2.72 0.18 -0.96) (p 4.24 0.11 -4.01) 0.065 accent
+            ProceduralMeshes.beam b (p 4.20 -0.12 -1.8) (p 4.78 0.18 -3.06) 0.11 graphite
+            lamp b (p 4.78 0.18 -3.06) 0.09 redLamp
+            b.Box(p gun.X -0.02 -2.65, Vec3(0.45, 0.47, 0.94), black)
+            b.Box(p gun.X 0.49 -2.45, Vec3(0.32, 0.07, 0.68), enamel)
+            barrel b (p gun.X gun.Y gun.Z) -2.87 0.26 0.18
+            for vent in 0..3 do
+                b.Box(p (1.64 + float vent*0.18) 0.25 1.06, Vec3(0.055, 0.085, 0.5), graphite)
+            let nozzle z radius = oval 8 (side*0.74) -0.09 z radius radius
+            b.Loft([| nozzle 2.52 0.39; nozzle 3.16 0.48; nozzle 3.56 0.39 |], true, true, graphite)
+
+        for nozzle, radius in blockerHull.Engines do
+            bell b nozzle radius
+        b.Build()
+
+    let private hulls = [| droneHull; scoutHull; gunshipHull; bomberHull; corvetteHull; blockerHull |]
 
     /// Maße und Effektpunkte der Rolle (EnemyRole als Zahl).
     let hull (role: int) : EnemyHull = hulls.[max 0 (min (hulls.Length - 1) role)]

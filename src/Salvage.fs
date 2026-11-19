@@ -53,6 +53,7 @@ module Salvage =
         | 2 -> [| TitaniumScrapKind, 2; PlasmaCoresKind, 1 |]
         | 3 -> [| PlasmaCoresKind, 1; FuelCellsKind, 1 |]
         | 4 -> [| PlasmaCoresKind, 2; TitaniumScrapKind, 2; NavDataKind, 1 |]
+        | 5 -> [| NavDataKind, 1; TitaniumScrapKind, 1 |]
         | _ -> Array.empty
 
     let create () : ResizeArray<MineralPickup> = ResizeArray<MineralPickup>(Capacity)

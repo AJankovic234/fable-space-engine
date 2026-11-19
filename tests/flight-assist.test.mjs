@@ -153,8 +153,8 @@ test("enemy reset, angular response and boost smoothing retain the original flig
 
 test("keyboard controls yaw with A/D, roll with Q/E and expose combat mode on F2", () => {
   withAttachedInput((state, window) => {
-    assert.equal(state.Down.length, 42);
-    assert.equal(state.Pressed.length, 42);
+    assert.equal(state.Down.length, 43);
+    assert.equal(state.Pressed.length, 43);
     window.emit("keydown", { code: "KeyJ" });
     assert.equal(state.Pressed[26], 1);
     window.emit("keyup", { code: "KeyJ" });
@@ -169,7 +169,7 @@ test("keyboard controls yaw with A/D, roll with Q/E and expose combat mode on F2
     assert.equal(state.Down[22], 1);
     assert.equal(state.Pressed[22], 1);
     assert.equal(key.prevented, true);
-    for (const [code, action] of [["KeyG",24], ["KeyV",25], ["KeyF",9], ["Comma",28], ["Period",29]]) {
+    for (const [code, action] of [["KeyG",24], ["KeyV",25], ["KeyF",9], ["Comma",28], ["Period",29], ["F7",42]]) {
       window.emit("keydown",{code});
       assert.equal(state.Pressed[action],1,code);
       window.emit("keyup",{code});

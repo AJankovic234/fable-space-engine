@@ -61,11 +61,14 @@ type Hud =
       mutable CargoUsed: int
       mutable CargoCapacity: int
       mutable FreightGate: string option
+      mutable CourseGate: string option
       mutable Trading: bool
       mutable Trips: int
       mutable TradeProfit: int
       mutable TurretOwned: bool
       mutable TurretTarget: int
+      mutable MissileAmmo: int
+      mutable MissileReload: float
       mutable Salvaging: bool
       mutable RewardText: string
       mutable RewardTime: float
@@ -244,11 +247,14 @@ module Hud =
           CargoUsed = 0
           CargoCapacity = 16
           FreightGate = None
+          CourseGate = None
           Trading = true
           Trips = 0
           TradeProfit = 0
           TurretOwned = false
           TurretTarget = -1
+          MissileAmmo = Missiles.MaxAmmo
+          MissileReload = 0.0
           Salvaging = false
           RewardText = ""
           RewardTime = 0.0
@@ -698,6 +704,8 @@ module Hud =
                 for gate in sector.Gates do
                     if hud.FreightGate = Some gate.TargetSectorId then
                         contact gate.Position Green HudContacts.CargoCrate 5.0 0.0
+                    elif hud.CourseGate = Some gate.TargetSectorId then
+                        contact gate.Position Cyan HudContacts.Diamond 5.0 0.0
                     else
                         contact gate.Position "#ccb36f" HudContacts.Diamond 3.5 0.0
 
@@ -838,6 +846,8 @@ module Hud =
                 let title = gate.Label + " · " + string (int distance) + " m"
                 if hud.FreightGate = Some gate.TargetSectorId then
                     queueMarker hud HudContacts.CargoCrate hud.ScreenX hud.ScreenY 9.0 Green 75 hud.InCombat ("Frachtkurs · " + title) ""
+                elif hud.CourseGate = Some gate.TargetSectorId then
+                    queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 9.0 Cyan 72 hud.InCombat ("Kurs · " + title) ""
                 else
                     queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
 
@@ -1386,7 +1396,8 @@ module Hud =
         let scoreBottom = if w < 680.0 then h - 156.0 else h
 
         if not sortie && school = FlightSchool.Off then
-            if hud.Combo > 1 && hud.ComboTimer > 0.0 then
+            let comboActive = hud.Combo > 1 && hud.ComboTimer > 0.0
+            if comboActive then
                 fill ctx "rgba(3, 12, 23, 0.78)"
                 ctx.fillRect (right - 190.0, scoreBottom - 166.0, 202.0, 34.0)
                 hud.Reserved.Add(HudLayout.rect (right-190.0) (scoreBottom-166.0) 202.0 34.0)
@@ -1397,6 +1408,27 @@ module Hud =
                 fill ctx Amber
                 ctx.fillText ("KOMBO x" + hud.Numbers.[hud.Combo], right - 178.0, scoreBottom - 158.0)
                 bar ctx (right - 96.0) (scoreBottom - 154.0) 96.0 6.0 (hud.ComboTimer / 8.0) Amber
+
+            let missileY = if comboActive then scoreBottom - 204.0 else scoreBottom - 166.0
+            let lockReady =
+                target >= 0 && enemies.[target].Alive && hud.MissileAmmo > 0 &&
+                Vec3.distance playerPosition enemies.[target].Position <= Missiles.Range
+            fill ctx "rgba(3, 12, 23, 0.74)"
+            ctx.fillRect (right - 190.0, missileY, 202.0, 32.0)
+            hud.Reserved.Add(HudLayout.rect (right-190.0) missileY 202.0 32.0)
+            stroke ctx (if lockReady then Amber else CyanDim)
+            ctx.strokeRect (right - 190.0, missileY, 202.0, 32.0)
+            ctx.textAlign <- "left"
+            ctx.font <- FontLabel
+            fill ctx (if lockReady then Amber else TextColor)
+            ctx.fillText ((if lockReady then "RAKETE [J] · BEREIT" else "RAKETEN [J]"), right - 178.0, missileY + 6.0)
+            for p in 0 .. Missiles.MaxAmmo - 1 do
+                let px = right - 178.0 + float p * 28.0
+                let filled = p < hud.MissileAmmo
+                fill ctx (if filled then (if lockReady then Amber else Cyan) else "rgba(120, 175, 195, 0.18)")
+                ctx.fillRect (px, missileY + 21.0, 22.0, 5.0)
+            if hud.MissileAmmo < Missiles.MaxAmmo then
+                bar ctx (right - 60.0) (missileY + 21.0) 60.0 5.0 hud.MissileReload CyanDim
 
             fill ctx "rgba(3, 12, 23, 0.72)"
             ctx.fillRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
@@ -1584,7 +1616,8 @@ module Hud =
            "Komma · Punkt", "Maus-Empfindlichkeit − / +"
            "I · M", "Pitch invertieren · Ton"
            "P · F8", "Pause · Spielstände"
-           "F3 · F4", "Bildrate · Schatten an/aus" |]
+           "F3 · F4", "Bildrate · Schatten an/aus"
+           "F7", "Universumskarte im Handelsflug" |]
 
     /// Tastenübersicht über dem Flugbild (F1). Der Flug läuft darunter weiter.
     let drawHelp (hud: Hud) =

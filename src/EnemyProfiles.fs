@@ -7,6 +7,7 @@ type EnemyRole =
     | Gunship = 2
     | Bomber = 3
     | Commander = 4
+    | Blocker = 5
 
 type EnemyProfile =
     { Name: string
@@ -148,6 +149,29 @@ module EnemyProfiles =
             BurstTime = 1.0
             RestTime = 3.2 }
 
+    let private blocker =
+        { scout with
+            Name = "Sperrjäger"
+            Color = "#d6ed83"
+            Tint = Vec3(1.03, 1.18, 0.32)
+            CruiseSpeed = 32.0
+            BoostSpeed = 12.0
+            PitchRate = 0.90
+            YawRate = 0.73
+            RollRate = 1.2
+            Hull = 74.0
+            Shield = 25.0
+            FireInterval = 0.6
+            LaserDamage = 6.0
+            AttackRange = 165.0
+            PreferredRange = 98.0
+            BreakDistance = 32.0
+            AimError = 0.009
+            ChargeTime = 1.1
+            BurstTime = 0.37
+            RestTime = 2.8
+            FlankOffset = 0.0 }
+
     /// Schaden eines Batteriebolzens der Korvette relativ zu ihren Buggeschuetzen.
     [<Literal>]
     let BatteryDamage = 1.0
@@ -197,6 +221,7 @@ module EnemyProfiles =
         | EnemyRole.Gunship -> gunship
         | EnemyRole.Bomber -> bomber
         | EnemyRole.Commander -> commander
+        | EnemyRole.Blocker -> blocker
         | _ -> drone
 
     /// Trefferhilfe: der flache Spaeher bietet von vorn nur 4,8 m² (altes Modell 10,8 m²) und war

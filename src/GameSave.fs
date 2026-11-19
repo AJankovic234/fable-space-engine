@@ -10,7 +10,8 @@ type SavedRun =
       Spawned: int; SpawnTimer: float; Patrol: int[]; Score: int; Kills: int
       Profit: float; Trips: int; Docked: bool; Completed: bool; Combo: int; ComboTimer: float
       HeardContacts: int option; Recovery: SavedRecovery option; School: FlightSchoolState option
-      Blockade: BlockadeState option; Sortie: CapitalFlightState option; Fleet: HangarFleet option }
+      Blockade: BlockadeState option; Sortie: CapitalFlightState option; Fleet: HangarFleet option
+      CourseTarget: string option; CourseVia: string option }
 
 type SavedShip =
     { Position: float[]; Rotation: float[]; Velocity: float[]
@@ -74,15 +75,35 @@ module GameSave =
         intRange 0 3 b.State && numbers 6 -10.0 1e9 b.Timing && range 0.0 1.0 b.Timing.[5]
         && bool b.Firing && vec b.Home && vec b.Waypoint && vec b.Evade && vec b.Aim
 
+    let private sectorMask = (1 <<< Universe.sectors.Length) - 1
+
     let private validPilot p =
         items 3 (intRange 0 3) p.Levels && p.Levels.Length = 3
-        && intRange 1 63 p.Visited && PilotSkills.contains p.Visited 0
-        && intRange 0 63 p.Relics && (p.Relics &&& p.Visited) = p.Relics
-        && intRange 0 63 p.Rescues && (p.Rescues &&& p.Visited) = p.Rescues
+        && intRange 1 sectorMask p.Visited && PilotSkills.contains p.Visited 0
+        && intRange 0 sectorMask p.Relics && (p.Relics &&& p.Visited) = p.Relics
+        && intRange 0 sectorMask p.Rescues && (p.Rescues &&& p.Visited) = p.Rescues
         && (p.Levels.[2] = 3 || p.Rescues = 0) && PilotSkills.points p >= 0
         && range 0.0 45.0 p.PulseCooldown && range 0.0 (min 8.0 p.PulseCooldown) p.PulseTime
         && (p.Levels.[0] = 3 || p.PulseCooldown = 0.0)
         && range 0.0 25.0 p.BypassCooldown && (p.Levels.[2] >= 2 || p.BypassCooldown = 0.0)
+
+    let private validMarkets sectorId (markets: SavedMarket[]) =
+        let validMarket market =
+            text (box market.SectorId) &&
+            match Universe.tryFindSector market.SectorId with
+            | None -> false
+            | Some sector ->
+                let entries = (TradeSystem.createMarket sector).Entries
+                items entries.Length (intRange 0 30) market.Stocks && market.Stocks.Length = entries.Length &&
+                (market.Stocks |> Array.mapi (fun i stock -> stock <= entries.[i].MaxStock) |> Array.forall id)
+        if not (items Universe.sectors.Length validMarket markets) then false
+        else
+            let known = markets |> Array.map (fun m -> m.SectorId) |> Set.ofArray
+            let requiredCount =
+                if markets.Length = Universe.legacySectorCount || markets.Length = 8 then markets.Length
+                else Universe.sectors.Length
+            markets.Length = requiredCount && Set.count known = requiredCount && Set.contains sectorId known &&
+            (Universe.sectors |> Array.take requiredCount |> Array.forall (fun s -> Set.contains s.Id known))
 
     /// Alle untrusted JSON-Felder prüfen, bevor irgendein Live-Zustand geändert wird.
     let private valid (s: SaveData) =
@@ -91,10 +112,14 @@ module GameSave =
         && bool r.Trading && text (box r.SectorId) && (Universe.tryFindSector r.SectorId |> Option.isSome)
         && intRange 0 6 r.Wave && intRange 0 2 r.Phase && range -1.0 120.0 r.PhaseTimer
         && intRange 0 14 r.Spawned && range -1.0 60.0 r.SpawnTimer
-        && items 4 (intRange 0 4) r.Patrol && intRange 0 1000000000 r.Score && intRange 0 10000000 r.Kills
+        && items 4 (intRange 0 (int EnemyRole.Blocker)) r.Patrol && intRange 0 1000000000 r.Score && intRange 0 10000000 r.Kills
         && range -1e9 1e9 r.Profit && intRange 0 10000000 r.Trips && bool r.Docked && bool r.Completed
         && intRange 1 4 r.Combo && range 0.0 8.01 r.ComboTimer
         && Option.forall (intRange 0 StoryRadio.heardMask) r.HeardContacts
+        && Option.forall (fun id -> r.Trading && not r.Completed && text (box id) && (Universe.tryFindSector id |> Option.isSome)) r.CourseTarget
+        && Option.forall (fun id ->
+            r.CourseTarget.IsSome && Some id <> r.CourseTarget && id <> r.SectorId &&
+            text (box id) && (Universe.tryFindSector id |> Option.isSome)) r.CourseVia
         && (r.School |> Option.forall (fun school ->
             intRange 0 FlightSchool.Dock school.Step && intRange 0 2 school.PaidTargets && r.Trading &&
             (school.Step = FlightSchool.Off ||
@@ -137,13 +162,8 @@ module GameSave =
         && numbers 6 0.0 1e9 s.Cargo.AvgCost && TradeSystem.usedVolume s.Cargo <= s.Cargo.Capacity
         && items 3 (intRange 0 3) s.Upgrades && s.Upgrades.Length = 3
         && ship (100.0+25.0*float s.Upgrades.[2]) (100.0+30.0*float s.Upgrades.[1]) s.Player
-        && items 6 (fun (m: SavedMarket) -> text (box m.SectorId) && items 6 (intRange 0 30) m.Stocks && m.Stocks.Length = 6) s.Markets
-        && s.Markets.Length = Universe.sectors.Length
-        && (s.Markets |> Array.mapi (fun i m ->
-            m.SectorId = Universe.sectors.[i].Id &&
-            let market = TradeSystem.createMarket Universe.sectors.[i]
-            m.Stocks |> Array.mapi (fun j v -> v <= market.Entries.[j].MaxStock) |> Array.forall id) |> Array.forall id)
-        && items 16 (fun e -> intRange 0 15 e.Index && intRange 0 4 e.Role && brain e.Brain && ship 10000.0 10000.0 e.Ship) s.Enemies
+        && validMarkets r.SectorId s.Markets
+        && items 16 (fun e -> intRange 0 15 e.Index && intRange 0 (int EnemyRole.Blocker) e.Role && brain e.Brain && ship 10000.0 10000.0 e.Ship) s.Enemies
         && (s.Enemies |> Array.map (fun e -> e.Index) |> Array.distinct |> Array.length) = s.Enemies.Length
         && items 768 (intRange 0 (AsteroidField.Variants-1)) s.Asteroids.Variants
         && items 768 (intRange 0 2) s.Asteroids.Ore && s.Asteroids.Ore.Length = s.Asteroids.Variants.Length
@@ -234,8 +254,10 @@ module GameSave =
         Array.blit data.Cargo.Quantities 0 cargo.Quantities 0 6
         Array.blit data.Cargo.AvgCost 0 cargo.AvgCost 0 6
         for i in 0 .. markets.Length-1 do
-            markets.[i] <- TradeSystem.createMarket Universe.sectors.[i]
-            TradeSystem.restoreStocks markets.[i] data.Markets.[i].Stocks
+            let market = TradeSystem.createMarket Universe.sectors.[i]
+            data.Markets |> Array.tryFind (fun saved -> saved.SectorId = market.SectorId)
+            |> Option.iter (fun saved -> TradeSystem.restoreStocks market saved.Stocks)
+            markets.[i] <- market
         let sector = Universe.tryFindSector data.Run.SectorId |> Option.get
         world.SectorIndex <- Universe.sectors |> Array.findIndex (fun s -> s.Id = sector.Id)
         world.Pilot <-

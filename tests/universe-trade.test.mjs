@@ -16,6 +16,9 @@ import {
   TradeSystem_quantityOf as quantityOf,
   TradeSystem_loadSalvage as loadSalvage,
   TradeSystem_createMarket as createMarket,
+  TradeSystem_createUniverseMarkets as createUniverseMarkets,
+  TradeSystem_driftMarkets as driftMarkets,
+  TradeSystem_triggerMarketEvent as triggerMarketEvent,
   TradeSystem_buyPrice as buyPrice,
   TradeSystem_sellPrice as sellPrice,
   TradeSystem_buyGood as buyGood,
@@ -116,6 +119,20 @@ test("trading arbitrage works between MiningDepot and Refinery and updates stati
   assert.equal(rest.Ok, true);
   assert.equal(usedVolume(cargo), 0);
   assert.ok(bought.CreditsDelta + sold.CreditsDelta + rest.CreditsDelta > 0, "Travel between specialized stations remains profitable");
+});
+
+test("Kaltstrom buys fuel from Helios and supplies cryo ore for the way back", () => {
+  const helios = createMarket(tryFindSector("slag-refinery"));
+  const kaltstrom = createMarket(tryFindSector("kaltstrom"));
+  const wracksaum = createMarket(tryFindSector("wracksaum"));
+  const hold = createCargo(16);
+  const fuel = buyGood(helios, hold, 500, 4, 4);
+  const fuelSale = sellGood(kaltstrom, hold, 4, 4);
+  assert.ok(fuelSale.CreditsDelta > -fuel.CreditsDelta);
+  const ore = buyGood(kaltstrom, hold, 500, 1, 8);
+  const oreSale = sellGood(helios, hold, 1, 8);
+  assert.ok(oreSale.CreditsDelta > -ore.CreditsDelta);
+  assert.ok(buyPrice(wracksaum, 2) < buyPrice(createMarket(tryFindSector("kepler-yard")), 2));
 });
 
 test("same-station round trips lose money for every station, commodity and batch size", () => {
@@ -281,4 +298,27 @@ test("the cutter's outside rack follows occupied volume and samples only goods o
   assert.equal(rack().length, 2);
   cargo.Quantities.fill(0);
   assert.deepEqual(rack(), []);
+});
+
+test("market drift restores depleted stocks toward equilibrium while respecting Helios blockade", () => {
+  const all = createUniverseMarkets();
+  const kestrel = all[0];
+  const helios = all[1];
+  const eqCryo = kestrel.Entries[1].Stock;
+  // Drain Kestrel Cryo-Ore and drop Helios MedSupplies to 2 (blockade state).
+  kestrel.Entries[1] = { ...kestrel.Entries[1], Stock: 0 };
+  helios.Entries[5] = { ...helios.Entries[5], Stock: 2 };
+  driftMarkets(all, true);
+  assert.ok(kestrel.Entries[1].Stock > 0 && kestrel.Entries[1].Stock <= eqCryo);
+  assert.equal(helios.Entries[5].Stock, 2, "blockaded Helios MedSupplies must not self-restock");
+  assert.equal(triggerMarketEvent(all, true, 1, 5, false), undefined);
+  // Live shortage event reduces stock and raises price.
+  const beforePrice = kestrel.Entries[0].Price;
+  const ev = triggerMarketEvent(all, true, 0, 0, true);
+  assert.ok(ev !== undefined);
+  assert.equal(ev[0], "MARKT-ENGPASS");
+  assert.ok(kestrel.Entries[0].Price >= beforePrice);
+  // Once blockade is lifted, Helios MedSupplies drifts normally.
+  driftMarkets(all, false);
+  assert.ok(helios.Entries[5].Stock > 2);
 });

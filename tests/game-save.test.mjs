@@ -93,8 +93,47 @@ test('save roundtrip preserves the economy, damaged upgraded ships, combat, depl
   assert.equal(dest.w.Enemies[1].Alive,true);
   assert.equal(dest.w.Player.Hull,73);assert.equal(dest.w.Player.MaxHull,125);assert.equal(dest.w.Player.MaxShield,130);
   assert.equal(dest.w.Asteroids.Ore[0],0);assert.equal(dest.pickups[0].Quantity,1);
-  for(let i=0;i<6;i++) for(let j=0;j<6;j++){assert.equal(ask(dest.markets[i],j),ask(source.markets[i],j));assert.equal(bid(dest.markets[i],j),bid(source.markets[i],j));}
+  for(const i of sectors.keys()) for(let j=0;j<6;j++){assert.equal(ask(dest.markets[i],j),ask(source.markets[i],j));assert.equal(bid(dest.markets[i],j),bid(source.markets[i],j));}
   for(let i=0;i<8;i++) assert.equal(random(dest.w.Rng),random(source.w.Rng));
+});
+
+test('six- and eight-sector saves preserve markets by ID and initialise added ports', () => {
+  const source = fixture(), dest = rig();
+  for (const size of [6, 8]) {
+    const old = snapshot(source);
+    old.Markets = old.Markets.slice(0, size).reverse();
+    const restored = read(old);
+    assert.equal(restored.Run.CourseTarget, undefined);
+    assert.equal(restored.Run.CourseVia, undefined);
+    restore(restored, dest.w, dest.brains, dest.wallet, dest.cargo, dest.markets, dest.levels, dest.turret, dest.pickups);
+    assert.deepEqual(dest.markets.slice(0, size), source.markets.slice(0, size));
+    assert.deepEqual(dest.markets.slice(size), markets().slice(size));
+    const duplicate = {...old, Markets: [old.Markets[1], ...old.Markets.slice(1)]};
+    assert.equal(decode(json(duplicate)).tag, 1);
+  }
+});
+
+test('a flight from a new port retains its selected course, market and pilot progress', () => {
+  const source = rig(), dest = rig();
+  const runWithCourse = {...run(), SectorId: 'wracksaum', CourseTarget: 'kaltstrom', CourseVia: 'schleierpass', Phase: 2, Patrol: [], Spawned: 0};
+  Object.assign(source.w.Pilot, {Visited: (1 << 6) | (1 << 7) | 1, Relics: 1 << 7});
+  assert.equal(buy(source.markets[7], source.cargo, 200, 0, 2).Ok, true);
+  const saved = snapshot(source, runWithCourse);
+  saved.Markets.reverse();
+  const data = read(saved);
+  assert.equal(data.Run.CourseTarget, 'kaltstrom');
+  assert.equal(data.Run.CourseVia, 'schleierpass');
+  restore(data, dest.w, dest.brains, dest.wallet, dest.cargo, dest.markets, dest.levels, dest.turret, dest.pickups);
+  assert.equal(dest.w.SectorIndex, 7);
+  assert.equal(json(dest.w.Pilot), json(source.w.Pilot));
+  assert.deepEqual(dest.markets, source.markets);
+  for (const CourseTarget of ['unknown', 6]) {
+    assert.equal(decode(json({...saved, Run: {...runWithCourse, CourseTarget}})).tag, 1);
+  }
+  for (const CourseVia of ['unknown', 'wracksaum', 'kaltstrom', 8]) {
+    assert.equal(decode(json({...saved, Run: {...runWithCourse, CourseVia}})).tag, 1);
+  }
+  assert.equal(decode(json({...saved, Pilot: {...saved.Pilot, Visited: 1 | (1 << sectors.length)}})).tag, 1);
 });
 
 test('recovery checkpoints are optional in old saves and validated for their equipment', () => {
@@ -220,7 +259,7 @@ test('decode rejects malformed, incompatible or inconsistent data before a live 
   const corruptions=[
     s=>s.Version=2,s=>delete s.Player,s=>s.Wallet.Credits=-1,s=>s.Wallet.Credits='200',s=>s.Run.Trading='true',
     s=>s.Cargo.Quantities[2]=40,s=>s.Cargo.Capacity=17,s=>s.Cargo.AvgCost[0]=null,s=>s.Upgrades=[0,9,0],
-    s=>s.Markets[0].Stocks[2]=30,s=>s.Markets[0].SectorId='unknown',s=>s.Markets.pop(),
+    s=>s.Markets[0].Stocks[2]=30,s=>s.Markets[0].SectorId='unknown',s=>s.Markets.shift(),
     s=>s.Player.Rotation=[0,0,0,0],s=>s.Player.Position[0]=null,s=>s.Player.Status[0]=0,
     s=>s.Enemies.push(s.Enemies[0]),s=>s.Enemies[0].Index=4,s=>s.Enemies[0].Role=4,s=>s.Enemies[0].Ship.Status[0]=9999,
     s=>s.Run.Phase=2,s=>s.Run.Spawned=0,s=>s.Run.Docked=true,s=>s.Run.Completed=true,s=>s.Run.SectorId='missing',

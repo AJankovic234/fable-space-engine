@@ -65,7 +65,11 @@ Auch das Gestein wechselt mit dem Sektor. Kestrel hat staubige Schichtfelsen, He
 
 Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Am Äther-Relais sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis.
 
-Der Bergungskutter trägt backbord einen offenen Frachtkorb und steuerbord einen Bergekran. Beim Einkauf oder Bergen füllen sich bis zu drei Plätze im Korb. Zwischen den gelben Holmen sind gestapelte Titanplatten, Druckbehälter oder versiegelte Transportkisten zu sehen. Welche Waren außen liegen, hängt von ihrem Volumenanteil an der Ladung ab. Alle sechs Stationen haben einen gemeinsamen Andockring und einen eigenen Baukörper: Kestrel verarbeitet einen angeleinten Erzbrocken, Helios trägt drei Schmelztürme, Drift-9 besteht aus vertäuten Marktschiffen, in Keplers Trockendock liegt ein Schwerkreuzer im Bau, Theta trägt zwei große Schüsseln und Morgenlicht Panzerflanken mit Verteidigungstürmen. Die Baukörper sind fest: Schiffe und Laser prallen daran ab. Andockring und Anflugschneise bleiben frei. Über Morgenlicht liegt Vances Flaggschiff *AETHER Sovereign* als Kulisse. Asteroiden zeigen Schichtungen unabhängig vom Erzvorrat.
+Der Bergungskutter trägt backbord einen offenen Frachtkorb und steuerbord einen Bergekran. Beim Einkauf oder Bergen füllen sich bis zu drei Plätze im Korb. Zwischen den gelben Holmen sind gestapelte Titanplatten, Druckbehälter oder versiegelte Transportkisten zu sehen. Welche Waren außen liegen, hängt von ihrem Volumenanteil an der Ladung ab.
+
+Am Bergbau-Depot Kestrel fassen zwei beleuchtete Klammern den Erzbrocken ein. Helios strahlt die Abwärme seiner drei Schmelzöfen über seitliche Radiatoren ab. Über den vertäuten Schiffen von Drift-9 hängen Marktstände mit farbigen Fassaden und beleuchteten Stegen. Ein Kranportal überspannt den Schwerkreuzer in Keplers Trockendock. Theta versorgt seine Antennenschüsseln über zwei Solarflügel, und Morgenlicht trägt auf seinen gepanzerten Flanken zwei Schildtürme. Über Morgenlicht liegt Vances Flaggschiff *AETHER Sovereign* als Kulisse.
+
+Schiffe und Laser treffen auf die massiven Stationsbauten. Andockring und Anflugschneise bleiben frei. Asteroiden zeigen Schichtungen unabhängig vom Erzvorrat.
 
 Der Kepler-Bomber trägt seine beiden Torpedos über den Tragflächen. In der Verfolgeransicht siehst du nach jedem Abschuss die freie Schiene. Am Zollkreuzer sitzt die Brücke über der seitlichen Kontrollbucht. Nach dem ersten Torpedotreffer ist das mittlere Schott aufgerissen, dahinter glüht eine Leitung.
 
@@ -164,6 +168,12 @@ Die Daten gehören zum verwendeten Browser und zur Adresse (hier
 Umzug auf einen anderen Browser. Speicherfehler werden sichtbar gemeldet.
 
 ## Aktueller Standard: Handelsflug
+
+Die **Universumskarte** öffnet sich mit **F7** im Handelsflug oder unter **Routen & Kurse** an der Station. Sie pausiert den Flug, zeigt die Sprungtore und markiert den aktuellen Sektor sowie das Ziel einer laufenden Frachtlieferung. Wähle einen Sektor, optional einen Zwischenstopp, und **Kurs setzen**. Von Kestrel nach Kepler kannst du beispielsweise über Helios oder über Drift-9 fliegen. Das Cockpit und die Stationsliste markieren die nächste Etappe. Die Karte zeigt für diese Etappe den Warenverkaufswert und die Geleitgebühr. Fernziel und Zwischenstopp bleiben im Spielstand erhalten.
+
+- **Kaltstrom** verbindet Helios mit Theta. Das Kondensatdepot kauft Treibstoffzellen an und verkauft Kryo-Erz für die Rückfahrt. Die Route nach Kaltstrom ist piratenfrei.
+- **Wracksaum** verbindet Drift-9 mit Morgenlicht. Das Schlepperdock handelt mit Plasmakernen und Titanschrott. Im Eigenflug greifen zuerst ein Späher und ein Kanonenboot an, später folgt ein zweites Paar. Aus zerstörten Kanonenbooten lassen sich Plasmakerne bergen.
+- **Schleierpass** verbindet Kaltstrom mit Wracksaum. Das Relais kauft medizinische Vorräte an und verkauft Nav-Daten. Wer ohne Geleit fliegt, trifft auf Sperrjäger. Ihre gelbgrünen Waffenarme leuchten vor der Fächersalve auf. Nach dem Schuss drehen sie seitlich weg. In ihren Wracks finden sich Nav-Daten und Titanschrott.
 
 **Enter/Klick** öffnet beim ersten Handelsflug die Schiffswahl. Bei einem
 vorhandenen Spielstand setzt du den Flug fort. Über **Spielstände → Neuer Handelsflug**

@@ -8,7 +8,11 @@ import {
   Economy_repairWithScrap as repairWithScrap,
 } from "../build/Economy.js";
 import { TradeSystem_createCargo as createCargo, TradeSystem_loadSalvage as loadSalvage, TradeSystem_quantityOf as quantityOf } from "../build/TradeSystem.js";
-import { Turret_create as createTurret, Turret_reset as resetTurret, Turret_update as updateTurret } from "../build/Turret.js";
+import {
+  Turret_create as createTurret, Turret_reset as resetTurret, Turret_update as updateTurret,
+  Missiles_create as createMissiles, Missiles_tryLaunch as launchMissile,
+  Missiles_update as updateMissiles, Missiles_reload as reloadMissiles,
+} from "../build/Turret.js";
 import {
   WorldModule_create as createWorld, WorldModule_reset as resetWorld,
   ShipModule_createPlayer as createPlayer, ShipModule_reset as resetShip,
@@ -140,6 +144,37 @@ test("dock hull repair supports discounted credits and salvaged titanium scrap",
   assert.equal(ship.Hull, ship.MaxHull);
   assert.equal(repairCostFor(standard, ship), 0);
   assert.equal(repairWithCredits(standard, wallet, ship), false);
+});
+
+test("homing micro-missiles require a locked target in range, track, damage and recharge", () => {
+  const { world, enemy } = encounter(220);
+  enemy.MaxHull = 80;
+  enemy.Hull = 80;
+  enemy.Shield = 0;
+  const rack = createMissiles();
+  // Rejects invalid target or out-of-range target.
+  assert.equal(launchMissile(world, rack, -1).tag, 1);
+  enemy.Position = new Vec3(0, 0, -500);
+  assert.equal(launchMissile(world, rack, 0).tag, 1);
+  // Launches cleanly inside 440 m and hits an off-axis enemy via homing turn.
+  enemy.Position = new Vec3(24, 6, -180);
+  const fired = launchMissile(world, rack, 0);
+  assert.equal(fired.tag, 0);
+  assert.equal(rack.Ammo, 3);
+  let enemyHits = 0;
+  for (let i = 0; i < 120 && enemyHits === 0; i++) {
+    const impacts = updateMissiles(world, rack, 0.02);
+    for (const impact of impacts) if (impact.HitEnemy) enemyHits++;
+  }
+  assert.equal(enemyHits, 1);
+  assert.equal(enemy.Hull, 42);
+  // Recharges 1 missile after 16 seconds.
+  updateMissiles(world, rack, 16.0);
+  assert.equal(rack.Ammo, 4);
+  // Reload resets to full immediately.
+  rack.Ammo = 1;
+  reloadMissiles(rack);
+  assert.equal(rack.Ammo, 4);
 });
 
 test("turrets cannot fire before purchase, for dead players, at dead targets or outside 280 units", () => {

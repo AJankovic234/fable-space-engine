@@ -87,6 +87,22 @@ module StationMeshes =
             let t = float i / float bays
             bar b (point t 3.1 -4) (point t 3.1 4) 0.7 steel
 
+    let internal quarryClamps =
+        let ring = ProceduralMeshes.ring(12,-116.,38.,-133.,72.,68.)
+        [| for start in [0; 6] do
+               for i in start .. start+4 do
+                   yield struct (ring.[i], ring.[i+1]) |]
+
+    let internal refineryRadiators =
+        [| for side in [-1.; 1.] do
+               for i in 0..2 do
+                   let n = float i
+                   yield v (side*(107.+24.*n)) (40.-14.*n) (-159.-8.*n) |]
+
+    let internal bazaarPavilions =
+        [| v -139 76 -157; v -88 92 -164; v -31 110 -155
+           v 29 106 -146; v 83 98 -156; v 135 71 -158 |]
+
     let private kestrel (b: MeshBuilder) =
         let rust = rgb 0.65 0.235 0.063
         let rock = v -116 38 -113
@@ -146,6 +162,28 @@ module StationMeshes =
         box b -48 53 -122 6 3 5 steel
         windows b -48 53 -116.8 4 2.5 ice
 
+        // The salvage collar holds the quarry between two open jaws. The wide
+        // crossmembers carry the load back to the platform, with tethers inside.
+        for struct (a,c) in quarryClamps do
+            bar b a c 5.0 rust
+            bar b (a-v 0 0 20) (c-v 0 0 20) 3.2 iron
+            bar b a (c-v 0 0 20) 1.8 ochre
+            let joint = Vec3.lerp a c 0.5
+            b.Box(joint+v 0 0 5.1,v 3.4 3.4 0.6,ochre)
+            b.Box(joint+v 0 0 5.8,v 1.55 1.55 0.5,lamp)
+        bar b (v -51 59 -142) (v 27 12 -142) 4.0 steel
+        bar b (v -55 5 -143) (v 40 -27 -134) 3.4 ochre
+
+        // Counterweights and gravity separators under the loading floor.
+        for x,r,foot in [-11.,17.,-97.;68.,22.,-86.] do
+            drum b 12 x -125 [|foot,r*0.60; foot+9.,r; -43.,r; -32.,r*0.77|] steel
+            drum b 12 x -125 [|-61.,r+1.0; -59.,r+1.0|] ochre
+            for i in -2..2 do
+                let cx = x + float i*r*0.24
+                let front = -125. + sqrt (r*r - (cx-x)*(cx-x))
+                box b cx -52 front 1.4 4.4 0.55 ice
+            bar b (v (x-r) -48 -124) (v (x-r-8.) -31 -114) 2.2 rust
+
     let private helios (b: MeshBuilder) =
         let oxide = rgb 0.53 0.19 0.085
         let copper = rgb 0.83 0.39 0.15
@@ -186,6 +224,27 @@ module StationMeshes =
             bar b (a+v 0 3 0) (c+v 0 3 0) 0.62 copper
         for x in [-79.;-47.;-15.;17.;49.;81.] do
             box b x -21 -89.6 10 1.7 0.8 fire
+
+        // Heat-recovery wings step outward from the furnaces. Dark fins break up
+        // the hot ceramic faces, with cooler copper toward the outer tips.
+        let copperFrame = MeshColor.metal 0.74 0.39 0.19
+        for i in 0 .. refineryRadiators.Length-1 do
+            let p = refineryRadiators.[i]
+            let h = 27. - 3. * float (i%3)
+            let face = p.Z+3.8
+            let ceramic = MeshColor.glow 0.93 0.29 0.073 (0.60 - 0.12*float (i%3))
+            deck b p.X p.Z [|p.Y-h,6.,2.8; p.Y-h+7.,11.,4.; p.Y+h-5.,11.,4.; p.Y+h,7.5,2.8|] iron
+            for dx in [-9.;9.] do
+                bar b (v (p.X+dx) (p.Y-h+7.) face) (v (p.X+dx) (p.Y+h-5.) face) 1.1 copperFrame
+            for row in -3..3 do
+                let y = p.Y+float row*5.1
+                box b p.X y (face+0.35) 7.25 1.55 0.55 ceramic
+                box b p.X (y-1.8) (face+1.1) 8.4 0.45 1.05 copper
+            bar b (p-v 0 h 1.8) (v (p.X*0.71) -29 -143) 3.2 copper
+        deck b -5 -137 [|-99.,20.,16.; -84.,36.,24.; -61.,44.,29.; -34.,37.,24.|] oxide
+        deck b -5 -137 [|-81.,36.,24.; -74.,42.,29.; -71.,42.,29.|] copper
+        for x in [-33.;-19.;-5.;9.;23.] do
+            bar b (v x -73 -108) (v x -46 -110) 1.55 fire
 
     let private drift (b: MeshBuilder) =
         let jade = rgb 0.095 0.57 0.52
@@ -258,6 +317,33 @@ module StationMeshes =
                 bar b (point (float (i-1)/12.)) p 0.26 iron
                 b.Box(p-v 0 0.8 0,v 0.88 1.4 0.88,signs.[i%4])
 
+        // The bazaar grew above the old freighters. Salvaged greenhouse roofs,
+        // shopfronts and lamp bridges make up a second skyline.
+        for i in 0 .. bazaarPavilions.Length-1 do
+            let p = bazaarPavilions.[i]
+            let paint = colors.[(i+2)%colors.Length]
+            let light = signs.[i%signs.Length]
+            deck b p.X p.Z [|p.Y-12.,14.,10.; p.Y-5.,23.,16.; p.Y+2.,23.,16.|] steel
+            deck b p.X p.Z [|p.Y+2.,21.,15.; p.Y+13.,21.,15.; p.Y+14.,20.,14.|] paint
+            deck b p.X p.Z [|p.Y+13.,22.8,16.7; p.Y+15.,23.,17.; p.Y+24.,10.,10.; p.Y+26.,7.,8.|] paint
+            let foot = if i < 3 then v -58 41 -147 else v 61 54 -155
+            bar b (p-v 11 10 4) (foot-v 5 0 0) 2.3 steel
+            bar b (p+v 11 -10 -4) (foot+v 5 0 0) 2.1 alloy
+            for dx in [-13.;0.;13.] do
+                box b (p.X+dx) (p.Y+7.5) (p.Z+15.3) 5.5 3.6 0.85 iron
+                box b (p.X+dx) (p.Y+8.2) (p.Z+16.2) 4.25 1.75 0.45 light
+            bar b (p+v -19 14 16) (p+v 19 14 16) 1.0 light
+            for side in [-1.;1.] do
+                bar b (p+v (side*18.) 16 15) (p+v (side*8.) 23 10) 0.82 enamel
+            if i > 0 then
+                let prev = bazaarPavilions.[i-1]
+                for dz in [-2.;2.] do
+                    let a,c = prev+v 9 -2 dz,p+v -9 -2 dz
+                    bar b a c 1.30 alloy
+                    bar b (a+v 0 3 0) (c+v 0 3 0) 0.40 ochre
+                    for t in [0.34;0.50;0.66] do
+                        b.Box(Vec3.lerp a c t+v 0 1.3 0,v 0.84 1.6 0.58,light)
+
     let private kepler (b: MeshBuilder) =
         let paint = rgb 0.98 0.53 0.08
         let primer = rgb 0.50 0.225 0.115
@@ -317,6 +403,52 @@ module StationMeshes =
                 bar b (v x y z) (v (x+dx) (y+dy) (z+2.0)) 0.40 lamp
         deck b 0 -93 [|-32.,20.,12.; -25.,21.,12.; -10.,14.,9.|] alloy
         windows b 0 -20 -81.5 8 3.2 ice
+
+        // Dock 07's overhead transfer crane is tall enough to raise a finished hull.
+        // Keep its loading bay and the construction frames open below the girder.
+        let blackened = MeshColor.metal 0.22 0.27 0.29
+        let rail = MeshColor.metal 0.62 0.68 0.69
+        let floodlight = MeshColor.glow 1.0 0.86 0.62 0.82
+        for side in [-1.; 1.] do
+            let x = side * 163.0
+            deck b x -218. [|-49.,18.,21.; -34.,19.,23.; -11.,15.,19.; 126.,12.,17.; 148.,16.,19.|] blackened
+            deck b x -218. [|-38.,20.,24.; -32.,20.,24.; -27.,17.,21.|] paint
+            deck b x -218. [|117.,14.,20.; 124.,17.,22.; 130.,17.,21.|] paint
+            for y in [5.; 37.; 69.; 101.] do
+                box b x y -199.5 10.5 1.35 1.1 rail
+                box b (x - 7.0) (y + 10.0) -200.4 1.1 5.2 0.8 lamp
+                box b (x + 7.0) (y + 10.0) -200.4 1.1 5.2 0.8 lamp
+            bar b (v x -34. -237.) (v x 144. -253.) 3.2 steel
+            bar b (v x 8. -234.) (v x 144. -253.) 1.2 paint
+            bar b (v x 32. -203.) (v x 124. -202.) 1.8 paint
+        deck b 0. -218. [|134.,151.,14.; 138.,165.,18.; 149.,165.,18.; 157.,152.,15.|] steel
+        bar b (v -162. 145. -253.) (v 162. 145. -253.) 2.6 blackened
+        for bay in -7..7 do
+            let x = float bay * 21.0
+            let p, q = v (x - 9.5) 139. -199., v (x + 9.5) 149.5 -199.
+            let start, finish = if bay % 2 = 0 then p, q else v p.X q.Y p.Z, v q.X p.Y q.Z
+            bar b start finish 1.15 paint
+            bar b (v x 149. -234.) (v x 145. -253.) 1.4 rail
+            box b x 134. -205. 5.3 1.65 1.75 blackened
+            box b x 133. -202.7 3.6 0.65 0.5 floodlight
+        for z in [-210.; -225.] do
+            bar b (v -153. 133. z) (v 153. 133. z) 1.3 rail
+        deck b -18. -218. [|116.,15.,9.; 123.,20.,11.; 134.,20.,14.|] paint
+        windows b -18. 124. -206.6 7 3.2 ice
+        bar b (v -22. 117. -216.) (v -22. 91. -216.) 0.7 rail
+        bar b (v -14. 117. -216.) (v -14. 91. -216.) 0.7 rail
+        box b -18. 90. -216. 6.0 1.65 3.4 paint
+
+    // Wing coordinates are shared with the oriented collision boxes.
+    let internal thetaSolarSections = [| 40., 82.; 92., 134.; 144., 188. |]
+    let internal thetaSolarHalfHeight = 24.0
+    let internal thetaSolarFrame side =
+        let root = v (side * 22.0) -23. -155.
+        let span = Vec3.normalize (v side -0.34 -0.30)
+        let upright = v 0. 1. -0.35
+        let chord = Vec3.normalize (upright - span * Vec3.dot upright span)
+        let face = Vec3.cross (span * side) chord
+        root, span, chord, face
 
     let private theta (b: MeshBuilder) =
         let cobalt = rgb 0.19 0.32 0.54
@@ -378,6 +510,40 @@ module StationMeshes =
         bar b (v 12 113 -152) (v 12 140 -152) 0.85 alloy
         box b 12 140 -152 1.55 1.8 1.55 red
 
+        // Independent solar banks descend behind the dishes. Their dark gaps
+        // expose the panel mounts and let the two antenna silhouettes read.
+        let frame = MeshColor.metal 0.36 0.43 0.57
+        let backing = rgb 0.11 0.17 0.29
+        let cellBlue = MeshColor.glass 0.21 0.37 0.75 0.12
+        let cellIndigo = MeshColor.glass 0.13 0.24 0.55 0.10
+        for side in [-1.; 1.] do
+            let root, span, chord, face = thetaSolarFrame side
+            let at along height depth = root + span * along + chord * height + face * depth
+            let plate a d low high depth =
+                [| at a low depth; at d low depth; at d high depth; at a high depth |]
+            bar b (v 0. -21. -143.) root 3.8 cobalt
+            bar b root (at 191. 0. -0.8) 3.3 frame
+            for a,d in thetaSolarSections do
+                let h = thetaSolarHalfHeight
+                let centre = 0.5 * (a + d)
+                b.Slab(plate a d -h h 0.0, [| 1.45; 1.45; 1.45; 1.45 |], face, backing)
+                for y in [-h; h] do bar b (at a y 0.) (at d y 0.) 1.7 ceramic
+                for edge in [a; d] do
+                    bar b (at edge -h 0.) (at edge h 0.) 1.6 frame
+                    bar b (at edge -19. 1.7) (at edge -14. 1.7) 0.63 signal
+                for col in 0..6 do
+                    for row in 0..5 do
+                        let pitch = (d - a - 4.0) / 7.0
+                        let x = a + 2.0 + float col * pitch
+                        let y = -21.0 + float row * 7.0
+                        let outline = plate (x + 0.34) (x + pitch - 0.34) (y + 0.28) (y + 6.72) 1.61
+                        let cell = if (row + col) % 4 = 0 then cellBlue else cellIndigo
+                        b.PolygonOutward(outline, at centre 0. 0., cell)
+                bar b (at centre 0. -5.1) (at (a + 1.0) (-h + 1.0) -1.5) 1.15 frame
+                bar b (at centre 0. -5.1) (at (d - 1.0) (h - 1.0) -1.5) 1.15 frame
+                b.Box(at centre 0. -3.6, v 4.7 3.1 3.4, cobalt)
+            b.Box(at 189. 0. 0., v 1.9 1.55 1.55, red)
+
     let private morgenlicht (b: MeshBuilder) =
         let ivory = MeshColor.glow 0.95 0.86 0.67 0.22
         let gold = MeshColor.glow 0.96 0.64 0.20 0.17
@@ -436,16 +602,45 @@ module StationMeshes =
         deck b 0 -96 [|-28.,12.,12.; -22.,15.,14.; -11.,13.,12.|] steel
         windows b 0 -18 -82.7 7 3.1 slit
 
+        // Armoured bastions rise from the ends of both flanks. Their stepped
+        // faces leave the command keep isolated in the centre of the silhouette.
+        let brushedGold = MeshColor.metal 0.75 0.52 0.25
+        let armour = MeshColor.metal 0.46 0.47 0.49
+        for side in [-1.; 1.] do
+            let x = side * 145.0
+            deck b x -147. [|22.,15.,15.; 39.,24.,23.; 58.,22.,24.; 64.,20.,21.|] umber
+            deck b x -147. [|48.,23.,25.; 61.,24.,26.; 64.,22.,24.|] brushedGold
+            deck b x -149. [|59.,19.,20.; 69.,21.,23.; 98.,17.,21.; 117.,13.,17.|] ivory
+            deck b x -151. [|95.,17.,23.; 102.,20.,23.; 108.,19.,22.|] armour
+            for dx in [-10.; 10.] do
+                deck b (x+dx) -151. [|105.,5.,12.; 116.,6.,12.; 133.,3.5,8.|] gold
+                box b (x+dx) 122. -140.2 1.65 3.1 0.95 slit
+            // Thick frames and shutter slats give the fleet-facing walls depth.
+            plate side [|128.,76.; 161.,76.; 159.,99.; 131.,103.|] -125.6 1.5 umber
+            plate side [|133.,78.; 157.,78.; 156.,96.; 134.,98.|] -124.0 0.9 crimson
+            for row in 0..4 do
+                let y = 80. + float row * 3.5
+                bar b (v (side * 134.) y -122.7) (v (side * 156.) (y + 1.4) -122.7) 0.95 armour
+            for edge in [-1.; 1.] do
+                let rimX = x + edge * 16.0
+                bar b (v rimX 74. -123.) (v (x + edge * 12.0) 104. -125.) 1.1 brushedGold
+            plate side [|149.,24.; 171.,41.; 164.,63.; 155.,50.|] -122.8 2.1 ivory
+            plate side [|152.,29.; 167.,42.; 162.,54.; 155.,47.|] -120.0 0.85 crimson
+            windows b x 55. -120.3 8 3.4 slit
+            let foot, shoulder = v (side * 51.) -30. -151., v (side * 155.) 32. -151.
+            bar b foot shoulder 4.1 umber
+            bar b (foot + v 0. 1. -5.) (shoulder + v 0. 1. -5.) 2.1 brushedGold
+
     /// Rearward clearing volume supplements the smaller sphere around the berth.
     let worksCenter = v 0 22 -111
     let worksRadius kind =
         match kind with
-        | MiningDepot -> 178.
-        | Refinery -> 143.
-        | FrontierBazaar -> 154.
-        | OrbitalYard -> 212.
-        | ResearchRelay -> 157.
-        | FleetDock -> 163.
+        | MiningDepot -> 204.
+        | Refinery -> 186.
+        | FrontierBazaar -> 192.
+        | OrbitalYard -> 262.
+        | ResearchRelay -> 251.
+        | FleetDock -> 209.
 
     let station kind =
         let b = MeshBuilder()

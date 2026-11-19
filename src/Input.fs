@@ -69,6 +69,7 @@ type GameAction =
     | ToggleHelp = 39
     | TargetNearest = 40
     | ToggleOptics = 41
+    | OpenStarMap = 42
 
 type InputState =
     { /// Anzahl gehaltener physischer Tasten pro Aktion.
@@ -106,7 +107,7 @@ type InputState =
 module Input =
 
     [<Literal>]
-    let private ActionCount = 42
+    let private ActionCount = 43
 
     /// Radiant Blickdrehung pro Pixel Mausweg beim freien Umsehen.
     [<Literal>]
@@ -199,6 +200,7 @@ module Input =
         | "KeyB" -> int GameAction.OpenShop
         | "F2" -> int GameAction.StartCombat
         | "F8" -> int GameAction.OpenSaves
+        | "F7" -> int GameAction.OpenStarMap
         | "KeyG" -> int GameAction.ScanRelic
         | "KeyV" -> int GameAction.GhostPulse
         | "KeyJ" -> int GameAction.LaunchTorpedo

@@ -160,8 +160,18 @@ module TradeSystem =
         | FleetDock, CommodityId.NavData -> 1.35
         | _ -> 1.0
 
-    let private initialStock (kind: StationKind) (id: CommodityId) =
-        let factor = stationFactor kind id
+    let private marketFactor sectorId kind id =
+        match sectorId, id with
+        | "kaltstrom", CommodityId.CryoOre -> 0.54
+        | "kaltstrom", CommodityId.FuelCells -> 1.64
+        | "wracksaum", CommodityId.TitaniumScrap -> 0.65
+        | "wracksaum", CommodityId.PlasmaCores -> 0.73
+        | "wracksaum", CommodityId.MedSupplies -> 1.49
+        | "schleierpass", CommodityId.NavData -> 0.52
+        | "schleierpass", CommodityId.MedSupplies -> 1.72
+        | _ -> stationFactor kind id
+
+    let private initialStock factor id =
         let maxStock =
             match id with
             | CommodityId.PlasmaCores -> 14
@@ -173,8 +183,7 @@ module TradeSystem =
             else int (float maxStock * 0.55)
         stock, maxStock
 
-    let private computePrice (basePrice: int) (kind: StationKind) (id: CommodityId) (stock: int) (maxStock: int) =
-        let baseFactor = stationFactor kind id
+    let private computePrice (basePrice: int) baseFactor stock maxStock =
         let fill = if maxStock > 0 then float stock / float maxStock else 0.5
         // Knappheit treibt den Preis leicht hoch, Ueberbestand drueckt ihn leicht.
         let stockAdjust = 1.15 - 0.30 * fill
@@ -190,8 +199,9 @@ module TradeSystem =
         let entries =
             commodities
             |> Array.map (fun def ->
-                let stock, maxStock = initialStock sector.Outpost.Kind def.Id
-                let price, trend = computePrice def.BasePrice sector.Outpost.Kind def.Id stock maxStock
+                let factor = marketFactor sector.Id sector.Outpost.Kind def.Id
+                let stock, maxStock = initialStock factor def.Id
+                let price, trend = computePrice def.BasePrice factor stock maxStock
                 { Commodity = def.Id
                   Price = price
                   Stock = stock
@@ -208,7 +218,7 @@ module TradeSystem =
         let def = commodities.[i]
         let prev = market.Entries.[i]
         let clamped = max 0 (min prev.MaxStock newStock)
-        let price, trend = computePrice def.BasePrice market.StationKind def.Id clamped prev.MaxStock
+        let price, trend = computePrice def.BasePrice (marketFactor market.SectorId market.StationKind def.Id) clamped prev.MaxStock
         market.Entries.[i] <-
             { prev with
                 Stock = clamped
@@ -229,12 +239,12 @@ module TradeSystem =
     // Auf-/Abschlag und ganzzahlige Rundung sichern eine echte Handelsspanne.
     let private buyQuote (market: StationMarket) i stock =
         let def = commodities.[i]
-        let reference, _ = computePrice def.BasePrice market.StationKind def.Id stock market.Entries.[i].MaxStock
+        let reference, _ = computePrice def.BasePrice (marketFactor market.SectorId market.StationKind def.Id) stock market.Entries.[i].MaxStock
         int (System.Math.Ceiling(float reference * 1.08))
 
     let private sellQuote (market: StationMarket) i stock =
         let def = commodities.[i]
-        let reference, _ = computePrice def.BasePrice market.StationKind def.Id (stock + 1) market.Entries.[i].MaxStock
+        let reference, _ = computePrice def.BasePrice (marketFactor market.SectorId market.StationKind def.Id) (stock + 1) market.Entries.[i].MaxStock
         max 1 (int (System.Math.Floor(float reference * 0.92)))
 
     /// Exakter Preis fuer das naechste einzelne Stueck; 0 bedeutet ausverkauft.
@@ -386,3 +396,44 @@ module TradeSystem =
 
     let upgradeCargoFor terms cargo credits = upgradeHullCargo terms 16 cargo credits
     let upgradeCargo cargo credits = upgradeCargoFor TradeTerms.standard cargo credits
+
+    /// Bewegt alle Stationslager pro Sektorwechsel sanft Richtung Grundbestand,
+    /// damit profitable Handelsrouten nicht dauerhaft austrocknen.
+    let driftMarkets (markets: StationMarket[]) (heliosBlockaded: bool) =
+        for market in markets do
+            for i in 0 .. market.Entries.Length - 1 do
+                let blockedMed =
+                    heliosBlockaded && market.SectorId = "slag-refinery" && i = int CommodityId.MedSupplies
+                if not blockedMed then
+                    let commodity = commodities.[i].Id
+                    let target, _ = initialStock (marketFactor market.SectorId market.StationKind commodity) commodity
+                    let current = market.Entries.[i].Stock
+                    if current <> target then
+                        let gap = abs (target - current)
+                        let step = if gap >= 6 then 2 else 1
+                        let delta = if current < target then step else -step
+                        refreshEntry market i (current + delta)
+
+    /// Erzeugt ein spontanes Sektor-Marktereignis (Engpass oder Ueberschuss) und gibt Titel + Meldung zurueck.
+    let triggerMarketEvent (markets: StationMarket[]) (heliosBlockaded: bool) (sectorIndex: int) (goodIndex: int) (shortage: bool) =
+        if sectorIndex < 0 || sectorIndex >= markets.Length || goodIndex < 0 || goodIndex >= commodities.Length then
+            None
+        else
+            let market = markets.[sectorIndex]
+            let blockedMed =
+                heliosBlockaded && market.SectorId = "slag-refinery" && goodIndex = int CommodityId.MedSupplies
+            if blockedMed then None
+            else
+                let good = commodities.[goodIndex]
+                let entry = market.Entries.[goodIndex]
+                let delta = if shortage then -5 else 6
+                let nextStock = max 0 (min entry.MaxStock (entry.Stock + delta))
+                if nextStock = entry.Stock then None
+                else
+                    refreshEntry market goodIndex nextStock
+                    let port = (Universe.sectorByIndex sectorIndex).Outpost.Name
+                    let title = if shortage then "MARKT-ENGPASS" else "MARKT-ÜBERSCHUSS"
+                    let detail =
+                        if shortage then sprintf "%s meldet Knappheit bei %s — hohe Ankaufspreise!" port good.Name
+                        else sprintf "%s meldet Überschuss an %s — günstige Einkaufskurse!" port good.Name
+                    Some (title, detail)

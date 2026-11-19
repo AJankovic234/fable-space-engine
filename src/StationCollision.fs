@@ -13,6 +13,13 @@ module StationCollision =
     let private box x y z hx hy hz =
         Box(v x y z, v hx hy hz, Vec3.unitX, Vec3.unitY, Vec3.unitZ)
 
+    let private beam (start: Vec3) (finish: Vec3) width =
+        let span = finish - start
+        let axis = Vec3.normalize span
+        let reference = if abs axis.Y > 0.9 then Vec3.unitX else Vec3.unitY
+        let right = Vec3.normalize (Vec3.cross axis reference)
+        Box((start+finish)*0.5, v width width (Vec3.length span*0.5), right, Vec3.cross axis right, axis)
+
     let private houseboat x y z yaw length radius =
         Box(v x y z, v (0.88*length) radius radius,
             v (cos yaw) 0 (sin yaw), Vec3.unitY, v (-sin yaw) 0 (cos yaw))
@@ -27,33 +34,57 @@ module StationCollision =
             // Quarry rock, winch house, silo platform and the two ore bins.
             [| Sphere(v -116 38 -113, 49.)
                box -13 -1 -113 34 29 21; box 85 -20 -118 53 11 22
-               box 65 19 -119 18 38 17; box 112 13 -119 18 30 17 |]
+               box 65 19 -119 18 38 17; box 112 13 -119 18 30 17
+               box -11 -64 -125 14 28 14; box 68 -61 -125 18 22 18
+               for struct (a,c) in StationMeshes.quarryClamps do
+                   beam a c 5.0
+                   beam (a-v 0 0 20) (c-v 0 0 20) 3.2 |]
         | Refinery ->
             // Furnace floor, control deck, and the three independent furnace stacks.
             [| box 0 -20 -122 109 16 30; box 7 -10 -91 30 10 12
                box -77 34 -129 18 45 18; box -11 64 -153 22 75 22
-               box 61 46 -123 16 58 16 |]
+               box 61 46 -123 16 58 16
+               box -5 -66 -137 34 28 21
+               for i in 0 .. StationMeshes.refineryRadiators.Length-1 do
+                   let p = StationMeshes.refineryRadiators.[i]
+                   let h = 27. - 3. * float (i%3)
+                   box p.X p.Y p.Z 9.5 (h-4.) 4.5 |]
         | FrontierBazaar ->
             [| box 0 -6 -124 24 17 23
                houseboat -56 30 -143 0.22 68. 15.; houseboat 57 -12 -104 -0.29 76. 14.
-               houseboat -83 -23 -102 2.87 45. 10.; houseboat 53 52 -158 -2.94 53. 10. |]
+               houseboat -83 -23 -102 2.87 45. 10.; houseboat 53 52 -158 -2.94 53. 10.
+               for p in StationMeshes.bazaarPavilions do
+                   box p.X (p.Y+3.) p.Z 19.0 12.0 13.0
+                   box p.X (p.Y+19.) p.Z 12.0 5.0 9.0 |]
         | OrbitalYard ->
             // Both dry-dock sills, the cruiser stern and its raised superstructure.
             // The exposed bow frames and the space between the sills remain open.
             [| box 0 -38 -84 159 9 7; box 0 -38 -211 159 9 7
                box -84 12 -148 43 20 35; box 0 13 -148 76 23 37
-               box 5 56 -148 55 15 26; box 0 -21 -93 18 11 11 |]
+               box 5 56 -148 55 15 26; box 0 -21 -93 18 11 11
+               box -163 49 -218 12 95 17; box 163 49 -218 12 95 17
+               box 0 146 -218 162 10 17; box -18 125 -218 18 8 11 |]
         | ResearchRelay ->
             [| box 0 -15 -124 30 16 23; box 12 50 -152 5 63 5
                dish (v -75 55 -136) (v -0.48 0.63 0.64) 61.
-               dish (v 88 27 -123) (v 0.84 0.33 0.35) 40. |]
+               dish (v 88 27 -123) (v 0.84 0.33 0.35) 40.
+               for side in [-1.; 1.] do
+                   let root, span, chord, face = StationMeshes.thetaSolarFrame side
+                   Box(root + span * 95.0, v 95.0 3.3 3.3, span, chord, face)
+                   for a,d in StationMeshes.thetaSolarSections do
+                       let centre = root + span * ((a + d) * 0.5)
+                       Box(centre, v ((d - a) * 0.5) StationMeshes.thetaSolarHalfHeight 1.5, span, chord, face) |]
         | FleetDock ->
             let wing side =
                 let x = Vec3.normalize (v side 0.34 0)
                 Box(v (side*93.) 14 -137, v 62 13 21, x, Vec3.cross Vec3.unitZ x, Vec3.unitZ)
             [| box 0 -1 -131 68 22 38; box 0 -34 -131 27 19 19
                box 0 34 -137 32 24 23; box 0 71 -141 18 17 15
-               wing -1.; wing 1. |]
+               wing -1.; wing 1.
+               for side in [-1.;1.] do
+                   let x = side * 145.
+                   box x 46 -147 21 17 22
+                   box x 90 -149 16 28 19 |]
 
     let private hulls =
         Universe.sectors |> Array.map (fun s ->

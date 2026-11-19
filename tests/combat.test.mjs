@@ -13,9 +13,10 @@ import { Economy_create as wallet } from "../build/Economy.js";
 import { TradeSystem_createCargo as cargo, TradeSystem_createUniverseMarkets as markets } from "../build/TradeSystem.js";
 import { Turret_create as turret } from "../build/Turret.js";
 import { Salvage_create as pickups } from "../build/Salvage.js";
-import { Vec3, QuatModule_forward as forward, QuatModule_identity as identity } from "../build/Math3D.js";
+import { Vec3, QuatModule_forward as forward, QuatModule_right as right, QuatModule_identity as identity } from "../build/Math3D.js";
 
 const DRONE = 0, SCOUT = 1, GUNSHIP = 2, BOMBER = 3, COMMANDER = 4;
+const BLOCKER = 5;
 const distance = (sim, i = 0) => vec.len(vec.sub(sim.world.Enemies[i].Position, sim.world.Player.Position));
 const noseOnPlayer = (sim, i = 0) => {
   const e = sim.world.Enemies[i];
@@ -32,6 +33,41 @@ function observe(role, seconds, watch, mates = 0) {
   run(sim, seconds);
   return sim;
 }
+
+test("the blocker visibly charges one short-range fan and breaks away after firing", () => {
+  const sim = createSim({ passive: true });
+  const ship = spawn(sim, 0, BLOCKER, new Vec3(0, 0, -130));
+  const brain = sim.brains[0];
+  const lasers = sim.world.Lasers;
+  let announced = false, salvos = 0, shots = 0, retreated = false;
+  sim.hook = () => {
+    if (brain.WeaponCharge > 0.6 && salvos === 0) {
+      assert.equal(lasers.Count, 0);
+      announced = true;
+    }
+    assert.equal(ship.Controls.Fire, false, "the blocker only fires its fan");
+    if (sim.stats.enemyShots > shots) {
+      salvos += 1;
+      shots = sim.stats.enemyShots;
+      assert.ok(announced, "the player sees charging before the volley");
+      assert.ok(distance(sim) <= profile(BLOCKER).AttackRange);
+      assert.equal(lasers.Count, 4, "two inner and two outer bolts");
+      const sideways = right(ship.Rotation);
+      const speeds = [];
+      for (let i = 0; i < lasers.Count; i++) {
+        const offset = i * 12;
+        const velocity = new Vec3(...lasers.Data.slice(offset + 3, offset + 6));
+        speeds.push(vec.dot(vec.sub(velocity, ship.Velocity), sideways));
+      }
+      speeds.sort((a, b) => a - b);
+      assert.ok(speeds[1] - speeds[0] > 8 && speeds[3] - speeds[2] > 8, "the outer pair diverges from the inner pair");
+    }
+    if (salvos > 0 && stateName(brain) === "Evade") retreated = true;
+  };
+  run(sim, 2.4);
+  assert.equal(salvos, 1);
+  assert.ok(retreated, "the blocker gives the player time to respond");
+});
 
 test("drones close up into a swarm and charge and fire their volleys together", () => {
   let synced = 0, volleys = 0, spreadAtStart = 0, spreadInFight = Infinity, circling = 0;

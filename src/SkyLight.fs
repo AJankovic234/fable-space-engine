@@ -41,7 +41,8 @@ module SkyLight =
     /// Himmelsansicht (0..5) eines Sektors; unbekannte Sektoren zeigen den Kestrel-Himmel.
     let view (sector: int) : int =
         if sector >= 0 && sector < Universe.sectors.Length then
-            Array.tryFindIndex ((=) Universe.sectors.[sector].Id) views |> Option.defaultValue 0
+            let template = Universe.skyTemplate Universe.sectors.[sector].Id
+            Array.findIndex ((=) template) views
         else 0
 
     /// Mittlere Strahldichte des Himmels in Richtung `d` (Welt, normalisiert) ohne Sterne

@@ -67,9 +67,18 @@ module Traffic =
                 else 0.0
             let nearGate = gate.Position - Vec3.normalize delta * (gate.TriggerRadius+12.0) + v 0.0 rise 0.0
             let across = Vec3.normalize (Vec3.cross Vec3.up delta) * 52.0
-            timetable [|at 70.0 6.0 49.0; at 235.0 36.0 57.0; nearGate+across
-                        nearGate+v 0.0 40.0 0.0; nearGate-across; at 259.0 82.0 105.0
-                        at 113.0 58.0 182.0|] (18.0+float i*2.5) (0.04+float i*0.37))
+            let points =
+                [| yield at 70.0 6.0 49.0
+                   yield at 235.0 36.0 57.0
+                   yield nearGate+across
+                   yield nearGate+v 0.0 40.0 0.0
+                   yield nearGate-across
+                   // The return leg from Morgenlicht passes outside Kepler's construction gantry.
+                   if sector.Id = "kepler-yard" && gate.TargetSectorId = "morgenlicht-bastion" then
+                       yield port + v 218.0 76.0 -262.0
+                   yield at 259.0 82.0 105.0
+                   yield at 113.0 58.0 182.0 |]
+            timetable points (18.0+float i*2.5) (0.04+float i*0.37))
         let local =
             [| v -84.0 8.0 63.0; v -147.0 19.0 127.0; v -92.0 51.0 209.0
                v 66.0 48.0 169.0; v 82.0 32.0 70.0; v -28.0 43.0 93.0 |]

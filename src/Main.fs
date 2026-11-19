@@ -130,10 +130,13 @@ type private Scene =
       mutable SaveTimer: float
       mutable SaveRetryDelay: float
       mutable ResumeJson: string option
+      mutable CourseTarget: string option
+      mutable CourseVia: string option
       Wallet: Wallet
       Cargo: CargoHold
       Markets: StationMarket[]
       Turret: AutoTurret
+      Missiles: MissileRack
       Pickups: ResizeArray<MineralPickup>
       Sound: SoundEngine
       Input: InputState
@@ -156,6 +159,7 @@ type private Scene =
       GateRingBatch: InstanceBatch
       TurretBaseBatch: InstanceBatch
       TurretBatch: InstanceBatch
+      MissileBatch: InstanceBatch
       AsteroidBatches: Lazy<InstanceBatch[]>[]
       AsteroidFrustum: FrustumPlanes
       DebrisBatch: InstanceBatch
@@ -337,7 +341,7 @@ let private createScene () : Scene =
             batch.Specular <- 0.6
             batch))
     let enemyBatches =
-        Array.init (int EnemyRole.Commander + 1) (fun index ->
+        Array.init (int EnemyRole.Blocker + 1) (fun index ->
             let mesh =
                 match enum<EnemyRole> index with
                 | EnemyRole.Drone -> EnemyMeshes.drone ()
@@ -345,6 +349,7 @@ let private createScene () : Scene =
                 | EnemyRole.Gunship -> EnemyMeshes.gunship ()
                 | EnemyRole.Bomber -> EnemyMeshes.bomber ()
                 | EnemyRole.Commander -> EnemyMeshes.corvette ()
+                | EnemyRole.Blocker -> EnemyMeshes.blocker ()
                 | _ -> invalidArg "index" "Unbekannte Gegnerrolle"
             let batch = Renderer.createBatch renderer (Renderer.createMesh renderer mesh) MaxEnemies Opaque
             batch.Shininess <- 60.0
@@ -419,10 +424,13 @@ let private createScene () : Scene =
           SaveTimer = 0.0
           SaveRetryDelay = 0.0
           ResumeJson = None
+          CourseTarget = None
+          CourseVia = None
           Wallet = Economy.create ()
           Cargo = TradeSystem.createCargo 16
           Markets = TradeSystem.createUniverseMarkets ()
           Turret = Turret.create ()
+          Missiles = Missiles.create ()
           Pickups = Salvage.create ()
           Sound = sound
           Input = Input.attach glCanvas
@@ -446,6 +454,7 @@ let private createScene () : Scene =
           GateRingBatch = gateRingBatch
           TurretBaseBatch = Renderer.createBatch renderer turretBaseMesh 1 Opaque
           TurretBatch = Renderer.createBatch renderer turretMesh 1 Opaque
+          MissileBatch = Renderer.createBatch renderer (Renderer.createMesh renderer (PlayerMeshes.torpedo ())) Missiles.PoolSize Opaque
           AsteroidBatches = asteroidBatches
           AsteroidFrustum = Frustum.create ()
           DebrisBatch = debrisBatch
@@ -585,6 +594,7 @@ let private refreshSaveSlots (scene: Scene) =
 let private snapshot (scene: Scene) =
     let run =
         { Trading = scene.Trading; SectorId = (currentSector scene).Id; Wave = scene.Wave
+          CourseTarget = scene.CourseTarget; CourseVia = scene.CourseVia
           Phase = (match scene.Phase with Intermission -> 0 | Fighting -> 1 | Salvaging -> 2)
           PhaseTimer = scene.PhaseTimer; Spawned = scene.Spawned; SpawnTimer = scene.SpawnTimer
           Patrol = Array.map int scene.Patrol; Score = scene.Score; Kills = scene.Kills
@@ -780,6 +790,7 @@ let private endSchool (scene: Scene) =
 let private refreshShop (scene: Scene) =
     let training = document.getElementById "school-replay"
     if canTrain scene then training.removeAttribute "hidden" else training.setAttribute ("hidden","")
+    (document.getElementById "open-star-map").hidden <- not scene.Trading
     SkillUi.refresh scene.Skills scene.Pilot
     DockContact.refreshArchive scene.Contact scene.Pilot
     let terms = tradeTerms scene
@@ -790,10 +801,35 @@ let private refreshShop (scene: Scene) =
     ShipyardUi.refresh scene.Shop.Shipyard scene.Fleet scene.Cargo scene.Wallet.Credits (currentSector scene).Outpost.HasUpgrades scene.Trading scene.Upgrades.[0] trained
     FreightUi.refresh scene.Shop.FreightDesk scene.Cargo (sectorIndex scene) scene.Trading terms scene.Blockade.EscortPort scene.Wallet.Credits
     (document.getElementById "route-hint").hidden <- scene.Trading && scene.Cargo.Freight.IsSome
-    Shop.refreshRoutes scene.Shop terms scene.Wallet scene.Cargo scene.Markets (sectorIndex scene) scene.Trading scene.TradeProfit scene.Blockade
+    let origin = sectorIndex scene
+    let nextPort = StarMap.nextPort origin scene.CourseTarget scene.CourseVia
+    Shop.refreshRoutes scene.Shop terms scene.Wallet scene.Cargo scene.Markets origin scene.Trading scene.TradeProfit scene.Blockade nextPort
+
+let private openStarMap (scene: Scene) =
+    if scene.Trading && scene.World.Player.Alive && not scene.Saves.Visible && not (StarMap.visible ())
+       && (scene.State = Playing || scene.State = Paused || scene.State = Refitting) then
+        let docked = scene.State = Refitting
+        if docked then DockContact.leave scene.Contact
+        Sound.clearRadio scene.Sound
+        scene.Input.UiMode <- true
+        Input.reset scene.Input
+        document.exitPointerLock()
+        let setCourse target via =
+            scene.CourseTarget <- target
+            scene.CourseVia <- via
+            scene.SaveDirty <- true
+        let close () =
+            scene.Input.UiMode <- docked
+            Input.reset scene.Input
+            scene.Input.FocusLost <- false
+            if docked then
+                refreshShop scene
+                DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot
+        StarMap.show scene.Sector scene.Cargo scene.Markets (tradeTerms scene) scene.Blockade scene.CourseTarget scene.CourseVia setCourse close
     BlockadeUi.refresh scene.Yard scene.Blockade scene.Trading (sectorIndex scene) scene.Wallet scene.Cargo scene.Markets
 
 let private showDock (scene: Scene) arrived =
+    Missiles.reload scene.Missiles
     let graduated = scene.School.Step = FlightSchool.Dock
     if scene.School.Step <> FlightSchool.Off then endSchool scene
     let sector = currentSector scene
@@ -923,8 +959,12 @@ let private trade (scene: Scene) (action: int) =
         if action < 6 then TradeSystem.buyGood market scene.Cargo scene.Wallet.Credits (enum<CommodityId> action) 1
         elif action < 12 then TradeSystem.sellGoodFor terms market scene.Cargo (enum<CommodityId> (action-6)) 1
         elif action = 12 then TradeSystem.sellAllFor terms market scene.Cargo
-        elif (currentSector scene).Outpost.HasUpgrades then TradeSystem.upgradeHullCargo terms ShipCatalog.hulls.[scene.Fleet.Active].Hold scene.Cargo scene.Wallet.Credits
-        else { Ok = false; CreditsDelta = 0; VolumeDelta = 0; Message = "Diese Station bietet keinen Ausbau an." }
+        elif action = 13 then
+            if (currentSector scene).Outpost.HasUpgrades then TradeSystem.upgradeHullCargo terms ShipCatalog.hulls.[scene.Fleet.Active].Hold scene.Cargo scene.Wallet.Credits
+            else { Ok = false; CreditsDelta = 0; VolumeDelta = 0; Message = "Diese Station bietet keinen Ausbau an." }
+        elif action < 20 then TradeSystem.buyGood market scene.Cargo scene.Wallet.Credits (enum<CommodityId> (action-14)) 5
+        elif action < 26 then TradeSystem.sellGoodFor terms market scene.Cargo (enum<CommodityId> (action-20)) 5
+        else { Ok = false; CreditsDelta = 0; VolumeDelta = 0; Message = "Unbekannte Handelsaktion." }
     if result.Ok then
         scene.SaveDirty <- true
         if result.CreditsDelta > 0 then
@@ -1172,10 +1212,23 @@ let private updateSortie (scene: Scene) dt =
 
 let private completeTravel (scene: Scene) terms (plan: TravelPlan) exitGate =
     Blockade.onTravel scene.Blockade scene.Markets scene.Sector plan.Destination |> ignore
+    let heliosBlockaded = scene.Blockade.Started && not scene.Blockade.Lifted
+    TradeSystem.driftMarkets scene.Markets heliosBlockaded
+    Missiles.reload scene.Missiles
     scene.Wallet.Credits <- scene.Wallet.Credits - plan.Fee
     scene.TradeProfit <- scene.TradeProfit - float plan.Fee
     scene.Sector <- plan.Destination
+    if scene.CourseTarget = Some (currentSector scene).Id then scene.CourseTarget <- None
+    if not (StarMap.validStop scene.Sector scene.CourseTarget scene.CourseVia) then scene.CourseVia <- None
     scene.Trips <- scene.Trips + 1
+    if scene.Trips % 2 = 0 then
+        let rng = scene.World.Rng
+        let targetSector = int (rng.NextFloat() * float scene.Markets.Length) % scene.Markets.Length
+        let goodIndex = int (rng.NextFloat() * float TradeSystem.commodities.Length) % TradeSystem.commodities.Length
+        let shortage = rng.NextFloat() < 0.55
+        match TradeSystem.triggerMarketEvent scene.Markets heliosBlockaded targetSector goodIndex shortage with
+        | Some (title, detail) -> Hud.notify scene.Hud title detail 5.5
+        | None -> ()
     clearScreen scene
     scene.Patrol <- plan.Patrol
     scene.World.Particles.Count <- 0
@@ -1257,6 +1310,8 @@ let private startGame (scene: Scene) (trading: bool) startHull =
     Economy.reset scene.Wallet
     scene.Trading <- trading
     scene.Sector <- 0
+    scene.CourseTarget <- None
+    scene.CourseVia <- None
     scene.TradeProfit <- 0.0
     scene.Trips <- 0
     scene.Patrol <- Array.empty
@@ -1429,6 +1484,7 @@ let private processEvents (scene: Scene) =
                             salvageHint <-
                                 match role with
                                 | EnemyRole.Gunship | EnemyRole.Bomber | EnemyRole.Commander -> " · PLASMAKERN & WRACKGUT FREI"
+                                | EnemyRole.Blocker -> " · NAV-DATEN & WRACKGUT FREI"
                                 | _ -> " · WRACKGUT FREI"
                         if PilotSkills.level scene.Pilot 0 >= 2 then
                             match role with
@@ -1529,7 +1585,10 @@ let private updateWaves (scene: Scene) (dt: float) =
                         scene.EnemiesAlive <- scene.Spawned
                         scene.SpawnTimer <- 8.0
                         scene.Phase <- States.fighting
-                        Hud.notify scene.Hud "PIRATEN AUF ABFANGKURS" "Zur Station durchbrechen oder kämpfen · 100 CR je Abschuss · X bremst." 4.0
+                        if Array.contains EnemyRole.Blocker scene.Patrol then
+                            Hud.notify scene.Hud "SPERRJÄGER IM ANFLUG" "Bei gelbem Aufglühen den Kurs ändern. Fächersalven treffen auf kurze Distanz." 4.5
+                        else
+                            Hud.notify scene.Hud "PIRATEN AUF ABFANGKURS" "Zur Station durchbrechen oder kämpfen · 100 CR je Abschuss · X bremst." 4.0
                         Sound.pirateAmbush scene.Sound
                     else startWave scene
             | Fighting ->
@@ -1581,6 +1640,10 @@ let private updateWaves (scene: Scene) (dt: float) =
         if scene.Trading && scene.Sortie.Role = 0 && scene.School.Step = FlightSchool.Off then
             scene.Cargo.Freight |> Option.bind (Freight.nextGate scene.Sector)
         else None
+    hud.CourseGate <-
+        if scene.Trading && scene.Sortie.Role = 0 && scene.School.Step = FlightSchool.Off then
+            StarMap.nextPort scene.Sector scene.CourseTarget scene.CourseVia |> Option.map (fun port -> Universe.sectors.[port].Id)
+        else None
     hud.Trips <- scene.Trips
     hud.TradeProfit <- int scene.TradeProfit
     let total = max 1 (encounterRoles scene).Length
@@ -1609,6 +1672,8 @@ let private updateWaves (scene: Scene) (dt: float) =
             else
                 match Blockade.manifestLeg scene.Blockade scene.Sector with
                 | Some leg -> leg.Hint
+                | None when hud.CourseGate.IsSome ->
+                    "Kurs · " + ((currentSector scene).Gates |> Array.find (fun gate -> Some gate.TargetSectorId = hud.CourseGate)).Label
                 | None when scene.Sector = Blockade.helios && not scene.Blockade.Lifted && scene.Blockade.Permit = 0 ->
                     "AETHER hält den Filterfrachter fest. Orlov wartet am Dock."
                 | None when scene.TradeProfit >= 1000.0 -> "Handelsziel erreicht! Neue Routen, größere Fracht oder bessere Ausrüstung?"
@@ -1672,6 +1737,8 @@ let private loadFlight (scene: Scene) json =
         DockContact.restore scene.Contact (defaultArg run.HeardContacts 0)
         scene.Trading <- run.Trading
         scene.Sector <- scene.World.SectorIndex
+        scene.CourseTarget <- run.CourseTarget
+        scene.CourseVia <- if StarMap.validStop scene.Sector run.CourseTarget run.CourseVia then run.CourseVia else None
         scene.Wave <- run.Wave
         clearDockingArea scene
         scene.Phase <- match run.Phase with 0 -> States.intermission | 1 -> States.fighting | _ -> States.salvaging
@@ -2411,6 +2478,13 @@ let private pushEquipmentAndMinerals (scene: Scene) (position: Vec3) (rotation: 
     InstanceBatch.clear scene.CrystalBatch
     InstanceBatch.clear scene.TurretBaseBatch
     InstanceBatch.clear scene.TurretBatch
+    InstanceBatch.clear scene.MissileBatch
+    for m in scene.Missiles.Missiles do
+        if m.Alive then
+            InstanceBatch.push scene.MissileBatch m.Position m.Rotation (Vec3(0.55, 0.55, 0.55)) 1.15 0.95 0.85 0.2
+            let motor = Vec3(0.0, 0.0, 0.62)
+            pushFlame scene m.Position m.Rotation motor 2.8 0.22 1.5 0.52 0.12
+            pushEngineHalo scene m.Position m.Rotation motor 1.35 1.15 0.42 0.08
     let crystal (point: Vec3) (size: float) (kind: int) (angle: float) =
         let tint =
             match kind with
@@ -2797,6 +2871,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     Renderer.drawShadow renderer scene.GateRingBatch
     Renderer.drawShadow renderer scene.TurretBaseBatch
     Renderer.drawShadow renderer scene.TurretBatch
+    Renderer.drawShadow renderer scene.MissileBatch
     Renderer.endShadows renderer
 
     SkyBackdrop.draw renderer scene.Sky camera (sectorIndex scene)
@@ -2824,6 +2899,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     Renderer.draw renderer scene.CrystalBatch
     Renderer.draw renderer scene.TurretBaseBatch
     Renderer.draw renderer scene.TurretBatch
+    Renderer.draw renderer scene.MissileBatch
     Renderer.draw renderer scene.DustBatch
     Renderer.draw renderer scene.Landmarks.Horizon
     Renderer.draw renderer scene.ShieldBatch
@@ -2934,6 +3010,7 @@ let private initializeFlight () : Scene option =
                 Input.reset scene.Input
                 beginSchool scene)
         (document.getElementById "menu-combat").addEventListener ("click", fun _ -> scene.Input.Pressed.[int GameAction.StartCombat] <- 1uy)
+        (document.getElementById "open-star-map").addEventListener ("click", fun _ -> openStarMap scene)
         (document.getElementById "menu-saves").addEventListener ("click", fun _ -> scene.Saves.Action <- "open")
         // Mausempfindlichkeit schon im Hauptmenue: startet mit dem Wert des juengsten
         // Spielstands; ein bewegter Regler gilt danach auch beim Fortsetzen.
@@ -2988,7 +3065,7 @@ let private initializeFlight () : Scene option =
             if document?visibilityState = "hidden" then
                 DockContact.leave scene.Contact
                 flush ()
-            elif scene.State = Refitting && not scene.Saves.Visible then
+            elif scene.State = Refitting && not scene.Saves.Visible && not (StarMap.visible ()) then
                 DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot)
         Some scene
     with ex ->
@@ -3065,12 +3142,14 @@ let private frame (timestamp: float) =
         let dt = System.Math.Min(0.1, elapsed)
 
         scene.LastTimestamp <- timestamp
-        scene.StateTime <- scene.StateTime + dt
+        if Input.wasPressed input GameAction.OpenStarMap then openStarMap scene
+        let mapVisible = StarMap.visible ()
+        if not mapVisible then scene.StateTime <- scene.StateTime + dt
 
         // ---- 1. Eingabe-Flanken: gehoeren zum Frame, nicht zum Physikschritt ----
         let confirm = Input.wasPressed input GameAction.Confirm || input.Clicked
 
-        let saveUiHandled = processSaveUi scene
+        let saveUiHandled = mapVisible || processSaveUi scene
         match scene.State with
         | _ when saveUiHandled -> ()
         | Menu ->
@@ -3297,18 +3376,19 @@ let private frame (timestamp: float) =
         Sound.setFlightContext scene.Sound scene.Fleet.Active scene.Fleet.Kit (sectorIndex scene) (scene.Camera.Mode = Cockpit) outpostKind gateProx (scene.World.Customs.IsSome)
         let sceneMode =
             match scene.State with
+            | Playing when mapVisible -> 2
             | Playing -> 1
             | Paused -> 2
             | Refitting -> 3
             | Menu | Victory | GameOver -> 0
         Sound.setSceneMode scene.Sound sceneMode
         let thrust = if ship.Controls.Brake then 0.0 else ship.Controls.Throttle
-        Sound.updateEngine scene.Sound engineActive thrust ship.Boost
+        Sound.updateEngine scene.Sound (engineActive && not mapVisible) thrust ship.Boost
 
         // ---- 2. Simulation mit festem Zeitschritt (steht in der Pause) ----
         let simulate =
             match scene.State with
-            | _ when scene.Saves.Visible -> false
+            | _ when scene.Saves.Visible || mapVisible -> false
             | Menu | Paused | Refitting | Victory -> false
             | _ -> true
 
@@ -3329,6 +3409,27 @@ let private frame (timestamp: float) =
                 else AI.update world scene.Brains PhysicsStep
                 if scene.State = Playing && not (FlightSchool.onRange scene.School.Step) then
                     Turret.update world scene.Turret (scene.Wallet.TurretOwned && scene.Sortie.Role <> CapitalFlight.Bomber) PhysicsStep
+                    if scene.Sortie.Role <> CapitalFlight.Bomber && scene.School.Step = FlightSchool.Off && Input.wasPressed input GameAction.LaunchTorpedo then
+                        match Missiles.tryLaunch world scene.Missiles scene.Hud.Target with
+                        | Ok _ ->
+                            Sound.torpedoLaunch scene.Sound
+                            scene.Hud.RewardText <- "ABFANGRAKETE GESTARTET"
+                            scene.Hud.RewardTime <- 1.4
+                        | Error msg when msg <> "" ->
+                            Sound.uiError scene.Sound
+                            scene.Hud.RewardText <- msg
+                            scene.Hud.RewardTime <- 1.8
+                        | Error _ -> ()
+                    let impacts = Missiles.update world scene.Missiles PhysicsStep
+                    for impact in impacts do
+                        if impact.HitEnemy then
+                            Sound.torpedoImpact scene.Sound
+                            Hud.confirmHit scene.Hud false
+                        else
+                            Sound.explosionAt scene.Sound 0.9 impact.Position
+                        CombatLights.explosion scene.CombatLights world.Time impact.Position 24.0
+                    scene.Hud.MissileAmmo <- scene.Missiles.Ammo
+                    scene.Hud.MissileReload <- scene.Missiles.ReloadTimer / Missiles.ReloadInterval
                 Physics.step world PhysicsStep
                 updateGateCrossing scene
                 if scene.State = Playing && scene.Sortie.Role <> CapitalFlight.Bomber then
@@ -3368,7 +3469,7 @@ let private frame (timestamp: float) =
             if canSave scene then scene.FlightChanged <- true
 
         scene.SaveRetryDelay <- max 0.0 (scene.SaveRetryDelay - elapsed)
-        if scene.State = Refitting && not scene.Saves.Visible then
+        if scene.State = Refitting && not scene.Saves.Visible && not mapVisible then
             let before = DockContact.heard scene.Contact
             DockContact.update scene.Contact
             if before <> DockContact.heard scene.Contact then scene.SaveDirty <- true

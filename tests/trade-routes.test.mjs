@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Universe_sectors as sectors } from '../build/Universe.js';
+import { route as chartRoute, routeThrough, validStop, nextPort as courseGate } from '../build/StarMap.js';
 import {
   TradeRoutes_neighbors as neighbors, TradeRoutes_tryPlan as plan,
   TradeRoutes_escortFee as fee, TradeRoutes_patrol as patrol,
@@ -43,6 +44,33 @@ test('escort requires the exact fee and prevents patrols; independent travel ret
       assert.equal(independent.Patrol.includes(4),false,'commander stays in optional combat mission');
     }
   }
+});
+
+test('a chart course uses the first gate of each remaining leg and ends at its destination', () => {
+  const port = id => sectors.findIndex(sector => sector.Id === id);
+  const kaltstrom = 'kaltstrom', wracksaum = 'wracksaum';
+  assert.deepEqual(chartRoute(port('outer-belt'), port(kaltstrom)),
+    [port('outer-belt'), port('slag-refinery'), port(kaltstrom)]);
+  assert.equal(courseGate(port('outer-belt'), kaltstrom), port('slag-refinery'));
+  assert.equal(courseGate(port('slag-refinery'), kaltstrom), port(kaltstrom));
+  assert.equal(courseGate(port(kaltstrom), kaltstrom), undefined);
+  assert.deepEqual(chartRoute(port('outer-belt'), port(wracksaum)),
+    [port('outer-belt'), port('frontier-drift'), port(wracksaum)]);
+  assert.equal(courseGate(port('outer-belt'), 'missing'), undefined);
+  assert.deepEqual(chartRoute(port(kaltstrom), port(wracksaum)),
+    [port(kaltstrom), port('schleierpass'), port(wracksaum)]);
+  assert.deepEqual(Array.from(patrol(port('schleierpass'))), [5, 1, 5]);
+});
+
+test('a waypoint picks either route from Kestrel to Kepler and rejects backtracking', () => {
+  const port = id => sectors.findIndex(sector => sector.Id === id);
+  const kestrel = port('outer-belt'), kepler = port('kepler-yard');
+  for (const stop of ['slag-refinery', 'frontier-drift']) {
+    assert.deepEqual(Array.from(routeThrough(kestrel, kepler, port(stop))), [kestrel, port(stop), kepler]);
+    assert.equal(courseGate(kestrel, 'kepler-yard', stop), port(stop));
+    assert.equal(validStop(port(stop), 'kepler-yard', stop), false, 'the stop is cleared on arrival');
+  }
+  assert.equal(routeThrough(kestrel, port('slag-refinery'), port('kaltstrom')), undefined);
 });
 
 test('cargo destination quotes use marginal prices and capacity without mutating live trade state', () => {

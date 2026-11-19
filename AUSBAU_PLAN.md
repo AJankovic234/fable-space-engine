@@ -63,7 +63,7 @@ Als Arbeitshypothese reizt an diesem Kreislauf, einen eigenen Plan zu fassen, de
 
 ## Universumskarte für den Handelsflug
 
-**Entwurfsstand.** Das heutige Netz umfasst sechs Sektoren und sieben beidseitige Verbindungen. Die Karte soll vom eigenen Schiff aus drei Fragen beantworten. Wo liegt mein Auftrag, welches Tor kommt als Nächstes und lohnt sich ein Zwischenstopp mit meiner Ladung?
+**Spielbarer Stand.** Das Handelsnetz umfasst neun Sektoren und dreizehn beidseitige Verbindungen. **F7** und der Reiter **Routen & Kurse** öffnen die Karte mit Frachtziel, speicherbarem Fernziel, optionalem Zwischenstopp und Handelsvorschau für die nächste Etappe. Schleierpass verbindet Kaltstrom und Wracksaum. Zoom und Verschieben bleiben Teil des Kartenentwurfs.
 
 ### Karte und Bedienung
 

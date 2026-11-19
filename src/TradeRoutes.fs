@@ -40,10 +40,13 @@ module TradeRoutes =
     let patrolDelay terms = if terms.FixerLevel >= 2 then 20.0 else 8.0
 
     let patrol destination =
-        match (Universe.sectorByIndex destination).DangerLevel with
-        | danger when danger <= 1 -> Array.empty
-        | 2 -> [| EnemyRole.Drone; EnemyRole.Scout |]
-        | 3 -> [| EnemyRole.Drone; EnemyRole.Scout; EnemyRole.Gunship |]
+        let sector = Universe.sectorByIndex destination
+        match sector.Id, sector.DangerLevel with
+        | "wracksaum", _ -> [| EnemyRole.Scout; EnemyRole.Gunship; EnemyRole.Scout; EnemyRole.Gunship |]
+        | "schleierpass", _ -> [| EnemyRole.Blocker; EnemyRole.Scout; EnemyRole.Blocker |]
+        | _, danger when danger <= 1 -> Array.empty
+        | _, 2 -> [| EnemyRole.Drone; EnemyRole.Scout |]
+        | _, 3 -> [| EnemyRole.Drone; EnemyRole.Scout; EnemyRole.Gunship |]
         | _ -> [| EnemyRole.Drone; EnemyRole.Scout; EnemyRole.Gunship; EnemyRole.Bomber |]
 
     /// Keine Abkürzung zu nicht verbundenen Märkten, kein unbezahlter Geleitschutz.

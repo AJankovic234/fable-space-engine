@@ -233,7 +233,7 @@ test("shield hits ripple on the bubble, hull hits throw sparks and shards", () =
 });
 
 test("bolt styles separate every source", () => {
-  assert.equal(boltStyles.length, 10);
+  assert.equal(boltStyles.length, 11);
   const ids = {
     player: boltStyleId(1, true, false, false, 0),
     overdrive: boltStyleId(1, true, true, false, 0),
@@ -245,10 +245,11 @@ test("bolt styles separate every source", () => {
     gunship: boltStyleId(5, false, false, false, 2),
     bomber: boltStyleId(6, false, false, false, 3),
     commander: boltStyleId(7, false, false, false, 4),
+    blocker: boltStyleId(8, false, false, false, 5),
   };
-  assert.equal(new Set(Object.values(ids)).size, 10, "ten sources, ten styles");
+  assert.equal(new Set(Object.values(ids)).size, 11, "each source has a style");
   assert.equal(boltStyleId(0, false, false, false, 0), ids.drone, "a loaded enemy bolt falls back to the plain hostile style");
-  assert.equal(boltStyleId(3, false, false, false, 99), ids.commander, "roles are clamped");
+  assert.equal(boltStyleId(3, false, false, false, 99), ids.blocker, "roles are clamped");
 
   const style = (name) => boltStyles[ids[name]];
   const hue = (s) => [s.R, s.G, s.B];
@@ -266,7 +267,7 @@ test("bolt styles separate every source", () => {
   }
   // Friend and foe never share a hue family: player weapons are cool, hostile fire is warm.
   for (const name of ["player", "overdrive", "focus", "turret"]) assert.ok(style(name).R < 1 && Math.max(style(name).G, style(name).B) > 1.5, name);
-  for (const name of ["battery", "drone", "scout", "gunship", "bomber", "commander"]) assert.ok(style(name).R > 1.8, name);
+  for (const name of ["battery", "drone", "scout", "gunship", "bomber", "commander", "blocker"]) assert.ok(style(name).R > 1.8, name);
   assert.ok(style("focus").B > style("focus").G * 3 && style("focus").R > 0.8, "the pulse-focus kit is violet");
   assert.ok(style("battery").Thickness > 2 * style("commander").Thickness, "the cruiser battery dwarfs ship guns");
 });

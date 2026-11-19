@@ -236,6 +236,11 @@ module AI =
             brain.EvadeDirection <- Vec3.normalize (forward * 0.5 + right * (brain.Side * 0.9) + up * 0.3 + away * 0.6)
             brain.EvadeDuration <- profile.RestTime + rng.Range(-0.4, 0.4)
             brain.Side <- -brain.Side
+        | EnemyRole.Blocker ->
+            // Nach der Salve seitlich abdrehen und mit dem naechsten Durchgang die Seite wechseln.
+            brain.EvadeDirection <- Vec3.normalize (right * brain.Side + forward * 0.4 + away * 0.2 + up * 0.24)
+            brain.EvadeDuration <- (EnemyProfiles.profile brain.Role).RestTime
+            brain.Side <- -brain.Side
         | _ ->
             // Seitlich wegbrechen, dabei Fahrt behalten und sich vom Spieler entfernen
             brain.EvadeDirection <-
@@ -253,12 +258,10 @@ module AI =
         let time = Ballistics.interceptTime track.X track.Y track.Z relative.X relative.Y relative.Z Combat.LaserSpeed
         if time > 0.0 then Vec3.mulAdd track relative time else track
 
-    /// Gerichtete Salve entlang der eingefrorenen Bahn. Die Korvette feuert aus ihren vier
-    /// Seitenbatterien einen engen Faecher, der Bomber aus beiden Bugrohren. Die Rohre schwenken
-    /// begrenzt mit (kein Feuer nach achtern); wer den Kurs haelt, fliegt mitten hinein.
-    let private fireLocked (world: World) (brain: AiBrain) (ship: Ship) (slot: int) =
+    /// Gesteuerte Salven. Bomber und Korvette folgen einem eingefrorenen Kurs,
+    /// der Sperrjaeger deckt zur Schusszeit einen kurzen, breiten Korridor ab.
+    let private fireSalvo (world: World) (brain: AiBrain) (ship: Ship) (slot: int) (focus: Vec3) =
         let bow = Quat.forward ship.Rotation
-        let focus = ship.Position + lockedAim world brain ship
         let mutable fired = false
         let shoot (origin: Vec3) (target: Vec3) (damage: float) (gimbal: float) =
             let direction = Vec3.normalize (target - origin)
@@ -266,6 +269,8 @@ module AI =
                 let v = Vec3.mulAdd ship.Velocity direction Combat.LaserSpeed
                 let q = Quat.lookRotation direction Vec3.unitY
                 if LaserPool.spawn world.Lasers origin.X origin.Y origin.Z v.X v.Y v.Z q.X q.Y q.Z q.W damage Team.Enemy then
+                    if brain.Role = EnemyRole.Blocker then
+                        LaserPool.tag world.Lasers (CombatVfx.OwnerEnemySlot + slot)
                     fired <- true
         if brain.Role = EnemyRole.Commander then
             let hull = EnemyMeshes.hull (int brain.Role)
@@ -281,6 +286,18 @@ module AI =
                 let sx = if k % 2 = 0 then -1.0 else 1.0
                 let sy = if k < 2 then 1.0 else -1.0
                 shoot origin (focus + right * (sx * EnemyProfiles.BatterySpread) + up * (sy * EnemyProfiles.BatterySpread * 0.25)) damage 0.6
+        elif brain.Role = EnemyRole.Blocker then
+            let left = ship.Position + Quat.rotateVec3 ship.Rotation ship.GunLeft
+            let right = ship.Position + Quat.rotateVec3 ship.Rotation ship.GunRight
+            let lateral = Quat.right ship.Rotation
+            let outer = lateral * (Vec3.distance ship.Position focus * 0.075)
+            let inner = lateral * 0.8
+            shoot left (focus - outer) ship.LaserDamage 0.82
+            shoot left (focus - inner) ship.LaserDamage 0.82
+            shoot right (focus + inner) ship.LaserDamage 0.82
+            shoot right (focus + outer) ship.LaserDamage 0.82
+            // Der normale, gespeicherte Cooldown verhindert eine zweite Salve im Fenster.
+            if fired then ship.FireCooldown <- ship.FireInterval
         else
             shoot (ship.Position + Quat.rotateVec3 ship.Rotation ship.GunLeft) focus ship.LaserDamage 0.9
             shoot (ship.Position + Quat.rotateVec3 ship.Rotation ship.GunRight) focus ship.LaserDamage 0.9
@@ -331,7 +348,7 @@ module AI =
         | Chase ->
             let ready =
                 if distance >= profile.AttackRange then false
-                elif role = EnemyRole.Bomber && distance > 1e-3 then
+                elif (role = EnemyRole.Bomber || role = EnemyRole.Blocker) && distance > 1e-3 then
                     // Der Anlauf beginnt erst, wenn die Nase auf dem Spieler liegt.
                     Vec3.dot (Quat.forward ship.Rotation) toPlayer / distance > 0.94
                 elif role = EnemyRole.Scout && distance > 1e-3 then
@@ -357,7 +374,7 @@ module AI =
 
             if not playerAlive then
                 enter brain ship patrol
-            elif role = EnemyRole.Bomber && brain.StateTime > profile.ChargeTime + profile.BurstTime then
+            elif (role = EnemyRole.Bomber || role = EnemyRole.Blocker) && brain.StateTime > profile.ChargeTime + profile.BurstTime then
                 // Ein Anlauf, eine Salve: danach abdrehen
                 startEvade world brain ship toPlayer distance
             elif role = EnemyRole.Gunship && distance < profile.PreferredRange * 0.5 && not committed then
@@ -538,6 +555,10 @@ module AI =
                 // Anlauf mit Nachbrenner
                 c.Throttle <- 1.0
                 c.Boost <- true
+            | EnemyRole.Blocker ->
+                // Bereits beim Laden bremsen: der Faecher sperrt die kurze Anfluglinie.
+                c.Throttle <- holdRange
+                c.Brake <- distance < preferred
             | EnemyRole.Drone ->
                 // Zwischen zwei Schwarmsalven kreisen, rechtzeitig vor der Aufladung eindrehen
                 if resting && restElapsed < profile.RestTime * 0.5 then
@@ -565,7 +586,9 @@ module AI =
             // Rohre auf die Zielentfernung einstellen
             ship.Convergence <- aimLength
 
-            if brain.FiringBurst && role <> EnemyRole.Bomber && distance < profile.AttackRange * 1.1 && aimLength > 1e-3 then
+            if brain.FiringBurst && role = EnemyRole.Blocker && ship.FireCooldown <= 0.0 && distance < profile.AttackRange then
+                fireSalvo world brain ship slot (ship.Position + aim)
+            elif brain.FiringBurst && role <> EnemyRole.Bomber && role <> EnemyRole.Blocker && distance < profile.AttackRange * 1.1 && aimLength > 1e-3 then
                 let cosAngle = Vec3.dot (Quat.forward ship.Rotation) aim / aimLength
                 c.Fire <- cosAngle > FireConeCos
 
@@ -574,7 +597,7 @@ module AI =
                 brain.BatteryTimer <- brain.BatteryTimer - ThinkInterval
                 if brain.BatteryTimer <= 0.0 then
                     brain.BatteryTimer <- (if role = EnemyRole.Bomber then profile.FireInterval else BatteryInterval)
-                    fireLocked world brain ship slot
+                    fireSalvo world brain ship slot (ship.Position + lockedAim world brain ship)
         | Evade ->
             // Ausweichrichtung mit ueberlagertem Zickzack
             let w = world.Time * 1.6 + brain.Phase
@@ -586,7 +609,7 @@ module AI =
 
             c.Throttle <- 1.0
             // Spaeher loesen sich mit Sprint
-            c.Boost <- role = EnemyRole.Scout
+            c.Boost <- role = EnemyRole.Scout || role = EnemyRole.Blocker
 
         // Nachbarn frueh seitlich umfliegen. Skalare Akkumulatoren vermeiden pro
         // Nachbar neue Vektoren und halten auch groessere Gegnergruppen bezahlbar.

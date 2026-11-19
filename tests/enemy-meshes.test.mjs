@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import {
   EnemyMeshes_drone as drone, EnemyMeshes_scout as scout, EnemyMeshes_gunship as gunship,
   EnemyMeshes_bomber as bomber, EnemyMeshes_corvette as corvette, EnemyMeshes_hull as hull,
+  EnemyMeshes_blocker as blocker,
 } from "../build/EnemyMeshes.js";
 import { ShipModule_createInterceptor as createEnemy } from "../build/PhysicsAndPool.js";
 
-const builders = [drone, scout, gunship, bomber, corvette];
-const names = ["drone", "scout", "gunship", "bomber", "corvette"];
+const builders = [drone, scout, gunship, bomber, corvette, blocker];
+const names = ["drone", "scout", "gunship", "bomber", "corvette", "blocker"];
 const axes = ["X", "Y", "Z"];
 // Side offset of the two firing muzzles of the former models (1.2 * 1.6 * role scale). A wider
 // spacing would let centred salvos straddle the player, so the new models keep it.
@@ -40,8 +41,8 @@ test("enemy models stay within 16-bit indices and contain only finite vertex dat
   });
 });
 
-test("each role reads larger than the next lighter one and the command corvette is a 22-28 m boss", () => {
-  const diagonal = meshes.map(({ size }) => Math.hypot(...size));
+test("the original roles increase in size and the blocker has a compact, wide silhouette", () => {
+  const diagonal = meshes.slice(0, 5).map(({ size }) => Math.hypot(...size));
   for (let role = 1; role < diagonal.length; role++) {
     assert.ok(diagonal[role] > diagonal[role - 1], `${names[role]} ${diagonal[role]} <= ${names[role - 1]}`);
   }
@@ -53,6 +54,8 @@ test("each role reads larger than the next lighter one and the command corvette 
   // The needle scout is the longest ship relative to its span, the gunship the widest.
   assert.ok(meshes[1].size[2] / meshes[1].size[0] > 1.5);
   assert.ok(meshes[2].size[0] > meshes[2].size[2]);
+  const [span, , length] = meshes[5].size;
+  assert.ok(span > length * 1.1 && span < 11, "the blocker has a wider silhouette than it is long");
 });
 
 test("colliders hug the visible hull and the broad-phase sphere encloses them", () => {
@@ -76,7 +79,7 @@ test("colliders hug the visible hull and the broad-phase sphere encloses them", 
 test("muzzles keep the former spacing and sit on modelled barrels; engines and lights sit on the hull", () => {
   meshes.forEach(({ nearest }, role) => {
     const h = hull(role);
-    assert.ok(Math.abs(h.GunRight.X - formerGunSpacing[role]) < 0.01, `${names[role]} gun spacing ${h.GunRight.X}`);
+    if (role < formerGunSpacing.length) assert.ok(Math.abs(h.GunRight.X - formerGunSpacing[role]) < 0.01, `${names[role]} gun spacing ${h.GunRight.X}`);
     assert.equal(h.GunLeft.X, -h.GunRight.X);
     assert.equal(h.GunLeft.Y, 0);
     assert.equal(h.GunRight.Y, 0);

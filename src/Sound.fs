@@ -747,7 +747,10 @@ module Sound =
             { space: 0.068, nebula: 0.044, cap: 0.0 },
             { space: 0.070, nebula: 0.028, cap: 0.024 },
             { space: 0.054, nebula: 0.062, cap: 0.0 },
-            { space: 0.060, nebula: 0.046, cap: 0.028 }
+            { space: 0.060, nebula: 0.046, cap: 0.028 },
+            { space: 0.058, nebula: 0.042, cap: 0.0 },
+            { space: 0.085, nebula: 0.037, cap: 0.0 },
+            { space: 0.046, nebula: 0.080, cap: 0.0 }
         ];
 
         function playLaser(isPlayer, atten, pan, cutoffMul, overdrive, laserLevel, kit, enemyRole) {
@@ -766,6 +769,7 @@ module Sound =
                 else if (role === 1) rate = 1.06;
                 else if (role === 2) { rate = 0.82; vol *= 1.12; }
                 else if (role === 3) { rate = 0.70; vol *= 1.22; }
+                else if (role === 5) { rate = 0.96; vol *= 1.08; }
                 rate *= jitter(0.06);
             }
             if (isPlayer && pan === 0) {
@@ -849,7 +853,7 @@ module Sound =
             setFlightContext(hull, kit, sector, cockpit, outpostKind, gateProx, cruiserNear) {
                 flightCtx.hull = Math.max(0, Math.min(HULL_ENGINE.length - 1, hull || 0));
                 flightCtx.kit = Math.max(0, Math.min(3, kit || 0));
-                flightCtx.sector = Math.max(0, Math.min(5, sector || 0));
+                flightCtx.sector = Math.max(0, Math.min(SECTOR_AMBIENCE.length - 1, sector || 0));
                 flightCtx.cockpit = !!cockpit;
                 flightCtx.outpostKind = Math.max(0, Math.min(5, outpostKind || 0));
                 flightCtx.gateProx = Math.max(0, Math.min(1, gateProx || 0));

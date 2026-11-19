@@ -18,7 +18,13 @@ module PilotSkills =
 
     let level (pilot: PilotProgress) branch = pilot.Levels.[branch]
     let contains mask sector = mask &&& (1 <<< sector) <> 0
-    let count mask = [0..5] |> List.sumBy (fun i -> if contains mask i then 1 else 0)
+    let count mask =
+        let mutable bits = uint32 mask
+        let mutable total = 0
+        while bits <> 0u do
+            bits <- bits &&& (bits - 1u)
+            total <- total + 1
+        total
     let cost rank = if rank = 3 then 2 else 1
     let points pilot =
         count pilot.Visited + count pilot.Relics -
@@ -59,7 +65,10 @@ module RelicArchive =
            "Der Puffer-Chor", "Auf der Antenne laufen zwölf Notrufe in einer Schleife. Ich habe die Stimme der Frau herauskopiert, bis zu der Stelle, an der sie den Funk ablegt. Die Aufnahme ist elf Jahre alt."
            "Trockendock B", "Im Werkstattbuch des Kolonieschiffs ist ein Kästchen frei geblieben. »Startfreigabe Erde« steht darüber. Seit dem Eintrag von 03 AE schickt das Dock dieselbe Anfrage an die Bodenstation."
            "RT-9-Mirror", "Am 14. März 2034 hat RT-9 beide Teile von ORPHEUS-7 empfangen. Ihre Bahnen laufen auseinander, über beiden Spuren steht dieselbe Kennung. Das Band endet vor der Bestätigung des Wiedereintritts."
-           "Sleeve-Satellit", "Beim Reaktorleck von 2564 starb Kaelen Vance. Sein Totenschein liegt in der Wiederherstellungsakte, gleich vor dem ersten Antrag auf Ersatz. Laut jüngstem Eintrag ist auf der Sovereign gerade Sleeve Nummer 7 im Dienst." |]
+           "Sleeve-Satellit", "Beim Reaktorleck von 2564 starb Kaelen Vance. Sein Totenschein liegt in der Wiederherstellungsakte, gleich vor dem ersten Antrag auf Ersatz. Laut jüngstem Eintrag ist auf der Sovereign gerade Sleeve Nummer 7 im Dienst."
+           "Pumpenbuch der Kaltstrom-Schicht", "Im ersten Winter leiteten die Mechaniker einen Teil des Kühlmittels zum Schlafdeck. Die Pumpen liefen mit Zellen aus Helios. Als der Nachschub ausblieb, strich die Verwaltung zuerst die Leute von der Anwesenheitsliste."
+           "Schleppschein 44", "Der Auftrag lautet, die Presse aus dem Deck zu bergen. Der Schlepper hat sechsmal nach den Rettungskapseln gefragt. Jedes Mal antwortete die Leitstelle mit derselben veralteten Inventarliste."
+           "Kursprotokoll 17", "Die Relaiscrew hat den Nebel vermessen und die sichere Spur an beide Docks geschickt. Am nächsten Morgen verlangte ein unbekannter Sender Geleitschutz genau für diese Spur." |]
     let position (port: Vec3) sector =
         let side = if sector % 2 = 0 then 1.0 else -1.0
         port + Vec3(side * (145.0 + 12.0 * float sector), 30.0 + 9.0 * float sector, 65.0)

@@ -14,25 +14,27 @@ function at(port, x, y, z) {
   return vector(port.Position.X+x, port.Position.Y+y, port.Position.Z+z);
 }
 
-// Major solid structures and visible gaps in the six authored meshes.
-const probes = [
-  [[65, 35], [89, 35]],       // Kestrel's ore bins
-  [[-11, 92], [24, 85]],      // Helios furnace towers
-  [[-56, 30], [10, 75]],      // Drift-9 market hulls
-  [[-75, 13], [114, 15]],     // Kepler's stern and open dry dock
-  [[-75, 55], [-2, 95]],      // Theta's large dish and mast
-  [[0, 68], [61, 69]],        // Morgenlicht's command tower
-];
+// Original body, clear gap and new outer structure, in each station's local XY plane.
+const probes = {
+  MiningDepot: [[65, 35], [89, 35], [-116, 105]],  // Ore bin and quarry collar
+  Refinery: [[-11, 92], [24, 85], [155, 12]],      // Furnace and radiator
+  FrontierBazaar: [[-56, 30], [10, 75], [-31, 115]], // Market hull and pavilion
+  OrbitalYard: [[-75, 13], [114, 15], [163, 85]],  // Cruiser and gantry
+  ResearchRelay: [[-75, 55], [-2, 95], [182, -80]], // Dish and solar panel
+  FleetDock: [[0, 68], [61, 69], [145, 94]],      // Keep and shield tower
+};
 for (const [index, { Outpost: port }] of sectors.entries()) {
   test(`${port.Name}: high-speed crossings hit the works, gaps and the docking approach stay open`, () => {
     const hull = forSector(index);
-    const [[x,y], [gapX,gapY]] = probes[index];
+    const [[x,y], [gapX,gapY], [outerX,outerY]] = probes[port.Kind.cases()[port.Kind.tag]];
     const p = at(port,x,y,120), q = at(port,x,y,-320);
     const t = laserHit(hull,p,q);
     assert.ok(t > 0 && t < 1, 'a bolt crossing the entire station hits a structure');
     const motion = move(hull, 3, p, q, vector(0,0,-440));
     assert.ok(motion && Math.hypot(motion[1].X-q.X, motion[1].Y-q.Y, motion[1].Z-q.Z) > 5,
       'the ship is stopped or deflected');
+    const outer = laserHit(hull, at(port,outerX,outerY,120), at(port,outerX,outerY,-320));
+    assert.ok(outer > 0 && outer < 1, 'the new outer structure stops a bolt');
     assert.equal(laserHit(hull, at(port,gapX,gapY,120), at(port,gapX,gapY,-320)), 2);
     const approach = at(port,0,0,650);
     for (const [dx,dy] of [[0,0], [16,0], [-16,0], [0,16], [0,-16]]) {

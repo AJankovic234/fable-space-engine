@@ -15,7 +15,9 @@ type ShopUi =
       Cargo: HTMLElement
       CargoMeter: HTMLProgressElement
       MarketButtons: HTMLButtonElement[]
+      BuyFiveButtons: HTMLButtonElement[]
       SellButtons: HTMLButtonElement[]
+      SellFiveButtons: HTMLButtonElement[]
       Stock: HTMLElement[]
       Owned: HTMLElement[]
       SellAll: HTMLButtonElement
@@ -46,8 +48,8 @@ module Shop =
             row.innerHTML <-
                 "<th scope='row'><span class='good-name'>" + cargoIcon good.Id + "<span>" + good.Name + "<small>" + string good.UnitVolume + " t / Einheit</small><small class='market-intel' id='intel-" + i + "'></small></span></span></th>" +
                 "<td id='stock-" + i + "'></td><td id='owned-" + i + "'></td>" +
-                "<td><button type='button' id='trade-buy-" + i + "' aria-label='Eine Einheit " + good.Name + " kaufen'></button></td>" +
-                "<td><button type='button' id='trade-sell-" + i + "' aria-label='Eine Einheit " + good.Name + " verkaufen'></button></td>"
+                "<td><div class='trade-cell'><button type='button' id='trade-buy-" + i + "' aria-label='Eine Einheit " + good.Name + " kaufen'></button><button type='button' class='bulk-btn' id='trade-buy5-" + i + "' aria-label='Bis zu fünf Einheiten " + good.Name + " kaufen'>×5</button></div></td>" +
+                "<td><div class='trade-cell'><button type='button' id='trade-sell-" + i + "' aria-label='Eine Einheit " + good.Name + " verkaufen'></button><button type='button' class='bulk-btn' id='trade-sell5-" + i + "' aria-label='Bis zu fünf Einheiten " + good.Name + " verkaufen'>×5</button></div></td>"
             body.appendChild row |> ignore
         let ui =
             { Root = element "hangar"
@@ -61,7 +63,9 @@ module Shop =
               Cargo = element "cargo-status"
               CargoMeter = unbox<HTMLProgressElement> (element "cargo-meter")
               MarketButtons = Array.init 6 (fun i -> unbox<HTMLButtonElement> (element ("trade-buy-" + string i)))
+              BuyFiveButtons = Array.init 6 (fun i -> unbox<HTMLButtonElement> (element ("trade-buy5-" + string i)))
               SellButtons = Array.init 6 (fun i -> unbox<HTMLButtonElement> (element ("trade-sell-" + string i)))
+              SellFiveButtons = Array.init 6 (fun i -> unbox<HTMLButtonElement> (element ("trade-sell5-" + string i)))
               Stock = Array.init 6 (fun i -> element ("stock-" + string i))
               Owned = Array.init 6 (fun i -> element ("owned-" + string i))
               SellAll = unbox<HTMLButtonElement> (element "sell-all")
@@ -83,7 +87,9 @@ module Shop =
         ui.Next.addEventListener ("click", fun _ -> ui.Advance <- true)
         for i in 0..5 do
             ui.MarketButtons.[i].addEventListener ("click", fun _ -> ui.TradeAction <- i)
+            ui.BuyFiveButtons.[i].addEventListener ("click", fun _ -> ui.TradeAction <- i + 14)
             ui.SellButtons.[i].addEventListener ("click", fun _ -> ui.TradeAction <- i + 6)
+            ui.SellFiveButtons.[i].addEventListener ("click", fun _ -> ui.TradeAction <- i + 20)
         ui.SellAll.addEventListener ("click", fun _ -> ui.TradeAction <- 12)
         ui.Expand.addEventListener ("click", fun _ -> ui.TradeAction <- 13)
         ui.RepairCredits.addEventListener ("click", fun _ -> ui.RepairAction <- 1)
@@ -134,8 +140,13 @@ module Shop =
             ui.Owned.[i].title <- "Durchschnittlicher Einstand: " + string (int (System.Math.Round cargo.AvgCost.[i])) + " CR / Einheit"
             ui.MarketButtons.[i].textContent <- if ask = 0 then "AUSVERKAUFT" else string ask + " CR"
             ui.SellButtons.[i].textContent <- if bid = 0 then "LAGER VOLL" else string bid + " CR"
-            ui.MarketButtons.[i].disabled <- ask = 0 || wallet.Credits < ask || TradeSystem.freeVolume cargo < good.UnitVolume
-            ui.SellButtons.[i].disabled <- bid = 0 || TradeSystem.quantityOf cargo good.Id = 0
+            let canBuy = ask > 0 && wallet.Credits >= ask && TradeSystem.freeVolume cargo >= good.UnitVolume
+            let owned = TradeSystem.quantityOf cargo good.Id
+            let canSell = bid > 0 && owned > 0
+            ui.MarketButtons.[i].disabled <- not canBuy
+            ui.BuyFiveButtons.[i].disabled <- not canBuy || entry.Stock < 2 || TradeSystem.freeVolume cargo < good.UnitVolume * 2
+            ui.SellButtons.[i].disabled <- not canSell
+            ui.SellFiveButtons.[i].disabled <- not canSell || owned < 2 || entry.Stock >= entry.MaxStock - 1
         for i in 0..3 do
             let available = Economy.available wallet levels i
             let price = Economy.priceFor terms levels i
@@ -163,13 +174,16 @@ module Shop =
             | "station-kepler" -> "Werftfunk Kepler-07. Continuity-Drohnen prüfen die Lizenzen im Anflug."
             | "station-aether" -> "Relais Theta empfängt auf RT-9. Auch gespeicherte Notrufe laufen über diesen Kanal."
             | "station-bastion" -> "Flottenregister Morgenlicht. Immunität gilt ausschließlich für Platin-SINs."
+            | "station-kaltstrom" -> "Die Kondensatpumpen brauchen Treibstoffzellen. Für den Rückflug liegt Kryo-Erz bereit."
+            | "station-wracksaum" -> "Die Schlepper haben Plasmakerne und Titanschrott entladen. Ohne Geleit halten Späher und Kanonenboote auf dich zu."
+            | "station-schleierpass" -> "Die Relaiscrew kauft medizinische Vorräte an. Frisch vermessene Nav-Daten liegen zum Verkauf bereit."
             | _ -> outpost.Name + " · Angedockt."
         ui.Root.removeAttribute "hidden"
         document.exitPointerLock ()
         (ui.Root.querySelector(".station-tabs [aria-pressed='true']") :?> HTMLButtonElement).focus ()
         ui.Root.scrollTop <- 0.0
 
-    let refreshRoutes (ui: ShopUi) terms (wallet: Wallet) (cargo: CargoHold) (markets: StationMarket[]) origin trading (profit: float) blockade =
+    let refreshRoutes (ui: ShopUi) terms (wallet: Wallet) (cargo: CargoHold) (markets: StationMarket[]) origin trading (profit: float) blockade nextPort =
         let element id = document.getElementById id
         if trading then
             (element "tab-routes").removeAttribute "hidden"
@@ -222,6 +236,7 @@ module Shop =
                 let count = (TradeRoutes.patrol target).Length
                 let card = document.createElement "article"
                 card.className <- "route-card"
+                let courseLabel = if Some target = nextPort then "Gesetzter Kurs · " else ""
                 let manifestLabel =
                     match manifest with
                     | Some leg when leg.NextPort = Some target -> "Frachtbrief nach Helios · "
@@ -249,7 +264,7 @@ module Shop =
                         "<span>" + cargoIcon good.Id + good.Name + " <b>" + (if price = 0 then "VOLL" else string price + " CR") + "</b>" + trend + "</span>") |> String.concat ""
                 card.innerHTML <-
                     "<div class='port-portrait' data-port='" + sector.Id + "' aria-hidden='true'></div>" +
-                    "<p class='eyebrow'>" + freightLabel + manifestLabel + (if count = 0 then "GESICHERTER KORRIDOR" else string count + " PIRATEN BEI EIGENFLUG") + "</p><h2>" + sector.Outpost.Name + "</h2>" + fleetBadges +
+                    "<p class='eyebrow'>" + courseLabel + freightLabel + manifestLabel + (if count = 0 then "GESICHERTER KORRIDOR" else string count + " PIRATEN BEI EIGENFLUG") + "</p><h2>" + sector.Outpost.Name + "</h2>" + fleetBadges +
                     "<p class='route-value'>Verkaufserlös am Ziel<strong>" + string quote.CreditsDelta + " CR</strong><small>" +
                     (if used = 0 then "Frachtraum leer." elif saleable = 0 then "Nur versiegelte Auftragsfracht." elif remaining = 0 then "Eigene Ware vollständig verkäuflich." else string remaining + " t eigene Ware bleiben an Bord.") +
                     (if honorarium > 0 then sprintf " Zusätzlich %d CR bei Ablieferung." honorarium else "") + "</small></p>" +

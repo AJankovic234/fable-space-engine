@@ -67,7 +67,7 @@ test('a large load blocks switching to a smaller ship, and detours retain a navi
   assert.equal(free(cargo),0);
   assert.equal(ships.Active,3);
   assert.ok(valid(cargo.Freight));
-  for(const dest of [0,1,2,3,4,5]) for(let current=0;current<6;current++) {
+  for(const dest of sectors.keys()) for(const current of sectors.keys()) {
     const seen=new Set();
     for(let here=current;here!==dest;here=hop(here,dest)) {
       assert.ok(!seen.has(here)); seen.add(here);
@@ -75,4 +75,16 @@ test('a large load blocks switching to a smaller ship, and detours retain a navi
     }
   }
   assert.equal(act(cargo,1,deliver),172);
+});
+
+test('freight boards at the new ports support both the outward and return legs', () => {
+  for (const [origin, destination] of [[6, 1], [7, 2], [4, 6], [5, 7]]) {
+    const holdToShip = hold(16);
+    assert.equal(act(holdToShip, origin, accept(destination, 8)), 0);
+    const job = holdToShip.Freight;
+    assert.equal(nextGate(origin, job), sectors[destination].Id);
+    assert.equal(act(holdToShip, origin, deliver), undefined);
+    assert.ok(act(holdToShip, destination, deliver) > 0);
+    assert.equal(holdToShip.Freight, undefined);
+  }
 });

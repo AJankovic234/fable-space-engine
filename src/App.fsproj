@@ -71,6 +71,7 @@
     <Compile Include="StartHangar.fs" />
     <Compile Include="FreightUi.fs" />
     <Compile Include="Shop.fs" />
+    <Compile Include="StarMap.fs" />
     <Compile Include="SkillUi.fs" />
     <Compile Include="BlockadeUi.fs" />
     <Compile Include="Bench.fs" />

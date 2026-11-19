@@ -2,7 +2,7 @@
 #open-saves{position:fixed;top:5px;left:50%;transform:translateX(-50%);z-index:5;border:1px solid #345062;background:#0b1b28d9;color:#9bc5d1;font:10px Consolas,monospace;padding:6px 11px;border-radius:4px;cursor:pointer}#save-panel[hidden],#save-panel [hidden]{display:none!important}#save-panel{position:fixed;inset:0;z-index:7;overflow:auto;background:radial-gradient(ellipse at 15% 0%,#183a48,#05101bf7 70%);color:#def1f3;font-family:GameUI,"Segoe UI",sans-serif;backdrop-filter:blur(12px)}.save-shell{max-width:1120px;margin:auto;padding:32px;box-sizing:border-box}.save-header{display:flex;justify-content:space-between;align-items:center;gap:25px}.save-header h1{font-size:34px;margin:0 0 10px}.save-header p:not(.eyebrow),.save-transfer p{color:#8eacbc;font-size:13px;line-height:1.6}.save-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.save-card{padding:22px;border:1px solid #345567;border-radius:9px;background:#0d202ddd}.save-card:first-child{border-color:#59939a}.save-card h2{color:#8ecbd6;font:12px Consolas,monospace;letter-spacing:1px;margin:0 0 14px}.save-card p{font-size:15px;line-height:1.55;min-height:46px;margin:0 0 8px}.save-card small{font:11px Consolas,monospace;color:#8b9da8}.save-actions{display:flex;gap:8px;margin-top:18px}#save-panel button,#save-panel select{border:1px solid #426372;border-radius:5px;padding:11px 13px;background:#17313e;color:#c1e9ed;cursor:pointer;font:10px Consolas,monospace;min-height:39px}#save-panel button:disabled{opacity:.35;cursor:default}#save-panel button:hover:enabled{background:#2b5563}#save-panel button:focus-visible,#save-panel select:focus-visible{outline:2px solid #baffff;outline-offset:3px}#save-notice{min-height:34px;margin:20px 0;color:#e4c389;font:12px/1.6 Consolas,monospace;white-space:pre-wrap}.save-transfer{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:22px;padding:20px;border:1px solid #304b5c;border-radius:8px}.save-transfer>div{width:100%}.save-transfer h2{font-size:18px;margin:0 0 5px}.save-transfer p{margin:0}.save-transfer label{font-size:12px;color:#9ab7c7}.save-footer{display:flex;align-items:center;gap:12px;margin-top:24px;border-top:1px solid #2d4658;padding-top:22px}.save-footer span{margin-right:auto;max-width:420px;font:11px/1.6 Consolas,monospace;color:#839ead}#save-confirm{position:fixed;inset:0;z-index:8;display:grid;place-items:center;background:#020912dc;padding:24px}#save-confirm>div{max-width:480px;padding:30px;border:1px solid #8baeb8;border-radius:10px;background:#142b39;box-shadow:0 24px 70px #0008}#save-confirm p{line-height:1.7;margin:0 0 24px}#save-confirm-yes{margin-left:12px;color:#f8dba6!important;border-color:#a58252!important}@media(max-width:700px){.save-shell{padding:22px 16px}.save-grid{grid-template-columns:1fr}.save-header h1{font-size:26px}.save-footer{flex-wrap:wrap}.save-footer span{width:100%;max-width:none}.save-actions button{flex:1}.save-card{padding:18px}}
 .station-tabs{flex-wrap:wrap}.route-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:22px}.routes-heading{font-size:28px;font-weight:500;margin:8px 0 18px}.route-card{padding:24px;border:1px solid #355467;border-radius:10px;background:linear-gradient(145deg,#17303de0,#081622)}.route-card h2{font-size:22px;font-weight:500;min-height:54px;margin:0 0 20px}.route-value{color:#9fbeca;font-size:14px}.route-value strong{display:block;color:#f4d082;font-size:30px;margin:6px 0}.route-value small{font-size:11px;color:#7899aa}.route-prices{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0 24px}.route-prices span{font:11px Consolas,monospace;color:#7b9dad}.route-prices b{display:block;color:#c3e6e8;margin-top:5px;font-size:13px}.route-card button{display:block;width:100%;border:1px solid #568b98;background:#1d414d;color:#b8f1f1;padding:14px 10px;margin-top:10px;min-height:46px;border-radius:5px;font:10px Consolas,monospace;cursor:pointer}.route-card button[data-escort=false]{background:#152530;border-color:#465667;color:#c5b495}.route-card button:hover:enabled{background:#2b5360}.route-help{font:12px/1.7 Consolas,monospace;color:#89a8b8;margin:24px 0 8px;max-width:950px}
 #hangar [hidden]{display:none!important}
-.station-tabs{display:flex;gap:8px;margin-bottom:20px}.station-tabs button,.cargo-summary button,.market-table button,#next-sector{font:11px Consolas,monospace;border:1px solid #3a5969;border-radius:5px;background:#142936;color:#b5dae5;padding:12px 16px;cursor:pointer}.station-tabs button[aria-pressed=true]{border-color:#69e2e3;background:#20444c;color:#b6ffff}.station-tabs span{margin-left:12px;color:#7fa1b0}#hangar button:disabled{opacity:.4;cursor:default}#hangar button:focus-visible{outline:2px solid #b6ffff;outline-offset:3px}.cargo-summary{display:flex;align-items:center;gap:16px;background:#122733;border:1px solid #2d4c5c;border-radius:8px;padding:18px 22px;margin-bottom:16px}.cargo-summary>div{margin-right:auto;min-width:200px}.cargo-summary .eyebrow{margin-bottom:4px}#cargo-status{font-size:24px;color:#def3f3}#cargo-meter{display:block;margin-top:8px;width:220px;height:5px;border:0;accent-color:#6ad9de}#cargo-meter::-webkit-progress-bar{background:#294251}#cargo-meter::-webkit-progress-value{background:#6ad9de}#sell-all{border-color:#688c6c;color:#bdeec2;background:#213d35}.market-scroll{overflow-x:auto}.market-table{width:100%;border-collapse:collapse;text-align:left;background:#0a1721;border:1px solid #294453;border-radius:8px}.market-table caption{text-align:left;font:11px/1.6 Consolas,monospace;color:#8fa9b9;caption-side:bottom;padding:12px 0}.market-table th,.market-table td{padding:10px 16px;border-bottom:1px solid #243c49}.market-table thead{font:10px Consolas,monospace;letter-spacing:.8px;color:#7f9dad;background:#142a36}.market-table tbody th{font-weight:500}.market-table td{font:13px Consolas,monospace;color:#a8bfc8}.market-table small{display:block;font:10px Consolas,monospace;color:#7e9dab;margin-top:5px}.good-name{display:flex;align-items:center;gap:13px}.good-icon{width:42px;height:42px;flex-shrink:0}.market-table button{min-width:104px;padding:10px 8px;color:#f3cb82}.market-table td:last-child button{color:#94e4c0}.market-table button:hover:enabled,.cargo-summary button:hover:enabled,#next-sector:hover:enabled{background:#28505c}.route-hint{border-left:2px solid #4f9fba;padding:6px 14px;margin:8px 0;font:12px/1.6 Consolas,monospace;color:#94bfce}.departure-actions{display:flex;flex-direction:column;gap:8px;min-width:225px}#next-sector{font-size:10px;color:#a9c6d3;min-height:38px}.hangar-footer>div:first-child{max-width:650px}
+.station-tabs{display:flex;gap:8px;margin-bottom:20px}.station-tabs button,.cargo-summary button,.market-table button,#next-sector{font:11px Consolas,monospace;border:1px solid #3a5969;border-radius:5px;background:#142936;color:#b5dae5;padding:12px 16px;cursor:pointer}.station-tabs button[aria-pressed=true]{border-color:#69e2e3;background:#20444c;color:#b6ffff}.station-tabs span{margin-left:12px;color:#7fa1b0}#hangar button:disabled{opacity:.4;cursor:default}#hangar button:focus-visible{outline:2px solid #b6ffff;outline-offset:3px}.cargo-summary{display:flex;align-items:center;gap:16px;background:#122733;border:1px solid #2d4c5c;border-radius:8px;padding:18px 22px;margin-bottom:16px}.cargo-summary>div{margin-right:auto;min-width:200px}.cargo-summary .eyebrow{margin-bottom:4px}#cargo-status{font-size:24px;color:#def3f3}#cargo-meter{display:block;margin-top:8px;width:220px;height:5px;border:0;accent-color:#6ad9de}#cargo-meter::-webkit-progress-bar{background:#294251}#cargo-meter::-webkit-progress-value{background:#6ad9de}#sell-all{border-color:#688c6c;color:#bdeec2;background:#213d35}.market-scroll{overflow-x:auto}.market-table{width:100%;border-collapse:collapse;text-align:left;background:#0a1721;border:1px solid #294453;border-radius:8px}.market-table caption{text-align:left;font:11px/1.6 Consolas,monospace;color:#8fa9b9;caption-side:bottom;padding:12px 0}.market-table th,.market-table td{padding:10px 16px;border-bottom:1px solid #243c49}.market-table thead{font:10px Consolas,monospace;letter-spacing:.8px;color:#7f9dad;background:#142a36}.market-table tbody th{font-weight:500}.market-table td{font:13px Consolas,monospace;color:#a8bfc8}.market-table small{display:block;font:10px Consolas,monospace;color:#7e9dab;margin-top:5px}.good-name{display:flex;align-items:center;gap:13px}.good-icon{width:42px;height:42px;flex-shrink:0}.market-table button{min-width:104px;padding:10px 8px;color:#f3cb82}.market-table td:last-child button{color:#94e4c0}.trade-cell{display:flex;gap:6px;align-items:center}.market-table .bulk-btn{min-width:40px;padding:10px 6px;font-weight:600}.market-table button:hover:enabled,.cargo-summary button:hover:enabled,#next-sector:hover:enabled{background:#28505c}.route-hint{border-left:2px solid #4f9fba;padding:6px 14px;margin:8px 0;font:12px/1.6 Consolas,monospace;color:#94bfce}.departure-actions{display:flex;flex-direction:column;gap:8px;min-width:225px}#next-sector{font-size:10px;color:#a9c6d3;min-height:38px}.hangar-footer>div:first-child{max-width:650px}
 @media(max-width:800px){.cargo-summary{flex-wrap:wrap;padding:14px}.cargo-summary>div{width:100%}.cargo-summary button{flex:1}.market-table th,.market-table td{padding:8px}.market-table{min-width:620px}.market-table button{min-width:94px}.hangar-footer{gap:16px}.good-name{gap:8px}.good-icon{width:34px;height:34px}}
 #hangar[hidden]{display:none}
 #hangar{position:fixed;inset:0;z-index:4;overflow:auto;background:radial-gradient(ellipse at 20% 20%,#18303edb,transparent 60%),#030912ed;color:#edf5f5;font-family:GameUI,"Segoe UI",sans-serif;backdrop-filter:blur(10px)}
@@ -42,6 +42,76 @@ kbd{font:11px Consolas,monospace;border:1px solid #476373;border-radius:4px;padd
 .port-portrait[data-port="kepler-yard"] { background-position: right center; }
 .port-portrait[data-port="aether-relay"] { background-position: left bottom; }
 .port-portrait[data-port="morgenlicht-bastion"] { background-position: right bottom; }
+.port-portrait[data-port="kaltstrom"], .port-portrait[data-port="wracksaum"] {
+  background-image: url('/assets/frontier-ports.webp');
+  background-size: 200% 100%;
+}
+.port-portrait[data-port="kaltstrom"] { background-position: left center; }
+.port-portrait[data-port="wracksaum"] { background-position: right center; }
+.port-portrait[data-port="schleierpass"] {
+  background: #0a1723 url('/assets/schleierpass.webp') center / cover no-repeat;
+}
+#star-map {
+  box-sizing: border-box;
+  width: min(960px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  border: 1px solid #416575;
+  border-radius: 12px;
+  color: #def1f3;
+  background: #0b1824;
+  font-family: GameUI, "Segoe UI", sans-serif;
+}
+#star-map::backdrop { background: #050b13d9; }
+.star-map-header, .star-map-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.star-map-header h2 { margin: 0; font-size: 25px; }
+#star-map button, #open-star-map {
+  border: 1px solid #426674;
+  border-radius: 5px;
+  background: #142e3e;
+  color: #def1f3;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+#star-map button:focus-visible, #open-star-map:focus-visible { outline: 2px solid #b9ffff; outline-offset: 3px; }
+#star-map button:disabled { opacity: 0.45; cursor: default; }
+.star-map-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(235px, 31%); gap: 14px; margin-top: 16px; }
+.star-map-graph, .star-map-detail { border: 1px solid #234759; border-radius: 8px; overflow: hidden; }
+.star-map-graph {
+  position: relative;
+  min-height: 365px;
+  background: radial-gradient(ellipse at 55% 28%, #173644, #0a1724 76%);
+}
+#star-map-links, #star-map-nodes { position: absolute; inset: 0; width: 100%; height: 100%; }
+#star-map .star-map-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #102935;
+  padding: 6px 7px;
+  font: 600 13px GameUI, "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+#star-map .star-map-node[aria-pressed="true"] { background: #26616b; border-color: #76e3df; }
+#star-map .star-map-node[data-current] { border-color: #f0be73; }
+#star-map .star-map-node[data-freight] { color: #bbf7b5; border-color: #9ee29d; }
+.star-map-node[data-leg]:not([data-leg=""])::before { content: attr(data-leg) " "; color: #c6ecea; }
+#star-map .star-map-node[data-waypoint] { border-style: dashed; border-color: #8de8e3; }
+.star-map-detail { padding: 12px; background: #0e2230; }
+#star-map-portrait { margin: -12px -12px 12px; border-radius: 0; }
+.star-map-detail h3 { margin: 0; font-size: 21px; }
+.star-map-detail p { margin: 7px 0; font-size: 13px; color: #b6d0db; line-height: 1.4; }
+.star-map-detail p:empty { display: none; }
+.star-map-detail .star-map-route { color: #a9fbef; }
+.star-map-stop { display: grid; gap: 4px; margin: 9px 0; font-size: 13px; color: #b6d0db; }
+#star-map-stop { min-width: 0; padding: 6px; color: #def1f3; background: #142e3e; border: 1px solid #426674; border-radius: 5px; }
+.star-map-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 12px; }
+@media (max-width: 640px) {
+  #star-map { padding: 12px; }
+  .star-map-body { grid-template-columns: 1fr; }
+  .star-map-graph { min-height: 290px; }
+  #star-map .star-map-node { font-size: 11px; padding: 5px 4px; }
+  #star-map-portrait { float: right; margin: 0 0 8px 10px; width: min(36%, 160px); border-radius: 4px; }
+}
 .route-card h2 { min-height: 0; }
 .route-net { display: block; margin-top: 5px; color: #dbefed; font-size: 14px; }
 .route-net.loss { color: #ffc292; }

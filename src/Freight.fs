@@ -8,7 +8,9 @@ type FreightAction = AcceptLoad of destination: int * tonnes: int | DeliverLoad 
 module Freight =
     let sizes = [| 8; 24 |]
     let portName port = Universe.sectors.[port].Outpost.Name
-    let private consignments = [| "Bohrkronen"; "Filterpatronen"; "Transponderteile"; "Werftwerkzeug"; "Messsonden"; "Ersatzpumpen" |]
+    let private consignments =
+        [| "Bohrkronen"; "Filterpatronen"; "Transponderteile"; "Werftwerkzeug"; "Messsonden"; "Ersatzpumpen"
+           "Kälteschutzventile"; "Magnetkupplungen"; "Kalibrierkassetten" |]
     let goods origin = consignments.[origin]
 
     let private riskPremium = [| 0; 0; 28; 50; 70 |]

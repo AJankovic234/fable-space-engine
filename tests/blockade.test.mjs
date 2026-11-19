@@ -164,7 +164,7 @@ test('old runs can initialise once and malformed strategic states cannot be impo
   begin(state, ports);
   for (const patch of [
     {Started: 'yes'}, {Lifted: true}, {Permit: 0.5}, {BuildKind: 3, BuildPort: drift, BuildLegs: 1},
-    {BuildKind: 0, BuildPort: 0}, {Deliveries: 1}, {TransportPort: 6}, {EscortPort: 0},
+    {BuildKind: 0, BuildPort: 0}, {Deliveries: 1}, {TransportPort: ports.length}, {EscortPort: 0},
     {Started: false, BomberReady: true}, {BuildKind: 3, BuildPort: helios, BuildLegs: 1, BomberReady: true},
   ]) assert.equal(valid({...state, ...patch}), false);
 });

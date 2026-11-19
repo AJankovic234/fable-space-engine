@@ -145,7 +145,7 @@ module CombatLights =
 
     /// Muendungsfeuer eines Gegners: ein Licht zwischen den Rohren in der Boltfarbe der Rolle.
     let muzzle (lights: Lights) (left: Vec3) (right: Vec3) (muzzleSize: float) (role: int) =
-        let style = CombatVfx.boltStyles.[CombatVfx.StyleEnemy + System.Math.Max(0, System.Math.Min(4, role))]
+        let style = CombatVfx.boltStyles.[CombatVfx.boltStyleId CombatVfx.OwnerEnemySlot false false false role]
         let p = (left + right) * 0.5
         Lights.addPoint lights p.X p.Y p.Z (4.0 + muzzleSize * 9.0) style.R style.G style.B 0.8
 

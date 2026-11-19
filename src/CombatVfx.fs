@@ -66,7 +66,7 @@ module CombatVfx =
     [<Literal>]
     let StyleBattery = 4
 
-    /// StyleEnemy + Rolle (0 Drohne .. 4 Kommandoschiff).
+    /// StyleEnemy + Rolle (0 Drohne .. 5 Sperrjaeger).
     [<Literal>]
     let StyleEnemy = 5
 
@@ -98,7 +98,8 @@ module CombatVfx =
            style 1.90 0.30 0.16 0.42 16.0 1.5 1.8 // Spaeher
            style 1.95 0.14 0.08 0.80 15.0 2.2 2.8 // Kanonenboot
            style 1.90 0.16 0.85 1.20 11.0 3.0 3.6 // Bomber
-           style 2.00 0.95 0.22 1.00 20.0 2.8 3.6 |] // Kommandoschiff
+           style 2.00 0.95 0.22 1.00 20.0 2.8 3.6 // Kommandoschiff
+           style 2.10 1.35 0.24 0.78 12.0 2.4 3.3 |] // Sperrjaeger
 
     /// Stil eines Bolts. `role` ist die Rolle des feuernden Gegners oder -1.
     let boltStyleId (owner: int) (playerTeam: bool) (overdrive: bool) (focus: bool) (role: int) : int =
@@ -109,7 +110,7 @@ module CombatVfx =
             elif focus then StyleFocus
             else StylePlayer
         else
-            StyleEnemy + Math.Max(0, Math.Min(4, role))
+            StyleEnemy + Math.Max(0, Math.Min(boltStyles.Length - StyleEnemy - 1, role))
 
     /// Dauer des Muendungsblitzes in Sekunden.
     [<Literal>]
