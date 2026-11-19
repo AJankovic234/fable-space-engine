@@ -6,10 +6,10 @@ open System
 module LandmarkMeshes =
     let private tau = 2.0 * Math.PI
     let private polar a r z = Vec3(r * cos a, r * sin a, z)
-    let private graphite = MeshColor.rgb 0.085 0.12 0.16
-    let private steel = MeshColor.rgb 0.28 0.35 0.385
-    let private ceramic = MeshColor.rgb 0.66 0.73 0.72
-    let private copper = MeshColor.rgb 0.80 0.39 0.13
+    let private graphite = MeshColor.rgb 0.045 0.06 0.08
+    let private steel = MeshColor.rgb 0.125 0.155 0.175
+    let private ceramic = MeshColor.rgb 0.33 0.36 0.36
+    let private copper = MeshColor.rgb 0.42 0.20 0.07
     let private ion = MeshColor.glow 0.23 0.88 1.0 0.93
     let private lamp = MeshColor.glow 1.0 0.45 0.09 0.94
 

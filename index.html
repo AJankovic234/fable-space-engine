@@ -271,7 +271,7 @@
     <section id="hangar" hidden aria-label="Handelsstation und Ausrüstung">
       <div class="hangar-shell">
         <header class="hangar-header">
-          <div class="port-title"><p class="eyebrow">HANDELSSTATION</p><h1 id="shop-heading">Stationsmarkt</h1></div>
+          <div class="port-title"><h1 id="shop-heading">Stationsmarkt</h1><p id="port-bulletin"></p></div>
           <div class="wallet"><span>GUTHABEN</span><strong id="shop-credits">0 CR</strong></div>
         </header>
         <section id="dock-contact" hidden aria-labelledby="contact-name">
@@ -332,8 +332,9 @@
         <section id="research-panel" hidden aria-label="Bord-Labor und Forschungsbaum">
           <article class="research-lab-card">
             <img class="research-lab-photo" src="/assets/research/rt9-labor.webp" alt="Am Fenster von Relais Theta fädelt eine Hand das Magnetband in den RT-9-Leser ein." loading="lazy" decoding="async" width="960" height="640">
+            <img class="research-lab-photo research-onboard-photo" src="/assets/research/rt9-an-bord.webp" alt="Hinter der Bordverkleidung läuft der Bandleser. Am Einschub hängt eine aufgebrochene rote Plombe." loading="lazy" decoding="async" width="900" height="600">
             <div class="research-lab-copy">
-              <p class="eyebrow">ANALOG-KANAL · DR. MARA LIND · RELAIS THETA</p>
+              <p class="eyebrow" id="research-channel"></p>
               <h2>RT-9 Bord-Labor</h2>
               <p id="research-status" role="status"></p>
               <div id="research-lab-installation">
@@ -434,15 +435,20 @@
       <div class="intro-bar intro-bar-top" aria-hidden="true">
         <span>SPACE 2601AE · <span id="intro-timecode">00:00:00 · REC</span></span>
         <span id="intro-status" class="intro-status">RT-9 · ARCHIV</span>
-        <span class="intro-audio-meta"><canvas id="intro-wave" width="112" height="18"></canvas><span class="intro-track">♪ NO REST IN THE BELT</span></span>
+        <span class="intro-audio-meta"><canvas id="intro-wave" width="112" height="18"></canvas><span class="intro-track">♪ DRUMS OF THE OUTER BELT</span></span>
       </div>
       <div class="intro-stage">
         <div id="intro-subject-wrap" hidden><img id="intro-subject" alt="" /></div>
         <div id="intro-card" hidden>
+          <span id="intro-stamp" hidden></span>
           <p id="intro-kicker"></p>
           <h2 id="intro-title"></h2>
           <p id="intro-tagline"></p>
-          <button id="intro-play-cta" type="button" hidden>Ins Cockpit ↵</button>
+          <span id="intro-onair" hidden><i></i>FUNK AKTIV</span>
+          <div class="intro-cta-row">
+            <button id="intro-play-cta" type="button" hidden>Ins Cockpit ↵</button>
+            <button id="intro-replay" type="button" hidden>Nochmal ↺</button>
+          </div>
         </div>
         <div id="intro-caption" hidden>
           <p class="intro-cap-kicker"></p>
@@ -476,6 +482,7 @@
     </template>
     <script defer src="/pilot-profile.js"></script>
     <script defer src="/intro-film.js"></script>
+    <script defer src="/token-info.js"></script>
     <script type="module" src="/build/Main.js"></script>
   </body>
 </html>

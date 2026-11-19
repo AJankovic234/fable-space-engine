@@ -82,17 +82,17 @@ The subtotal covers the measured entries below. Historical coverage starts with 
 | Model | Recorded tokens | Entries awaiting counts |
 | --- | ---: | ---: |
 | Claude Fable 5.2 | 212,339,680 | 2 |
-| Claude Haiku 5.5 | 5,482 | 0 |
+| Claude Haiku 5.5 | 178,692 | 0 |
 | Claude Sonnet 5.5 | 6,799,501 | 3 |
-| OpenAI GPT-6.2 Astra | 143,928,730 | 0 |
+| OpenAI GPT-6.2 Astra | 161,400,676 | 0 |
 | Gemini 3.8 Flash | Open | 1 |
 | Gemini (version unreported) | Open | 1 |
-| Claude Opus 5.5 | 276,055,046 | 0 |
+| Claude Opus 5.5 | 286,916,030 | 0 |
 | Gemini 4 Neon | Open | 17 |
 | OpenAI GPT-6.2 Sol | 78,732,559 | 0 |
 | Gemini 4 Hydrogen | Open | 1 |
-| OpenAI ImageGen (version unreported) | Open | 1 |
-| **Project · measured subtotal** | **717,860,998** | **26** |
+| OpenAI ImageGen (version unreported) | Open | 2 |
+| **Project · measured subtotal** | **746,367,138** | **27** |
 <!-- /ai-benchmark:totals -->
 
 ### Change log
@@ -194,41 +194,81 @@ Use the provider's total for the task. For cumulative counters, take the differe
 | 2026-11-19 | OpenAI GPT-6.2 Astra | Start hull selection and shipyard purchases in both flight modes, fleet save compatibility and browser purchase/reload checks (interim 17:23:37 UTC). | 2,993,840 | Codex turn 01a1f4ce-0a0b |
 | 2026-11-19 | Claude Fable 5.2 | Reworked the research tree around the 2601 AE lore: renamed all 15 nodes with a source and a band fragment that becomes readable on install, cross-branch prerequisites for the three apex nodes, archive finds as apex seals, breakthroughs bound to their home dock, research panel states and tests. | Open | Claude Code · research tree lore pass |
 | 2026-11-19 | Gemini 4 Hydrogen | Added contextual faction radio chatter (including two-ship AETHER derogatory L/R stereo exchanges, civilian, Grey Watch and pirate lines), clean/analog radio filter profiles, in-flight HUD radio ticker, StoryRadio beat 18..29 audio slots in Sound.fs, and unit tests. | Open | Antigravity · 0140bd25 |
-| 2026-11-19 | OpenAI GPT-6.2 Astra | Art direction and integration for the RT-9 lab and 15 research illustrations, responsive design and in-game verification of installation and unlocks (interim 17:45:58 UTC). | 1,202,244 | Codex turn 01a1f4e4-62cf |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Art direction and integration for the RT-9 lab and 15 research illustrations, responsive design and in-game verification of installation and unlocks. | 1,365,179 | Codex turn 01a1f4e4-62cf |
 | 2026-11-19 | OpenAI ImageGen (version unreported) | Generated the research relay tape-reader scene and a 15-cell research equipment atlas. | Open | ImageGen via Codex turn 01a1f4e4-62cf |
-| 2026-11-19 | Gemini 4 Neon | Wired chatter_16..27 audio slots and three additional AETHER/faction exchanges; applied corporate-cynic English ship names and callsigns (AETHER Grace Period, AETHER Tariff VII, AUDIT/CLAIM/ESCROW/PREMIUM/ACTUARY/LIEN/UNDERWRITER, Tug Deadweight, Hauler Cold Iron, Clipper Null-Sign), renamed sector 6 to Sperrzone Morgenlicht across code and lore docs, and overhauled the intro movie (10-scene escalating trailer arc with Voss, combat montage, AETHER warhorn drop, dynamic 114 BPM music phases, real game SFX cues, scene-aware canvas VFX, and 4 dynamic 3D camera shots with whip-in freeze-frame and banking). | Open | Antigravity · 0140bd25-b |
+| 2026-11-19 | Gemini 4 Neon | Wired faction_00..27 audio slots and three additional AETHER/faction exchanges; applied corporate-cynic English ship names and callsigns (AETHER Grace Period, AETHER Tariff VII, AUDIT/CLAIM/ESCROW/PREMIUM/ACTUARY/LIEN/UNDERWRITER, Tug Deadweight, Hauler Cold Iron, Clipper Null-Sign), renamed sector 6 to Sperrzone Morgenlicht across code and lore docs, overhauled and polished the intro movie (10-scene escalating trailer with Voss, alternating left/right character layouts, Borderlands rubber-stamp badges, ON-AIR radio LED, hit-stop combat montage, AETHER warhorn & brass braam drop, driving 122 BPM instrumental Nordic war-drum/frame-drum/Tagelharpa/Kravik-lyre WebAudio score, live 3D WebGL camera jolt/shake, warm cinema narrator bus, smooth finale hold with Replay + Cockpit CTA), added matching dual-mode in-game Nordic instrumental soundtrack in Sound.fs (86 BPM calm drift crossfading into 124 BPM war-drum/Tagelharpa combat score with radio ducking and sector Dorian key shifts), and generated 45 German neural MP3 voiceovers via edge-tts with reusable tools/generate-voices.py. | Open | Antigravity · 0140bd25-b |
 | 2026-11-19 | Claude Fable 5.2 | Dystopian art pass on the ship models: weathered palettes, per-plate wear with primer and bare replacement plates, soot towards the stern, rust and oil runs, blacked-out canopies and a struck SIN registration barcode on the four player hulls; cold platinum AETHER frigate and corvette with red scanners; grimy tug, liner and port launch; night-dock lighting for the shipyard cards, re-rendered cards and documentation images, and tests that guard the look. | Open | Claude Code · ship model art pass |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Integrated rim dock interiors and bulletins, clandestine onboard lab and research availability, model gallery, fleet inspection optics and restored dock-time shipyard refresh. Checked remote main, tests and browser flows. | 5,959,495 | Codex turn 01a1f55b-e4b7 |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Modelled five hull-specific inspection and repair details, rendered shipyard cards from the game meshes and synchronized the Eisvogel Blender scene. | 1,846,435 | Codex worker turn 01a1f55c-a7e7 |
+| 2026-11-19 | OpenAI ImageGen (version unreported) | Generated three rim-port interiors and the installed RT-9 aboard the player ship. | Open | ImageGen via Codex turn 01a1f55b-e4b7 |
+| 2026-11-19 | Claude Opus 5.5 | Token accounting fix and in-game token info: the cost ledger subtracted Gemini cache reads a second time from input that already excludes them, dropped Gemini steps without a model label and counted session work from before the project start; Claude and Codex counts verified (no duplicate requests, reasoning inside output). The ledger now totals tokens, effective cost and Ø cost per 1M tokens per AI and model, writes `public/token-info.json`, and a new **ⓘ KI-Token & Kosten** button in the main menu shows them per AI; shell-write heuristic no longer mistakes `=>` for a redirect; recount logged as its own ledger entry; tests (interim 20:16 UTC). | 10,860,984 | Claude Code · token info panel |
+| 2026-11-19 | Claude Haiku 5.5 | Cost ledger entry with the previous counting, recorded right before the token recount (delegated by Opus). | 173,210 | Claude Code · ledger entry before recount |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Integrated clock-driven AETHER seizures of civilian shift ferries, boarding bridge, registry transfer, scoped broadcasts and shipping-lane clearance. Added regression tests, captured a gameplay clip and verified the encounter in Chromium (interim 20:25:36 UTC). | 9,203,408 | Codex turn 01a1f56e-244e |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Remodelled the AETHER frigate and escort corvette with an open command crown, sensor iris, flank insignia, sickle wings and scanner pods. | 299,673 | Codex worker turn 01a1f56e-81c3 |
 <!-- /ai-benchmark:changes -->
 
 <!-- kostenbuch:start -->
 ### Effective cost & agent time (estimated)
 
-*Who did what, where, and what it effectively cost. **Effective cost** = the tokens each model used, priced at public **API list prices** (USD); the subscriptions actually paid (Claude, ChatGPT/Codex, Gemini) are not deducted. Read from the local session logs of Claude Code, Codex and Gemini (Antigravity). Agent time = the agents working, credited to each session's main model; idle = waiting for user input (gaps over 120 min count as breaks). Rough estimates, not an invoice; the change log above stays the measured token record. Maintained by the `kostenbuch` Haiku agent (`tools/kostenbuch/`), last update 2026-11-19 19:07 (UTC+1).*
+*Who did what, where, and what it effectively cost. **Effective cost** = the tokens each model used, priced at public **API list prices** (USD); the subscriptions actually paid (Claude, ChatGPT/Codex, Gemini) are not deducted. **Tokens** = input (new, cache reads and cache writes) + output (including reasoning), counted as in the change log; **Ø per 1M** = effective cost ÷ tokens, an average over all token kinds (far below the input list price because most input is read from the prompt cache). Read from the local session logs of Claude Code, Codex and Gemini (Antigravity) from the project start on. Agent time = the agents working, credited to each session's main model; idle = waiting for user input (gaps over 120 min count as breaks). Rough estimates, not an invoice; the change log above stays the measured token record. The **ⓘ KI-Token & Kosten** button in the game's main menu shows the same figures (`public/token-info.json`). Maintained by the `kostenbuch` Haiku agent (`tools/kostenbuch/`), last update 2026-11-19 21:26 (UTC+1).*
 
-**Total effective cost: $539 (≈ 489 €)** · agent working time 38 h 46 min (wall clock 21 h 18 min) · idle 25 h 12 min
+**Total effective cost: $585 (≈ 531 €)** for 1.26 B tokens (Ø $0.46 per 1M) · agent working time 40 h 49 min (wall clock 22 h 28 min) · idle 27 h 08 min
+
+| AI | Models | Tokens | Token share | Effective cost | Cost share | Ø per 1M tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Claude (Anthropic) | 4 | 631.6 M | 50 % | $290 | 50 % | $0.46 |
+| GPT (OpenAI) | 4 | 410.2 M | 33 % | $241 | 41 % | $0.59 |
+| Gemini (Google) | 3 | 218.1 M | 17 % | $54 | 9 % | $0.25 |
 
 | Tool | Sessions | Effective cost | Agent time | Wall clock | Idle |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Claude Code | 45 | $266 | 16 h 19 min | 11 h 09 min | 2 h 52 min |
-| Codex | 38 | $230 | 18 h 36 min | 14 h 44 min | 9 h 15 min |
-| Gemini | 14 | $43 | 3 h 51 min | 3 h 45 min | 13 h 06 min |
+| Claude Code | 52 | $290 | 17 h 42 min | 12 h 28 min | 2 h 52 min |
+| Codex | 40 | $241 | 19 h 21 min | 15 h 21 min | 9 h 15 min |
+| Gemini | 14 | $54 | 3 h 47 min | 3 h 41 min | 15 h 01 min |
 
-| Model | Tool | Requests | Input tokens | Output tokens | Effective cost | Agent time | Main files written |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| GPT-6.2 Astra | Codex | 2,174 | 266.8 M (262.5 M cached) | 976 k | $178 | 16 h 55 min | `Main.fs`, `PhysicsAndPool.fs`, `App.fsproj` |
-| Claude Fable 5.2 | Claude Code | 776 | 267.0 M (263.1 M cached) | 1.3 M | $163 | 10 h 20 min | `Main.fs`, `index.html`, `GAMEPLAY.md` |
-| Claude Opus 5.5 | Claude Code | 967 | 281.2 M (278.1 M cached) | 1.1 M | $97 | 5 h 39 min | `App.fsproj`, `Main.fs`, `PhysicsAndPool.fs` |
-| GPT-6 Astra | Codex | 312 | 37.3 M (36.7 M cached) | 271 k | $38 | 55 min | `ProceduralMeshes.fs`, `flight-assist.test.mjs`, `App.fsproj` |
-| Gemini 4 Hydrogen | Gemini | 580 | 137.8 M (130.9 M cached) | 537 k | $24 | 1 h 34 min | `Sound.fs`, `Main.fs`, `HUD.fs` |
-| Gemini 4 Neon | Gemini | 232 | 57.4 M (55.5 M cached) | 247 k | $18 | 2 h 03 min | `README.md`, `Main.fs`, `hangar.css` |
-| GPT-6.2 Sol | Codex | 401 | 86.0 M (84.8 M cached) | 187 k | $13 | 46 min | `App.fsproj`, `Main.fs`, `HUD.fs` |
-| Claude Sonnet 5.5 | Claude Code | 31 | 14.7 M (13.9 M cached) | 63 k | $5.30 | 0 min | `Main.fs`, `Spiel-starten.bat`, `docker-compose.yml` |
-| Gemini 4 Argon | Gemini | 32 | 4.6 M (4.3 M cached) | 38 k | $1.36 | 14 min | `index.html`, `Main.fs`, `HUD.fs` |
-| Claude Haiku 5.5 | Claude Code | 121 | 3.1 M (2.2 M cached) | 208 k | $0.58 | 19 min | `kostenbuch.mjs` |
-| GPT-6.1 Sol | Codex | 7 | 829 k (719 k cached) | 5 k | $0.34 | 0 min | – |
+| Model | Tool | Requests | Input tokens | Output tokens | Total tokens | Effective cost | Ø per 1M | Agent time | Main files written |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| GPT-6.2 Astra | Codex | 2,306 | 284.5 M (280.0 M cached) | 1.0 M | 285.6 M | $190 | $0.67 | 17 h 39 min | `Main.fs`, `game-save.test.mjs`, `PhysicsAndPool.fs` |
+| Claude Fable 5.2 | Claude Code | 863 | 313.5 M (309.3 M cached) | 1.5 M | 314.9 M | $180 | $0.57 | 11 h 15 min | `Main.fs`, `GAMEPLAY.md`, `index.html` |
+| Claude Opus 5.5 | Claude Code | 1,044 | 294.2 M (290.9 M cached) | 1.2 M | 295.4 M | $103 | $0.35 | 6 h 04 min | `App.fsproj`, `Main.fs`, `PhysicsAndPool.fs` |
+| GPT-6 Astra | Codex | 312 | 37.3 M (36.7 M cached) | 271 k | 37.6 M | $38 | $1.02 | 55 min | `ProceduralMeshes.fs`, `flight-assist.test.mjs`, `App.fsproj` |
+| Gemini 4 Hydrogen | Gemini | 582 | 140.9 M (132.0 M cached) | 545 k | 141.5 M | $27 | $0.19 | 1 h 13 min | `Sound.fs`, `Main.fs`, `HUD.fs` |
+| Gemini 4 Neon | Gemini | 276 | 71.5 M (68.3 M cached) | 312 k | 71.8 M | $24 | $0.34 | 2 h 20 min | `README.md`, `index.html`, `hangar.css` |
+| GPT-6.2 Sol | Codex | 401 | 86.0 M (84.8 M cached) | 187 k | 86.2 M | $13 | $0.15 | 46 min | `App.fsproj`, `Main.fs`, `GAMEPLAY.md` |
+| Claude Sonnet 5.5 | Claude Code | 40 | 16.4 M (15.4 M cached) | 67 k | 16.5 M | $6.17 | $0.37 | 0 min | `index.html`, `Spiel-starten.bat`, `KOSTEN.md` |
+| Gemini 4 Argon | Gemini | 32 | 4.8 M (4.3 M cached) | 38 k | 4.8 M | $1.66 | $0.34 | 14 min | `index.html`, `Main.fs`, `HUD.fs` |
+| Claude Haiku 5.5 | Claude Code | 153 | 4.5 M (3.2 M cached) | 258 k | 4.7 M | $0.80 | $0.17 | 23 min | – |
+| GPT-6.1 Sol | Codex | 7 | 829 k (719 k cached) | 5 k | 834 k | $0.34 | $0.41 | 0 min | – |
 
 **Who did what, where** (latest entries)
 
+- **2026-11-19 21:26 (UTC+1)** · Sound engine, main menu, gameplay notes and captured media changed since last entry.
+  - **GPT-6.2 Astra** (Codex) +$0.96
+  - **Gemini 4 Neon** (Gemini) +$0.70 — Sample-based sound engine: radio, ambience and capital-ship cues · `Sound.fs`
+  - **Claude Sonnet 5.5** (Claude Code) +$0.09 — Main menu markup: audio mixer, graphics and ship emblem settings · `index.html`
+  - **Claude Haiku 5.5** (Claude Code) +$0.04
+- **2026-11-19 21:24 (UTC+1)** · AETHER gate seizure encounter, traffic lanes, engine trails, intro film music, tests.
+  - **GPT-6.2 Astra** (Codex) +$2.64 — AETHER ferry seizure encounter at two gates, traffic lanes, engine trails, tests · `Seizure.fs`, `GAMEPLAY.md`, `README.md`, `Traffic.fs` +6
+  - **Gemini 4 Neon** (Gemini) +$0.68 — Intro film scenes and procedural war-drum soundtrack · `README.md`, `intro-film.js`
+  - **Claude Sonnet 5.5** (Claude Code) +$0.77
+  - **Claude Haiku 5.5** (Claude Code) +$0.14
+- **2026-11-19 21:16 (UTC+1)** · Civilian and AETHER ship meshes, a seizure encounter timetable, and a main-menu token dialog.
+  - **GPT-6.2 Astra** (Codex) +$1.98 — Civilian tug and liner meshes, AETHER warship details, seizure encounter timing. · `AetherTrafficMeshes.fs`, `CivilTrafficMeshes.fs`, `App.fsproj`, `Seizure.fs`
+  - **Claude Opus 5.5** (Claude Code) +$2.62 — Main-menu token and cost dialog with styles, tests, and ledger updates. · `README.md`, `MEMORY.md`, `index.html`, `token-info.test.mjs` +3
+  - **Gemini 4 Neon** (Gemini) +$0.06
+  - **Claude Haiku 5.5** (Claude Code) +$0.02
+- **2026-11-19 21:10 (UTC+1)** · Token recount: Gemini input was undercounted (cache subtracted twice, steps without a model label skipped); tokens are now totalled per AI.
+  - **GPT-6.2 Astra** (Codex) +$0.45
+  - **Claude Opus 5.5** (Claude Code) +$1.13 — Token accounting fix, per-AI token totals and in-game token info panel · `kostenbuch.mjs`, `token-info.js`
+  - **Gemini 4 Hydrogen** (Gemini) +$3.28 — Recount only: uncached input and unlabelled steps now counted
+  - **Gemini 4 Neon** (Gemini) +$2.82 — Recount only: uncached input tokens now counted
+  - **Gemini 4 Argon** (Gemini) +$0.30 — Recount only: uncached input tokens now counted
+- **2026-11-19 21:07 (UTC+1)** · Helios blockade, start hangar, sky and mesh rendering, radio voiceovers, intro film, and benchmark tooling.
+  - **GPT-6.2 Astra** (Codex) +$5.58 — Helios blockade clearance and commissions, start hangar, ship catalog tests · `blockade.test.mjs`, `Main.fs`, `ResearchUi.fs`, `GAMEPLAY.md` +8
+  - **Claude Fable 5.2** (Claude Code) +$17 — Sky backdrop, wreck fields, landmark and station mesh updates, benchmark totals · `kostenbuch.mjs`, `LandmarkMeshes.fs`, `GAMEPLAY.md`, `StationMeshes.fs` +8
+  - **Claude Opus 5.5** (Claude Code) +$2.11 — Start page markup and inline styles, package scripts · `index.html`, `kostenbuch.mjs`, `package.json`
+  - **Gemini 4 Neon** (Gemini) +$2.49 — Radio voiceovers, intro film, sound engine, story radio and hangar styling · `README.md`, `hangar.css`, `Main.fs`, `index.html` +4
+  - **Claude Haiku 5.5** (Claude Code) +$0.01 — Cost ledger script maintenance · `kostenbuch.mjs`
 - **2026-11-19 19:07 (UTC+1)** · Save games, starter ships, story radio, research and cruiser sorties changed since last entry.
   - **GPT-6.2 Astra** (Codex) +$1.50 — Save game storage, save UI, graphics settings and tests · `index.html`, `hangar.css`, `README.md`, `rt9-am-relais.webp` +8
   - **Claude Fable 5.2** (Claude Code) +$14 — Starter ship art, start hangar, traffic and mesh tests, benchmark tooling · `README.md`, `benchmark-totals.mjs`, `kostenbuch.mjs`, `Main.fs` +8
@@ -246,33 +286,6 @@ Use the provider's total for the task. For cumulative counters, take the differe
   - **GPT-6.2 Astra** (Codex) +$2.89 — Trade terms, sector gates, input controls and start-ship selection. · `Main.fs`, `index.html`, `GAMEPLAY.md`, `hangar.css` +8
   - **Gemini 4 Neon** (Gemini) +$1.43 — Research lab and tech tree, turret and mission loadout changes. · `research.test.mjs`, `README.md`, `Main.fs`, `Shop.fs` +8
   - **Claude Haiku 5.5** (Claude Code) +$0.02
-- **2026-11-19 18:11 (UTC+1)** · Freight trading, pilot skills, wreck salvage, turrets, shipyard UI and ship art changed.
-  - **GPT-6.2 Astra** (Codex) +$13 — Freight trading and cargo logic, start hangar, camera, ship card tool · `PlayerMeshes.fs`, `GAMEPLAY.md`, `render-ship-card.py`, `${n}.webp` +8
-  - **Claude Fable 5.2** (Claude Code) +$8.29 — Wreck salvage sites, pilot skills, story radio, dock contact, benchmark totals · `README.md`, `benchmark-totals.mjs`, `GAMEPLAY.md`, `WreckFields.fs` +8
-  - **Gemini 4 Neon** (Gemini) +$2.70 — Turret, economy and mission logic, shipyard and shop UI, HUD · `README.md`, `economy-turret.test.mjs`, `shipyard.test.mjs`, `Main.fs` +8
-  - **Claude Haiku 5.5** (Claude Code) +$0.01 — Cost ledger script changes · `kostenbuch.mjs`
-- **2026-11-19 17:04 (UTC+1)** · Since the last entry: freight missions, wreck salvage, auto-turret, boss escorts, sky lighting, and tests.
-  - **GPT-6.2 Astra** (Codex) +$0.99 — Procedural ship and capital meshes, boss escort encounters, input and flight-assist tests · `ProceduralMeshes.fs`, `Encounters.fs`, `SovereignMeshes.fs`, `EnemyMeshes.fs` +8
-  - **Claude Fable 5.2** (Claude Code) +$4.86 — Freight delivery missions, sky lighting and backdrop, hangar styling, benchmark tooling · `README.md`, `benchmark-totals.mjs`, `GAMEPLAY.md`, `hangar.css` +7
-  - **GPT-6.2 Sol** (Codex) +$2.24 — Wreck salvage fields, auto-turret, star map, collision, and save tests · `game-save.test.mjs`, `wreck-fields.test.mjs`, `Main.fs`, `WreckFields.fs` +8
-  - **Claude Haiku 5.5** (Claude Code) +$0.03
-- **2026-11-19 16:49 (UTC+1)** · Trade routes, combat balance, flight assist, save migration, shop pricing, renderer quality and HUD.
-  - **GPT-6.2 Astra** (Codex) +$0.00 — Flight assist, input controls, HUD marker layout and save validation · `hud-layout.test.mjs`, `Main.fs`, `GameSave.fs`, `game-save.test.mjs` +3
-  - **Claude Fable 5.2** (Claude Code) +$3.68 — Renderer quality switching, sky lighting, jump gate meshes, benchmark tooling · `Universe.fs`, `StarMap.fs`, `README.md`, `benchmark-totals.mjs` +3
-  - **Gemini 4 Neon** (Gemini) +$2.23 — Shop pricing, turret and missile systems, market trade balance · `README.md`, `economy-turret.test.mjs`, `universe-trade.test.mjs`, `Main.fs` +5
-  - **GPT-6.2 Sol** (Codex) +$2.71 — Trade routes, combat balance, boss phases, enemy models and explosion effects · `hangar.css`, `trade-routes.test.mjs`, `game-save.test.mjs`, `combat.test.mjs` +8
-  - **Claude Haiku 5.5** (Claude Code) +$0.07 — Cost ledger script: per-model cost, time and file attribution · `kostenbuch.mjs`
-- **2026-11-19 16:31 (UTC+1)** · Since the last entry: trade routes, star map, salvage, turret economy, graphics tiers and HUD labels changed.
-  - **GPT-6.2 Astra** (Codex) +$0.00 — HUD label placement tests, save-game fields and flight input handling · `hud-layout.test.mjs`, `Main.fs`, `GameSave.fs`, `game-save.test.mjs` +3
-  - **Claude Fable 5.2** (Claude Code) +$12 — Adaptive graphics tiers, sector sky bodies at screen resolution, benchmark tooling · `README.md`, `GAMEPLAY.md`, `benchmark-totals.mjs`, `SkyBackdrop.fs` +4
-  - **Gemini 4 Neon** (Gemini) +$0.67 — Wreck salvage loot, turret purchase, repair costs and shop UI · `README.md`, `HUD.fs`, `salvage.test.mjs`, `economy-turret.test.mjs` +7
-  - **GPT-6.2 Sol** (Codex) +$5.22 — Star map, trade route planning, station collision tests and expansion plan · `hangar.css`, `README.md`, `AUSBAU_PLAN.md`, `Shop.fs` +8
-  - **Claude Haiku 5.5** (Claude Code) +$0.01
-- **2026-11-19 16:01 (UTC+1)** · Save-game validation, trade routes, freight UI, GPU particles, sky backdrop, graphics quality and ledger script changed.
-  - **GPT-6.2 Astra** (Codex) +$14 — Save-game validation, trade route escorts, freight UI and HUD tests. · `hud-layout.test.mjs`, `Main.fs`, `GameSave.fs`, `game-save.test.mjs` +8
-  - **Claude Opus 5.5** (Claude Code) +$34 — GPU particle system, sky backdrop baking, graphics quality settings and lighting. · `README.md`, `benchmark-totals.mjs`, `GraphicsSettings.fs`, `GraphicsQuality.fs` +8
-  - **Gemini 4 Neon** (Gemini) +$0.61
-  - **Claude Haiku 5.5** (Claude Code) +$0.01 — Cost ledger script changes. · `kostenbuch.mjs`
 
 <sub>Prices per 1M tokens and sources: `tools/kostenbuch/preise.json`. Agent time sums parallel agents; wall clock counts overlapping work once. Files are attributed from each tool's edit calls (shell edits by heuristic).</sub>
 <!-- kostenbuch:end -->

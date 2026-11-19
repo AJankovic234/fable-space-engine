@@ -92,12 +92,13 @@ void main() {
     float band = exp(-offset * offset);
     float cloud = fbm(d * 8.0 + warp * 2.5);
     float wisps = fbm(d * 22.0 + cloud * 3.0);
-    float dust = smoothstep(0.40, 0.68, fbm(d * 13.0 + vec3(3,7,1)));
-    vec3 color = vec3(0.003, 0.006, 0.017);
-    vec3 nebula = mix(vec3(0.13,0.035,0.18), vec3(0.025,0.22,0.27), smoothstep(-0.7,0.7,d.x));
-    color += nebula * band * (0.15 + cloud * cloud * 1.5) * (0.48 + wisps);
-    color *= 1.0 - dust * band * 0.85;
-    color += vec3(0.08,0.13,0.20) * pow(wisps, 4.0) * band;
+    // Ash rather than aurora: the band is dimmer, half drained of colour and cut by wider dust lanes.
+    float dust = smoothstep(0.34, 0.62, fbm(d * 13.0 + vec3(3,7,1)));
+    vec3 color = vec3(0.003, 0.005, 0.013);
+    vec3 nebula = mix(vec3(0.088,0.036,0.108), vec3(0.030,0.118,0.138), smoothstep(-0.7,0.7,d.x));
+    color += nebula * band * (0.12 + cloud * cloud * 1.25) * (0.44 + wisps);
+    color *= 1.0 - dust * band * 0.93;
+    color += vec3(0.05,0.075,0.105) * pow(wisps, 4.0) * band;
     color += stars(d, 480.0, 0.988, 0.36) * 0.55 + stars(d, 320.0, 0.985, 0.31) * 0.90 + stars(d, 190.0, 0.994, 0.27) * 1.55;
 
     outColor = vec4(sqrt(clamp(color * 0.25, 0.0, 1.0)), 1.0);

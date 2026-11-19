@@ -79,10 +79,10 @@ module WreckFields =
         | FreighterWreck -> v 9.0 4.8 14.8
         | PatrolWreck -> v 4.2 2.6 11.2
 
-    let private steel = MeshColor.rgb 0.25 0.35 0.40
-    let private bare = MeshColor.metal 0.55 0.56 0.56
-    let private soot = MeshColor.rgb 0.13 0.16 0.19
-    let private hazard = MeshColor.rgb 0.72 0.29 0.087
+    let private steel = MeshColor.rgb 0.13 0.17 0.195
+    let private bare = MeshColor.metal 0.34 0.35 0.35
+    let private soot = MeshColor.rgb 0.055 0.06 0.068
+    let private hazard = MeshColor.rgb 0.50 0.20 0.05
     let private lamp = MeshColor.glow 1.0 0.49 0.18 0.85
     let private beam = ProceduralMeshes.beam
 

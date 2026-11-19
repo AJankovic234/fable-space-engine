@@ -335,9 +335,9 @@ module ProceduralMeshes =
     let approachBuoy () : MeshData * MeshData =
         let frame = MeshBuilder()
         let lamp = MeshBuilder()
-        let alloy = MeshColor.rgb 0.49 0.55 0.56
-        let rubber = MeshColor.rgb 0.045 0.063 0.078
-        let paint = MeshColor.rgb 0.88 0.50 0.09
+        let alloy = MeshColor.rgb 0.25 0.275 0.285
+        let rubber = MeshColor.rgb 0.03 0.04 0.048
+        let paint = MeshColor.rgb 0.50 0.265 0.04
         let lens = MeshColor.glow 1.0 1.0 1.0 1.0
         let collar y radius =
             ring(8,0.0,0.0,0.0,radius,radius) |> Array.map (fun p -> Vec3(p.X,y,p.Y))
@@ -356,9 +356,9 @@ module ProceduralMeshes =
         frame.Build(), lamp.Build()
 
     let private jumpGateFrameParts strut box =
-        let hull = MeshColor.rgb 0.56 0.63 0.66
-        let steel = MeshColor.rgb 0.14 0.19 0.24
-        let trim = MeshColor.rgb 0.82 0.45 0.10
+        let hull = MeshColor.rgb 0.27 0.30 0.315
+        let steel = MeshColor.rgb 0.075 0.10 0.125
+        let trim = MeshColor.rgb 0.48 0.25 0.05
         let beaconCyan = MeshColor.glow 0.18 0.92 1.15 1.4
         let beaconAmber = MeshColor.glow 1.25 0.66 0.14 1.5
         let n = 12
@@ -401,8 +401,8 @@ module ProceduralMeshes =
             mid * (if i % 2 = 0 then 0.92 else 1.0))
 
     let private jumpGateRingParts strut box =
-        let alloy = MeshColor.rgb 0.72 0.79 0.85
-        let core = MeshColor.rgb 0.22 0.30 0.38
+        let alloy = MeshColor.rgb 0.33 0.36 0.39
+        let core = MeshColor.rgb 0.10 0.135 0.17
         let coil = MeshColor.glow 1.0 1.0 1.0 1.35
         let n = jumpGateRingSegments
         let outer = ring(n, 0.0, 0.0, 0.0, 18.2, 18.2)
@@ -447,11 +447,11 @@ module ProceduralMeshes =
     /// Sechs geborgene Datenträger. Gehäuse und Statuslicht teilen sich ein Mesh.
     let archiveRelic (kind: StationKind) (recorderOnBoard: bool) : MeshData =
         let b = MeshBuilder()
-        let iron = MeshColor.rgb 0.17 0.23 0.26
-        let alloy = MeshColor.rgb 0.58 0.65 0.63
-        let ceramic = MeshColor.rgb 0.74 0.72 0.60
-        let oxide = MeshColor.rgb 0.52 0.23 0.10
-        let brass = MeshColor.rgb 0.66 0.47 0.20
+        let iron = MeshColor.rgb 0.09 0.12 0.135
+        let alloy = MeshColor.rgb 0.31 0.345 0.335
+        let ceramic = MeshColor.rgb 0.40 0.39 0.325
+        let oxide = MeshColor.rgb 0.29 0.125 0.055
+        let brass = MeshColor.rgb 0.42 0.295 0.12
         let signal = MeshColor.glow 0.87 0.41 1.12 0.85
         let box x y z hx hy hz c = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),c)
         let bar p q w c = beam b p q w c
@@ -558,13 +558,13 @@ module ProceduralMeshes =
     /// Civilian line hauler, built around a keel with two rows of removable pods.
     let freightHauler () : MeshData =
         let b = MeshBuilder()
-        let steel = MeshColor.rgb 0.23 0.29 0.32
-        let enamel = MeshColor.rgb 0.80 0.78 0.66
-        let recess = MeshColor.rgb 0.044 0.070 0.085
-        let ochre = MeshColor.rgb 0.88 0.37 0.055
-        let oxide = MeshColor.rgb 0.55 0.17 0.075
-        let ice = MeshColor.glow 0.30 0.78 0.94 0.68
-        let yellow = MeshColor.glow 1.0 0.58 0.10 0.9
+        let steel = MeshColor.rgb 0.11 0.14 0.155
+        let enamel = MeshColor.rgb 0.37 0.36 0.31
+        let recess = MeshColor.rgb 0.03 0.045 0.055
+        let ochre = MeshColor.rgb 0.47 0.20 0.035
+        let oxide = MeshColor.rgb 0.28 0.09 0.042
+        let ice = MeshColor.glow 0.62 0.90 0.74 0.62
+        let yellow = MeshColor.glow 1.0 0.50 0.10 0.9
         let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
         let crossSection x y z w h =
             let c = min w h * 0.32
@@ -620,12 +620,12 @@ module ProceduralMeshes =
     /// Fester, am Deck anliegender Drehkranz. Der Kopf wird separat geschwenkt.
     let autoTurretBase () : MeshData =
         let b = MeshBuilder()
-        let steel = MeshColor.rgb 0.18 0.25 0.31
-        let edge = MeshColor.rgb 0.36 0.44 0.49
-        let dark = MeshColor.rgb 0.035 0.052 0.068
-        let ivory = MeshColor.rgb 0.80 0.81 0.75
+        let steel = MeshColor.rgb 0.10 0.135 0.165
+        let edge = MeshColor.rgb 0.20 0.24 0.265
+        let dark = MeshColor.rgb 0.03 0.04 0.05
+        let ivory = MeshColor.rgb 0.40 0.405 0.375
         let cyan = MeshColor.glow 0.035 0.72 0.95 0.65
-        let amber = MeshColor.rgb 0.95 0.52 0.075
+        let amber = MeshColor.rgb 0.55 0.30 0.04
         let horizontal y radius =
             ring (16, 0.0, 0.0, 0.0, radius, radius)
             |> Array.map (fun p -> Vec3(p.X, y, p.Y))
@@ -664,14 +664,14 @@ module ProceduralMeshes =
     /// Proportionen und Materialaufteilung folgen dem vorhandenen Turret-Asset.
     let autoTurret () : MeshData =
         let b = MeshBuilder()
-        let blue = MeshColor.rgb 0.22 0.32 0.40
-        let steel = MeshColor.rgb 0.13 0.19 0.24
-        let edge = MeshColor.rgb 0.45 0.53 0.57
-        let ivory = MeshColor.rgb 0.83 0.84 0.77
+        let blue = MeshColor.rgb 0.11 0.16 0.20
+        let steel = MeshColor.rgb 0.075 0.105 0.135
+        let edge = MeshColor.rgb 0.24 0.28 0.305
+        let ivory = MeshColor.rgb 0.41 0.415 0.38
         let dark = MeshColor.rgb 0.028 0.043 0.058
         let cyan = MeshColor.glow 0.035 0.78 1.02 0.78
         let dimCyan = MeshColor.glow 0.045 0.40 0.50 0.35
-        let amber = MeshColor.rgb 0.98 0.52 0.055
+        let amber = MeshColor.rgb 0.56 0.30 0.035
         let rotor y radius =
             ring (16, 0.0, 0.0, 0.0, radius, radius)
             |> Array.map (fun p -> Vec3(p.X, y, p.Y))
@@ -781,10 +781,10 @@ module ProceduralMeshes =
     // ---------------------------------------------------------------------------------
     let sealedFreight () : MeshData =
         let b = MeshBuilder()
-        let case = MeshColor.rgb 0.57 0.13 0.036
-        let lid = MeshColor.rgb 0.84 0.29 0.07
-        let strap = MeshColor.rgb 0.095 0.14 0.16
-        let label = MeshColor.rgb 0.90 0.85 0.62
+        let case = MeshColor.rgb 0.30 0.068 0.022
+        let lid = MeshColor.rgb 0.44 0.15 0.04
+        let strap = MeshColor.rgb 0.05 0.075 0.085
+        let label = MeshColor.rgb 0.55 0.52 0.38
         let seal = MeshColor.glow 0.12 0.91 0.78 0.68
         let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
         b.Loft([| hullSection 0.0 -0.27 0.27 0.035 0.32; hullSection 0.0 0.27 0.27 0.035 0.32 |],true,true,case)
@@ -800,9 +800,9 @@ module ProceduralMeshes =
 
     let deckPackage (kind: CommodityId) : MeshData =
         let b = MeshBuilder()
-        let iron = MeshColor.rgb 0.18 0.24 0.25
-        let alloy = MeshColor.rgb 0.65 0.69 0.63
-        let cream = MeshColor.rgb 0.91 0.87 0.74
+        let iron = MeshColor.rgb 0.09 0.12 0.125
+        let alloy = MeshColor.rgb 0.34 0.36 0.33
+        let cream = MeshColor.rgb 0.46 0.44 0.375
         let box x y z hx hy hz color = b.Box(Vec3(x,y,z),Vec3(hx,hy,hz),color)
         match kind with
         | CommodityId.TitaniumScrap ->
@@ -814,9 +814,9 @@ module ProceduralMeshes =
         | CommodityId.CryoOre | CommodityId.FuelCells | CommodityId.PlasmaCores ->
             let paint =
                 match kind with
-                | CommodityId.CryoOre -> MeshColor.rgb 0.18 0.61 0.77
-                | CommodityId.FuelCells -> MeshColor.rgb 0.94 0.51 0.08
-                | _ -> MeshColor.rgb 0.68 0.36 0.68
+                | CommodityId.CryoOre -> MeshColor.rgb 0.10 0.34 0.43
+                | CommodityId.FuelCells -> MeshColor.rgb 0.53 0.285 0.045
+                | _ -> MeshColor.rgb 0.38 0.20 0.38
             box 0.0 0.047 0.0 0.296 0.047 0.255 iron
             for x in [-0.148;0.148] do
                 let collar y radius = ring(10,x,0.0,y,radius,radius) |> Array.map (fun v -> Vec3(v.X,v.Z,v.Y))
@@ -825,7 +825,7 @@ module ProceduralMeshes =
                 b.Loft([|collar 0.43 0.076;collar 0.47 0.064|],true,true,alloy)
         | _ ->
             let med = kind = CommodityId.MedSupplies
-            let seal = if med then MeshColor.rgb 0.08 0.55 0.39 else MeshColor.rgb 0.25 0.34 0.68
+            let seal = if med then MeshColor.rgb 0.05 0.33 0.235 else MeshColor.rgb 0.14 0.19 0.38
             b.Loft([|hullSection 0.0 -0.255 0.272 0.0 0.33;hullSection 0.0 0.255 0.272 0.0 0.33|],true,true,cream)
             box 0.0 0.33 0.0 0.29 0.030 0.258 seal
             for x in [-0.18;0.18] do box x 0.17 0.0 0.025 0.169 0.262 seal

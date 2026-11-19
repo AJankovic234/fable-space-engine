@@ -5,6 +5,7 @@ import { Universe_sectors as sectors } from '../build/Universe.js';
 import { forSector, move } from '../build/StationCollision.js';
 import { CapitalFlight_position as cruiser, CapitalFlight_plates as armour } from '../build/CapitalFlight.js';
 import { Vec3 } from '../build/Math3D.js';
+import { sites, roles, actor, clock, phase, period, bridgeExtension, linerScale, transmission } from '../build/Seizure.js';
 
 const distance = (a, b) => Math.hypot(a.X-b.X, a.Y-b.Y, a.Z-b.Z);
 const hullRadii = models.map(model => {
@@ -104,5 +105,55 @@ test('no traffic hull wears showroom paint: belt ships are grimy and AETHER is c
     }
     assert.ok(paint > 0 && luminance/paint < 0.32, `${model.Name}: mean paint luminance ${luminance/paint}`);
     assert.ok(peak <= 0.6, `${model.Name}: brightest paint channel ${peak}`);
+  }
+});
+
+test('requisition stops the ferry, attaches the corvette and hands over its registry before departure', () => {
+  const active = sectors.map((s,i) => sites[i] && s.Id).filter(Boolean);
+  assert.deepEqual(active, ['slag-refinery', 'kepler-yard']);
+  for (const site of sites.filter(Boolean)) {
+    const before = actor(site, 37, roles[0]);
+    assert.equal(before.Thrust, 0);
+    assert.deepEqual(actor(site, 53, roles[0]), before);
+    assert.deepEqual(actor(site, 53, roles[2]), actor(site, 37, roles[2]));
+    assert.equal(bridgeExtension(32), 0);
+    assert.equal(bridgeExtension(35), 0.5);
+    assert.equal(bridgeExtension(49), 1);
+    assert.equal(bridgeExtension(57), 0);
+    assert.equal(phase(48.9).tag, 2);
+    assert.equal(phase(49).tag, 3);
+    const t = period * 30 - site.Offset + 50.1;
+    assert.equal(clock(site, t), clock(site, t+period));
+    assert.equal(transmission(site, t, 0.2, before.Position)[2], 0);
+    assert.equal(transmission(site, t+0.2, 0.2, before.Position), undefined);
+    assert.equal(transmission(site, t, 0.2, new Vec3(0, 5000, 0)), undefined);
+    for (const role of roles) {
+      assert.ok(actor(site, 74, role).Thrust > 0);
+      assert.equal(actor(site, 100, role), undefined);
+    }
+  }
+});
+
+test('both gate crossings reserve the scaled hulls and clear the station works and blockade cruiser', () => {
+  const radii = [models[2].Radius*linerScale, models[3].Radius, models[4].Radius];
+  for (const [sector,site] of sites.entries()) {
+    if (!site) continue;
+    const hull = forSector(sector);
+    for (const [index,role] of roles.entries()) {
+      const radius = radii[index];
+      for (let t=0; t<93; t+=0.5) {
+        const first = actor(site,t,role), next = actor(site,t+0.5,role);
+        if (!first || !next) continue;
+        const p = first.Position;
+        assert.ok(inShippingLane(sector,new Vec3(p.X+radius,p.Y,p.Z),0));
+        assert.equal(move(hull,radius,p,next.Position,new Vec3(0,0,-1)),undefined);
+        if (sectors[sector].Id === 'slag-refinery') {
+          for (const [c,h] of armour) {
+            const gap = axis => Math.max(0, Math.abs(p[axis]-cruiser[axis]-c[axis])-h[axis]);
+            assert.ok(Math.hypot(gap('X'),gap('Y'),gap('Z')) > radius);
+          }
+        }
+      }
+    }
   }
 });

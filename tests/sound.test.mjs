@@ -9,6 +9,7 @@ import {
   Sound_setListener as setListener,
   Sound_setFlightContext as setFlightContext,
   Sound_setSceneMode as setSceneMode,
+  Sound_setMusicCombat as setMusicCombat,
   Sound_updateEngine as updateEngine,
   Sound_laserAt as laserAt,
   Sound_explosionAt as explosionAt,
@@ -266,6 +267,13 @@ test('scene mode separates menu silence, paused space ambience and hangar audio,
   updateEngine(s, false, 0, 0);
   assert.equal(spaceGain.gain.value, 0.0);
   assert.ok(hangarGain.gain.value > 0.0, `Expected refit hangarGain > 0, got ${hangarGain.gain.value}`);
+
+  setMusicCombat(s, false);
+  setSceneMode(s, 1);
+  updateEngine(s, true, 0.4, 0.0);
+  setMusicCombat(s, true);
+  updateEngine(s, true, 0.6, 0.5);
+  setMusicCombat(s, false);
 
   shieldRecharge(s);
   laserAt(s, true, new Vec3(0, 0, -10), false, 0, 0, 0);

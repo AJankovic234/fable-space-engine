@@ -687,15 +687,17 @@ let private dockBlocked (scene: Scene) =
     scene.School.Step = FlightSchool.Off && scene.Phase = Fighting &&
     (not scene.Trading || scene.World.Enemies |> Array.exists (fun enemy -> enemy.Alive && Vec3.distance enemy.Position (currentSector scene).Outpost.Position < 230.0))
 
-/// Fresh belts leave room for the swept hulls on scheduled traffic routes.
-let private seedTradeBelt (scene: Scene) =
+let private clearShippingLanes (scene: Scene) =
     let field = scene.World.Asteroids
-    AsteroidField.generateForSector field scene.World.Rng InitialAsteroids (currentSector scene)
     for i in field.Count-1 .. -1 .. 0 do
         let o = i*AsteroidField.Stride
         let point = Vec3(float field.Data.[o],float field.Data.[o+1],float field.Data.[o+2])
         if Traffic.inShippingLane scene.Sector point (float field.Data.[o+6]) then
             AsteroidField.remove field i
+
+let private seedTradeBelt (scene: Scene) =
+    AsteroidField.generateForSector scene.World.Asteroids scene.World.Rng InitialAsteroids (currentSector scene)
+    clearShippingLanes scene
 
 let private clearDockingArea (scene: Scene) =
     let sector = sectorIndex scene
@@ -844,6 +846,7 @@ let private refreshShop (scene: Scene) =
     let origin = sectorIndex scene
     let nextPort = StarMap.nextPort origin scene.CourseTarget scene.CourseVia
     Shop.refreshRoutes scene.Shop terms scene.Wallet scene.Cargo scene.Markets origin scene.Trading scene.TradeProfit scene.Blockade nextPort
+    BlockadeUi.refresh scene.Yard scene.Blockade scene.Trading origin scene.Wallet scene.Cargo scene.Markets
 
 let private openStarMap (scene: Scene) =
     if scene.Trading && scene.World.Player.Alive && not scene.Saves.Visible && not (StarMap.visible ())
@@ -866,7 +869,6 @@ let private openStarMap (scene: Scene) =
                 refreshShop scene
                 DockContact.dock scene.Contact (currentSector scene).Outpost.Id scene.Pilot
         StarMap.show scene.Sector scene.Cargo scene.Markets (tradeTerms scene) scene.Blockade scene.CourseTarget scene.CourseVia setCourse close
-    BlockadeUi.refresh scene.Yard scene.Blockade scene.Trading (sectorIndex scene) scene.Wallet scene.Cargo scene.Markets
 
 let private applyPlayerStats (scene: Scene) =
     let ship = scene.World.Player
@@ -1930,6 +1932,7 @@ let private loadFlight (scene: Scene) json =
         DockContact.restore scene.Contact (defaultArg run.HeardContacts 0)
         scene.Trading <- run.Trading
         scene.Sector <- scene.World.SectorIndex
+        if scene.Trading && Seizure.sites.[scene.Sector].IsSome then clearShippingLanes scene
         scene.CourseTarget <- run.CourseTarget
         scene.CourseVia <- if StarMap.validStop scene.Sector run.CourseTarget run.CourseVia then run.CourseVia else None
         scene.Wave <- run.Wave
@@ -3062,6 +3065,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
     drawCustomsShadow scene
     Renderer.drawShadow renderer scene.FreighterBatch
     for batch in scene.Traffic.Hulls do Renderer.drawShadow renderer batch
+    Renderer.drawShadow renderer scene.Traffic.Bridge
     Renderer.drawShadow renderer scene.GateFrameBatch
     Renderer.drawShadow renderer scene.GateRingBatch
     Renderer.drawShadow renderer scene.TurretBaseBatch
@@ -3091,6 +3095,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
         Renderer.draw renderer relic.Value
     Renderer.draw renderer scene.FreighterBatch
     for batch in scene.Traffic.Hulls do Renderer.draw renderer batch
+    Renderer.draw renderer scene.Traffic.Bridge
     Renderer.draw renderer scene.BuoyFrames
     Renderer.draw renderer scene.BuoyLenses
     Renderer.draw renderer scene.GateFrameBatch
@@ -3149,7 +3154,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             Hud.drawStation hud renderer.ViewProj (Renderer.aspect renderer) (currentSector scene).Outpost position (dockBlocked scene)
             if scene.Trading && scene.School.Step = FlightSchool.Off then
                 Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
-                Hud.drawTraffic hud renderer.ViewProj sector scene.Traffic position
+                Hud.drawTraffic hud renderer.ViewProj scene.Traffic position
                 Hud.drawWrecks hud renderer.ViewProj sector scene.WreckSalvage position
         if scene.Trading && scene.Sector = Blockade.helios then
             let port = (currentSector scene).Outpost.Position
@@ -3182,7 +3187,7 @@ let private render (scene: Scene) (position: Vec3) (rotation: Quat) (alpha: floa
             Hud.drawStation hud renderer.ViewProj (Renderer.aspect renderer) (currentSector scene).Outpost position (dockBlocked scene)
             if scene.Trading && scene.School.Step = FlightSchool.Off then
                 Hud.drawJumpGates hud renderer.ViewProj (currentSector scene) position
-                Hud.drawTraffic hud renderer.ViewProj sector scene.Traffic position
+                Hud.drawTraffic hud renderer.ViewProj scene.Traffic position
                 Hud.drawWrecks hud renderer.ViewProj sector scene.WreckSalvage position
         if scene.Trading && scene.Sector = Blockade.helios then
             let port = (currentSector scene).Outpost.Position
@@ -3596,6 +3601,12 @@ let private frame (timestamp: float) =
             | Refitting -> 3
             | Menu | Victory | GameOver -> 0
         Sound.setSceneMode scene.Sound sceneMode
+        let musicInCombat =
+            scene.State = Playing
+            && scene.School.Step = FlightSchool.Off
+            && ((scene.Phase = Fighting && (scene.World.Enemies |> Array.exists (fun e -> e.Alive)))
+                || (scene.Sortie.Role <> 0 && not scene.Blockade.Lifted))
+        Sound.setMusicCombat scene.Sound musicInCombat
         let thrust = if ship.Controls.Brake then 0.0 else ship.Controls.Throttle
         Sound.updateEngine scene.Sound (engineActive && not mapVisible) thrust ship.Boost
 
@@ -3709,6 +3720,15 @@ let private frame (timestamp: float) =
                 | BlockedByCombat _ -> Sound.stationComm scene.Sound outpost.Id 2
                 | TooFar _ -> Sound.resetStationComm scene.Sound outpost.Id
             if scene.State = Playing && ship.Alive && scene.School.Step = FlightSchool.Off then
+                if scene.Trading && not scene.Hud.InCombat && scene.Hud.RadioTime <= 0.0 && List.isEmpty scene.RadioPending then
+                    match Seizure.sites.[scene.Sector] with
+                    | Some site ->
+                        match Seizure.transmission site scene.World.Time simulatedTime ship.Position with
+                        | Some (callsign,text,faction) ->
+                            Hud.showRadio scene.Hud callsign text faction 0.0 5.0
+                            scene.RadioTimer <- max scene.RadioTimer 5.5
+                        | None -> ()
+                    | None -> ()
                 let playRadioLine (line: RadioLine) =
                     let audioDur = Sound.playFactionRadio scene.Sound line.AudioKey line.Pan line.CleanFilter
                     if audioDur < 0.0 then None
@@ -3857,7 +3877,14 @@ let private frame (timestamp: float) =
             let baseRot = Quat.lookRotation (target - eye) Vec3.unitY
             scene.Camera.Rotation <- if abs bank > 0.001 then baseRot * Quat.fromAxisAngle Vec3.unitZ bank else baseRot
             scene.Camera.Fov <- scene.Camera.BaseFov * fovMul
-            scene.Camera.Jolt <- Quat.identity
+            let introShake = if isNull (window?introCam?shake) then 0.0 else unbox<float> (window?introCam?shake)
+            scene.Camera.Jolt <-
+                if introShake > 0.002 then
+                    let s = min 1.0 introShake * 0.022
+                    Quat.fromAxisAngle Vec3.unitX (sin (t * 47.0) * s)
+                    * Quat.fromAxisAngle Vec3.unitY (cos (t * 53.0) * s)
+                    * Quat.fromAxisAngle Vec3.unitZ (sin (t * 39.0) * s * 1.4)
+                else Quat.identity
             if not (unbox<bool> (window?introCam?freeze)) then scene.Time <- scene.Time + dt
             render scene position rotation alpha
         elif scene.State <> Menu then

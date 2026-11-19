@@ -133,8 +133,10 @@ module CivilTrafficMeshes =
         for side in [-1.;1.] do
             ProceduralMeshes.beam b (v (side*2.25) 4.49 -4.55) (v (side*2.25) 4.49 4.60) 0.075 alloy
 
+    let boardingHatchCenter side = v (side*4.20) 0.52 9.45
+
     let private boardingHatch (b: MeshBuilder) side =
-        let center = v (side*4.20) 0.52 9.45
+        let center = boardingHatchCenter side
         let ring dx radius =
             ProceduralMeshes.ring(12,0.0,0.0,0.0,radius,radius)
             |> Array.map (fun p -> center+v (side*dx) p.Y p.X)

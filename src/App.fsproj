@@ -28,6 +28,7 @@
     <Compile Include="AsteroidMeshes.fs" />
     <Compile Include="CivilTrafficMeshes.fs" />
     <Compile Include="AetherTrafficMeshes.fs" />
+    <Compile Include="Seizure.fs" />
     <Compile Include="Traffic.fs" />
     <Compile Include="CapitalMeshes.fs" />
     <Compile Include="SovereignMeshes.fs" />

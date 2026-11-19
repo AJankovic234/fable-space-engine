@@ -29,15 +29,15 @@ type EnemyHull =
 /// Rollenfarbe des HUD leuchtet in Sensoren, Kanzeln und Lichtleisten. Alle Maße in Metern.
 [<RequireQualifiedAccess>]
 module EnemyMeshes =
-    let private ivory = MeshColor.rgb 0.80 0.76 0.66
+    let private ivory = MeshColor.rgb 0.47 0.475 0.47
     let private black = MeshColor.rgb 0.035 0.04 0.05
-    let private graphite = MeshColor.rgb 0.13 0.14 0.16
-    let private steel = MeshColor.rgb 0.33 0.35 0.37
-    let private gold = MeshColor.rgb 0.86 0.62 0.22
-    let private carmine = MeshColor.rgb 0.62 0.05 0.07
+    let private graphite = MeshColor.rgb 0.065 0.07 0.085
+    let private steel = MeshColor.rgb 0.19 0.20 0.22
+    let private gold = MeshColor.rgb 0.54 0.345 0.07
+    let private carmine = MeshColor.rgb 0.34 0.016 0.024
     let private redLamp = MeshColor.glow 1.0 0.10 0.05 1.0
     let private hot = MeshColor.glow 1.0 0.95 0.84 1.0
-    let private window = MeshColor.glow 1.0 0.58 0.24 0.88
+    let private window = MeshColor.glow 1.0 0.30 0.10 0.84
     let private engineCore = MeshColor.glow 1.0 0.66 0.34 1.0
     let private engineWall = MeshColor.glow 0.90 0.26 0.08 0.72
 
@@ -538,7 +538,7 @@ module EnemyMeshes =
 
     let blocker () : MeshData =
         let b = MeshBuilder()
-        let enamel = MeshColor.rgb 0.67 0.76 0.37
+        let enamel = MeshColor.rgb 0.27 0.31 0.165
         let accent = MeshColor.glow 0.83 1.0 0.30 0.96
         let glass = MeshColor.glass 0.14 0.23 0.18 0.22
         keel b blockerStations steel

@@ -356,6 +356,13 @@ module PlayerMeshes =
             beam b (post 0.45 0.75 -0.81) (post 0.40 0.34 -0.52) 0.035 slate
             b.Box(post 0.43 0.72 -1.52,Vec3(0.087,0.060,0.068),iron)
             b.Box(post 0.43 0.72 -1.59,Vec3(0.064,0.037,0.008),white)
+        // Schrottblenden am Schutzbügel: nur die Sehschlitze geben den Blick aufs Glas frei.
+        // Die unterste Lamelle wurde aus einem Stück rostgrundiertem Blech nachgeschnitten.
+        for t, coat in [ 0.18, primer; 0.44, iron; 0.70, steel ] do
+            let y, z = 0.27 + 0.46*t, -1.99 + 0.46*t
+            let w = 0.43 + 0.04*t
+            panel b [| Vec3(-w, y, z); Vec3(w, y, z); Vec3(w, y+0.058, z+0.015)
+                       Vec3(-w+0.035, y+0.058, z+0.015) |] (-Vec3.unitZ) 0.022 coat iron
         beam b (Vec3(-0.45,0.75,-0.81)) (Vec3(0.45,0.75,-0.81)) 0.036 steel
         // Nachgerüstete Peitschenantennen für den RT-9-Pfad und ein außen verlegter Kabelstrang.
         beam b (Vec3(0.30, 0.70, -0.92)) (Vec3(0.38, 0.97, -0.70)) 0.010 iron
@@ -448,6 +455,9 @@ module PlayerMeshes =
         // Steuerbord trägt der Drehkranz den Ausleger. Sein Magnetkopf ruht über der Gondelnase.
         b.Loft([| section 1.64 -0.90 0.33 0.06 0.17; section 1.64 1.18 0.34 0.06 0.17 |], true, true, steel)
         hazardBar b (Vec3(1.33, 0.175, 1.14)) (Vec3(1.95, 0.175, 1.14)) (Vec3(0.052, 0.006, 0.035)) 6
+        // Dieselbe Marke liegt auf dem Krandeck, wo sie die Verfolgerkamera von oben sieht.
+        sinMark b (Vec3(1.40, 0.171, 0.20)) (Vec3(1.40, 0.171, -0.62)) (Vec3(1.88, 0.171, -0.62)) (Vec3(1.88, 0.171, 0.20))
+            (Vec3(1.64, 0.0, -0.2)) 0.004
         drumX b (Vec3(1.64, 0.28, 0.98)) 0.105 0.17 seam
         for x in [| 1.51; 1.56; 1.61; 1.66; 1.71; 1.76 |] do
             drumX b (Vec3(x,0.28,0.98)) 0.111 0.015 alloy
@@ -567,6 +577,10 @@ module PlayerMeshes =
             b.Box(Vec3(0.0,0.81,z),Vec3(1.37,0.06,0.052),iron)
             hazardBar b (Vec3(-1.37,0.867,z)) (Vec3(1.37,0.867,z)) (Vec3(0.1245,0.022,0.067)) 11
             b.Box(Vec3(trolleyX,0.812,z),Vec3(0.17,0.095,0.081),petrol)
+            if trolleyX > 0.0 then
+                // Das Sichtfenster am Portal zeigt die rote Sperre der Flottenkassette.
+                b.Box(Vec3(trolleyX,0.854,z-0.097),Vec3(0.155,0.051,0.026),rubber)
+                b.Box(Vec3(trolleyX,0.855,z-0.129),Vec3(0.113,0.019,0.008),portRed)
             drumX b (Vec3(trolleyX,0.681,z)) 0.083 0.13 iron
             for x in [-0.098;0.098] do
                 beam b (Vec3(trolleyX+x,0.68,z)) (Vec3(trolleyX+x,0.555,z)) 0.014 alloy
@@ -617,6 +631,15 @@ module PlayerMeshes =
                 for dz in [| -0.20; -0.10; 0.0; 0.10; 0.20 |] do
                     b.Box(p 1.396 0.255 (z + dz), Vec3(0.012, 0.085, 0.022), paint)
                 b.Box(p 1.404 0.30 (z + 0.15), Vec3(0.008, 0.04, 0.07), sand)
+                // Der Flottenverschluss greift über die karminrote Kassette. Auch beladen
+                // bleiben die gekreuzten Riegel und die rote Plombe an der Flanke sichtbar.
+                if bay = 1 && side > 0.0 then
+                    for dz in [ -0.23; 0.23 ] do
+                        b.Box(p 1.0 0.483 (z+dz), Vec3(0.32,0.010,0.043), bare)
+                        beam b (p 1.31 0.482 (z+dz)) (p 1.408 0.355 (z+dz)) 0.045 bare
+                        beam b (p 1.408 0.355 (z+dz)) (p 1.415 0.115 (z-dz)) 0.038 steel
+                    b.Box(p 1.427 0.235 z, Vec3(0.028,0.076,0.083), iron)
+                    b.Box(p 1.462 0.235 z, Vec3(0.012,0.051,0.051), strike)
             gunMount b gun petrol steel
 
             // Maschinenhaus: Schulter mit Radiator, runder Maschinenblock, große Glocke.
@@ -803,8 +826,22 @@ module PlayerMeshes =
                           0.034 - 0.017 * high; 0.034 - 0.017 * high |], Vec3.unitX, color)
             finBand 0.0 0.30 slate
             finBand 0.30 0.34 seam
-            finBand 0.34 0.66 silver
+            // Steuerbord trägt noch das überstrichene Rangfeld, backbord eine genietete Ersatzhaut.
+            finBand 0.34 0.66 (if side > 0.0 then silver else bare)
             finBand 0.66 1.0 red
+            let skin along height =
+                let front = Vec3.lerp finRootFront finTopFront height
+                let rear = Vec3.lerp finRootRear finTopRear height
+                Vec3.lerp front rear along + p (0.039 - 0.017*height) 0.0 0.0
+            if side > 0.0 then
+                panel b [| skin 0.15 0.37; skin 0.83 0.37; skin 0.83 0.63; skin 0.15 0.63 |]
+                    Vec3.unitX 0.006 stencil seam
+                panel b [| skin 0.09 0.33; skin 0.80 0.44; skin 0.93 0.62; skin 0.19 0.51 |]
+                    Vec3.unitX 0.015 soot soot
+            else
+                for height in [ 0.38; 0.61 ] do
+                    for along in [ 0.14; 0.49; 0.84 ] do
+                        b.Box(skin along height, Vec3(0.012,0.019,0.022), iron)
             b.Box(p 1.49 0.845 1.748, Vec3(0.014, 0.022, 0.012), white)
         b.Build()
 
@@ -867,6 +904,11 @@ module PlayerMeshes =
         b.Box(Vec3(0.0, 0.468, 0.25), Vec3(0.22, 0.006, 0.56), ember)
         for i in 0 .. 5 do
             b.Box(Vec3(0.0, 0.48, 0.75 - float i * 0.20), Vec3(0.26, 0.032, 0.038), alloy)
+        // Eine Hälfte des Hitzeschilds fehlt. Am freien Rand stehen noch die leeren Scharniere.
+        panel b [| Vec3(-0.32,0.51,-0.29); Vec3(-0.04,0.54,-0.19); Vec3(-0.04,0.54,0.79)
+                   Vec3(-0.30,0.51,0.69) |] Vec3.unitY 0.026 scorch iron
+        for z in [ -0.20; 0.66 ] do
+            drumX b (Vec3(0.24,0.52,z)) 0.043 0.082 bare
         beam b (Vec3(0.0, 0.44, 0.98)) bomberHull.Beacon 0.014 steel
         b.Box(bomberHull.Beacon, Vec3(0.022, 0.022, 0.022), white)
 
@@ -936,6 +978,18 @@ module PlayerMeshes =
                 if f = 0 then Some (if s = 1 then teal else ceramic)
                 elif flank f then Some frame
                 else Some teal)
+            // Kepler fertigt weiter nach alter Schablone: „07“ auf den Hauben des Werftloses.
+            let stamp u v =
+                let z = 0.03 + (if side > 0.0 then u else 1.0-u)*0.64
+                p (0.55 + v*0.26) (0.700 + (z+0.04)*0.0375) z
+            let stroke a c d e =
+                b.PolygonOutward([| a; c; d; e |], p 0.68 0.45 0.34, stencil)
+            stroke (stamp 0.0 0.0) (stamp 0.40 0.0) (stamp 0.40 0.18) (stamp 0.0 0.18)
+            stroke (stamp 0.0 0.82) (stamp 0.40 0.82) (stamp 0.40 1.0) (stamp 0.0 1.0)
+            stroke (stamp 0.0 0.18) (stamp 0.10 0.18) (stamp 0.10 0.82) (stamp 0.0 0.82)
+            stroke (stamp 0.30 0.18) (stamp 0.40 0.18) (stamp 0.40 0.82) (stamp 0.30 0.82)
+            stroke (stamp 0.53 0.82) (stamp 0.98 0.82) (stamp 0.98 1.0) (stamp 0.53 1.0)
+            stroke (stamp 0.58 0.0) (stamp 0.71 0.0) (stamp 0.98 0.82) (stamp 0.84 0.82)
             b.Box(p 0.68 0.43 1.475,Vec3(0.142,0.11,0.012),rubber)
             for y in [| 0.37; 0.43; 0.49 |] do
                 b.Box(p 0.68 y 1.491,Vec3(0.113,0.010,0.015),scorch)
@@ -1068,6 +1122,16 @@ module PlayerMeshes =
                 elif f = 0 then Some deck
                 else Some (worn 16 s (f + int side) azure))
             b.Box(p 1.36 0.105 -2.492, Vec3(0.04, 0.02, 0.008), white)
+            // Zwei verplombte Kurierfächer in den Schnäbeln. Die Stahlbänder umgreifen
+            // die Kufe vor dem Frachtdeck; der Sicherungsdraht liegt außen am Verschluss.
+            let strap z =
+                let w, low, high = profileAt kingfisherSkid z
+                section (side*1.36) z (w+0.023) (low-0.010) (high+0.030)
+            b.Loft([| strap -2.01; strap -1.86 |], false, false, iron)
+            let latch = p 1.48 0.420 -1.875
+            b.Box(latch, Vec3(0.091,0.034,0.108), copper)
+            beam b (p 1.49 0.449 -1.925) (p 1.60 0.411 -1.80) 0.015 bare
+            b.Box(p 1.60 0.408 -1.79, Vec3(0.045,0.025,0.048), strike)
             // Dunkle Kennplatte mit der Registermarke auf der Außenflanke, darunter Fender und Bremsdüse.
             panel b [| p 1.812 0.03 -0.60; p 1.812 0.19 -0.50; p 1.812 0.19 0.80; p 1.812 0.03 0.80 |]
                 (p 1.0 0.0 0.0) 0.024 deck seam
@@ -1110,7 +1174,11 @@ module PlayerMeshes =
                 [| p x y front; p x (y + 0.09) (front + 0.05); p x (y + 0.09) (rear - 0.05)
                    p x y rear; p x (y - 0.07) (rear - 0.05); p x (y - 0.07) (front + 0.07) |]
             b.Loft([| spar 0.27 0.26 0.84 0.16; spar 0.93 0.36 0.84 0.12 |], true, true, teal)
-            b.Box(p 0.62 0.232 0.57, Vec3(0.20, 0.008, 0.16), ice)
+            // Paarweise nachgerüstete SIN-Sender: auf beiden Prüfdeckeln dieselbe gelöschte Kennung.
+            b.Box(p 0.71 0.238 0.57, Vec3(0.19,0.030,0.18), rubber)
+            b.Box(p 0.71 0.272 0.57, Vec3(0.169,0.016,0.16), deck)
+            sinMark b (p 0.59 0.289 0.44) (p 0.59 0.289 0.70) (p 0.83 0.289 0.70) (p 0.83 0.289 0.44)
+                (p 0.71 0.23 0.57) 0.003
             beam b (p 0.30 0.02 -0.50) (p 0.93 0.06 -0.62) 0.06 steel
             beam b (p 0.32 0.10 -0.20) (p 0.93 0.14 -0.56) 0.024 alloy
 

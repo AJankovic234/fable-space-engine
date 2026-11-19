@@ -116,3 +116,29 @@ for (const [i, { Outpost }] of sectors.entries()) {
     assertRoutesClear(mesh, trafficRoutes(Outpost, i));
   });
 }
+
+test('belt stations are dull steel under rationed light, and only Morgenlicht lights every window', () => {
+  // Paint is the plain surface class (channel 0); an unlit window pane is glass without cabin light (-2).
+  const stats = sectors.slice(0, 6).map(sector => {
+    const v = station(sector.Outpost.Kind).Vertices;
+    let paint = 0, luminance = 0, peak = 0, panes = 0, lit = 0;
+    for (let i = 0; i < v.length; i += 10) {
+      const channel = v[i + 9];
+      if (channel === -2) panes++;
+      if (channel > 0.5) lit++;
+      if (channel !== 0) continue;
+      paint++;
+      luminance += 0.2126 * v[i + 6] + 0.7152 * v[i + 7] + 0.0722 * v[i + 8];
+      peak = Math.max(peak, v[i + 6], v[i + 7], v[i + 8]);
+    }
+    return { name: sector.Outpost.Name, luminance: luminance / paint, peak, panes, lit };
+  });
+  for (const s of stats) {
+    assert.ok(s.luminance < 0.30, `${s.name}: mean paint luminance ${s.luminance}`);
+    assert.ok(s.peak <= 0.6, `${s.name}: brightest paint channel ${s.peak}`);
+    assert.ok(s.lit > 0, `${s.name}: no lamps`);
+  }
+  // Kestrel, Helios, Kepler and Theta carry window bands with dark panes; the bastion has none.
+  for (const i of [0, 1, 3, 4]) assert.ok(stats[i].panes > 0, `${stats[i].name}: every window lit`);
+  assert.equal(stats[5].panes, 0, 'Morgenlicht rations nothing');
+});

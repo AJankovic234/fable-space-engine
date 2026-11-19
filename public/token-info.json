@@ -1,0 +1,249 @@
+{
+ "stand": "2026-11-19T20:26:43.406Z",
+ "usdProEur": 1.1014,
+ "summe": {
+  "anfragen": 6016,
+  "eingabe": 19040709,
+  "cacheLesen": 1225705020,
+  "cacheSchreiben": 9707834,
+  "ausgabe": 5361681,
+  "token": 1259815244,
+  "usd": 584.76,
+  "arbeitMs": 146965373
+ },
+ "anbieter": [
+  {
+   "name": "Anthropic",
+   "anfragen": 2100,
+   "eingabe": 4280,
+   "cacheLesen": 618903945,
+   "cacheSchreiben": 9707834,
+   "ausgabe": 2960652,
+   "token": 631576711,
+   "usd": 289.78,
+   "arbeitMs": 63704327
+  },
+  {
+   "name": "OpenAI",
+   "anfragen": 3026,
+   "eingabe": 6492021,
+   "cacheLesen": 402157184,
+   "cacheSchreiben": 0,
+   "ausgabe": 1506700,
+   "token": 410155905,
+   "usd": 241.45,
+   "arbeitMs": 69639046
+  },
+  {
+   "name": "Google",
+   "anfragen": 890,
+   "eingabe": 12544408,
+   "cacheLesen": 204643891,
+   "cacheSchreiben": 0,
+   "ausgabe": 894329,
+   "token": 218082628,
+   "usd": 53.53,
+   "arbeitMs": 13622000
+  }
+ ],
+ "modelle": [
+  {
+   "name": "GPT-6.2 Astra",
+   "anbieter": "OpenAI",
+   "werkzeug": "Codex",
+   "anfragen": 2306,
+   "eingabe": 4544414,
+   "cacheLesen": 279969024,
+   "cacheSchreiben": 0,
+   "ausgabe": 1042986,
+   "token": 285556424,
+   "usd": 190.06,
+   "arbeitMs": 63536410,
+   "liste": {
+    "eingabe": 8,
+    "ausgabe": 40,
+    "cacheLesen": 0.4
+   }
+  },
+  {
+   "name": "Claude Fable 5.2",
+   "anbieter": "Anthropic",
+   "werkzeug": "Claude Code",
+   "anfragen": 863,
+   "eingabe": 1758,
+   "cacheLesen": 309349848,
+   "cacheSchreiben": 4139852,
+   "ausgabe": 1452094,
+   "token": 314943552,
+   "usd": 179.59,
+   "arbeitMs": 40470403,
+   "liste": {
+    "eingabe": 8,
+    "ausgabe": 40,
+    "cacheLesen": 0.2
+   }
+  },
+  {
+   "name": "Claude Opus 5.5",
+   "anbieter": "Anthropic",
+   "werkzeug": "Claude Code",
+   "anfragen": 1044,
+   "eingabe": 2134,
+   "cacheLesen": 290894372,
+   "cacheSchreiben": 3335268,
+   "ausgabe": 1183220,
+   "token": 295414994,
+   "usd": 103.22,
+   "arbeitMs": 21868190,
+   "liste": {
+    "eingabe": 4,
+    "ausgabe": 20,
+    "cacheLesen": 0.2
+   }
+  },
+  {
+   "name": "GPT-6 Astra",
+   "anbieter": "OpenAI",
+   "werkzeug": "Codex",
+   "anfragen": 312,
+   "eingabe": 639373,
+   "cacheLesen": 36696704,
+   "cacheSchreiben": 0,
+   "ausgabe": 271150,
+   "token": 37607227,
+   "usd": 38.3,
+   "arbeitMs": 3317860,
+   "liste": {
+    "eingabe": 10,
+    "ausgabe": 50,
+    "cacheLesen": 0.5
+   }
+  },
+  {
+   "name": "Gemini 4 Hydrogen",
+   "anbieter": "Google",
+   "werkzeug": "Gemini",
+   "anfragen": 582,
+   "eingabe": 8935926,
+   "cacheLesen": 131970186,
+   "cacheSchreiben": 0,
+   "ausgabe": 545066,
+   "token": 141451178,
+   "usd": 27.39,
+   "arbeitMs": 4391000,
+   "liste": {
+    "eingabe": 1.5,
+    "ausgabe": 7.5,
+    "cacheLesen": 0.075
+   }
+  },
+  {
+   "name": "Gemini 4 Neon",
+   "anbieter": "Google",
+   "werkzeug": "Gemini",
+   "anfragen": 276,
+   "eingabe": 3184789,
+   "cacheLesen": 68324578,
+   "cacheSchreiben": 0,
+   "ausgabe": 311583,
+   "token": 71820950,
+   "usd": 24.48,
+   "arbeitMs": 8405000,
+   "liste": {
+    "eingabe": 3,
+    "ausgabe": 15,
+    "cacheLesen": 0.15
+   }
+  },
+  {
+   "name": "GPT-6.2 Sol",
+   "anbieter": "OpenAI",
+   "werkzeug": "Codex",
+   "anfragen": 401,
+   "eingabe": 1198681,
+   "cacheLesen": 84772096,
+   "cacheSchreiben": 0,
+   "ausgabe": 187270,
+   "token": 86158047,
+   "usd": 12.75,
+   "arbeitMs": 2784776,
+   "liste": {
+    "eingabe": 2,
+    "ausgabe": 10,
+    "cacheLesen": 0.1
+   }
+  },
+  {
+   "name": "Claude Sonnet 5.5",
+   "anbieter": "Anthropic",
+   "werkzeug": "Claude Code",
+   "anfragen": 40,
+   "eingabe": 82,
+   "cacheLesen": 15445850,
+   "cacheSchreiben": 988671,
+   "ausgabe": 67156,
+   "token": 16501759,
+   "usd": 6.17,
+   "arbeitMs": 0,
+   "liste": {
+    "eingabe": 2,
+    "ausgabe": 10,
+    "cacheLesen": 0.1
+   }
+  },
+  {
+   "name": "Gemini 4 Argon",
+   "anbieter": "Google",
+   "werkzeug": "Gemini",
+   "anfragen": 32,
+   "eingabe": 423693,
+   "cacheLesen": 4349127,
+   "cacheSchreiben": 0,
+   "ausgabe": 37680,
+   "token": 4810500,
+   "usd": 1.66,
+   "arbeitMs": 826000,
+   "liste": {
+    "eingabe": 2,
+    "ausgabe": 10,
+    "cacheLesen": 0.1
+   }
+  },
+  {
+   "name": "Claude Haiku 5.5",
+   "anbieter": "Anthropic",
+   "werkzeug": "Claude Code",
+   "anfragen": 153,
+   "eingabe": 306,
+   "cacheLesen": 3213875,
+   "cacheSchreiben": 1244043,
+   "ausgabe": 258182,
+   "token": 4716406,
+   "usd": 0.8,
+   "arbeitMs": 1365734,
+   "liste": {
+    "eingabe": 0.1,
+    "ausgabe": 0.5,
+    "cacheLesen": 0.01
+   }
+  },
+  {
+   "name": "GPT-6.1 Sol",
+   "anbieter": "OpenAI",
+   "werkzeug": "Codex",
+   "anfragen": 7,
+   "eingabe": 109553,
+   "cacheLesen": 719360,
+   "cacheSchreiben": 0,
+   "ausgabe": 5294,
+   "token": 834207,
+   "usd": 0.34,
+   "arbeitMs": 0,
+   "liste": {
+    "eingabe": 2,
+    "ausgabe": 10,
+    "cacheLesen": 0.1
+   }
+  }
+ ]
+}

@@ -7,11 +7,12 @@ open System
 module SovereignMeshes =
     let private graphite = MeshColor.rgb 0.075 0.080 0.102
     let private gunmetal = MeshColor.rgb 0.17 0.17 0.19
-    let private bronze = MeshColor.rgb 0.41 0.225 0.075
-    let private gold = MeshColor.rgb 0.90 0.57 0.18
-    let private beatenGold = MeshColor.rgb 0.74 0.42 0.11
-    let private paleGold = MeshColor.rgb 0.99 0.76 0.35
-    let private platinum = MeshColor.rgb 0.86 0.83 0.73
+    // Old, heavy gold over black: the only warm hull in a cold fleet, and it belongs to one man.
+    let private bronze = MeshColor.rgb 0.30 0.165 0.055
+    let private gold = MeshColor.rgb 0.64 0.40 0.095
+    let private beatenGold = MeshColor.rgb 0.48 0.275 0.065
+    let private paleGold = MeshColor.rgb 0.78 0.56 0.21
+    let private platinum = MeshColor.rgb 0.52 0.52 0.50
     let private garnet = MeshColor.rgb 0.34 0.038 0.047
     let private amber = MeshColor.glow 1.0 0.56 0.17 0.84
     let private ivory = MeshColor.glow 1.0 0.86 0.55 0.85

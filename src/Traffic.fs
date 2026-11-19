@@ -165,9 +165,19 @@ module Traffic =
            | _ -> () |]
 
     let manifests = Array.map schedules Universe.sectors
-    let capacity = manifests |> Array.map Array.length |> Array.max
+    let private encounterClass = function
+        | Seizure.Liner -> ShipClass.Liner
+        | Seizure.Frigate -> ShipClass.Frigate
+        | Seizure.Corvette -> ShipClass.Escort
+
+    let private rosterLimits = manifests |> Array.mapi (fun i flights ->
+        let regular = flights |> Array.map (fun f -> f.Class)
+        if Seizure.sites.[i].IsSome then Array.append regular (Array.map encounterClass Seizure.roles)
+        else regular)
+
+    let capacity = rosterLimits |> Array.map Array.length |> Array.max
     let driveCapacity =
-        manifests |> Array.map (Array.sumBy (fun flight -> models.[int flight.Class].Drives.Length)) |> Array.max
+        rosterLimits |> Array.map (Array.sumBy (fun kind -> models.[int kind].Drives.Length)) |> Array.max
     let lampCapacity = driveCapacity + 2*capacity
 
     let shipPose flight time =
@@ -177,51 +187,118 @@ module Traffic =
 
     // Sample each swept hull only when its sector is first populated. Half a
     // second of travel fits within the extra clearance on either side of a sample.
-    let private clearances = manifests |> Array.map (fun flights -> lazy (
-        flights |> Array.map (fun flight ->
+    let private clearances = manifests |> Array.mapi (fun sector flights -> lazy (
+        let regular = flights |> Array.map (fun flight ->
             let count = int (ceil (flight.Lane.Period*2.0))
             let points = Array.init count (fun i -> fst (shipPose flight (float i*flight.Lane.Period/float count)))
-            models.[int flight.Class].Radius + 17.0, points)))
+            models.[int flight.Class].Radius + 17.0, points)
+        match Seizure.sites.[sector] with
+        | None -> regular
+        | Some site ->
+            let crossing = Seizure.roles |> Array.map (fun role ->
+                let points = [| for i in 0..int (Seizure.period*4.) do
+                                    match Seizure.actor site (float i*0.25) role with
+                                    | Some actor -> yield actor.Position
+                                    | None -> () |]
+                let scale = if role = Seizure.Liner then Seizure.linerScale else 1.0
+                models.[int (encounterClass role)].Radius * scale + 22.0, points)
+            Array.append regular crossing))
 
     let inShippingLane sector point rockRadius =
         clearances.[sector].Value |> Array.exists (fun (radius,points) ->
             let clearance = radius + rockRadius
             points |> Array.exists (fun p -> Vec3.distanceSq point p <= clearance*clearance))
 
-    type Fleet = { Hulls: InstanceBatch[]; Positions: Vec3[]; Rotations: Quat[] }
+    type Contact =
+        { Class: ShipClass; Position: Vec3; Rotation: Quat; Scale: float; Thrust: float
+          Name: string; Detail: string; Claimed: bool; Broadcast: bool }
+
+    type Fleet = { Hulls: InstanceBatch[]; Bridge: InstanceBatch; Contacts: Contact option[] }
+
+    let private bridgeMesh () =
+        let b = MeshBuilder()
+        let ring z r = ProceduralMeshes.ring(8,0.,0.,z,r,r)
+        let dark = MeshColor.rubber 0.06 0.07 0.075
+        let rim = MeshColor.metal 0.48 0.43 0.33
+        b.Loft([|ring 0. 0.83;ring 1. 0.83|],true,true,dark)
+        for i in 0..8 do
+            let z = float i / 8.
+            b.Loft([|ring (max 0. (z-0.014)) 1.;ring (min 1. (z+0.014)) 1.|],false,false,rim)
+        b.Box(v 0. 0.84 0.5,v 0.17 0.10 0.5,MeshColor.glow 1.0 0.28 0.06 0.75)
+        b.Build()
 
     let create renderer =
         let hulls = models |> Array.mapi (fun i model ->
-            let count = manifests |> Array.map (Array.sumBy (fun f -> if int f.Class = i then 1 else 0)) |> Array.max
+            let count = rosterLimits |> Array.map (Array.sumBy (fun kind -> if int kind = i then 1 else 0)) |> Array.max
             let batch = Renderer.createBatch renderer (Renderer.createMesh renderer (model.Mesh ())) count Opaque
             batch.Shininess <- if model.Aether then 50.0 else 36.0
             batch.Specular <- if model.Aether then 0.39 else 0.26
             batch)
-        { Hulls=hulls; Positions=Array.create capacity Vec3.zero; Rotations=Array.create capacity Quat.identity }
+        { Hulls=hulls; Bridge=Renderer.createBatch renderer (Renderer.createMesh renderer (bridgeMesh ())) 1 Opaque
+          Contacts=Array.create capacity None }
+
+    let private stageEncounter fleet slot site t =
+        let phase = Seizure.phase t
+        let claimed = phase = Seizure.Reflagged || phase = Seizure.Leaving
+        Seizure.roles |> Array.iteri (fun i role ->
+            match Seizure.actor site t role with
+            | None -> ()
+            | Some actor ->
+                let kind = encounterClass role
+                let liner = role = Seizure.Liner
+                fleet.Contacts.[slot+i] <- Some {
+                    Class=kind; Position=actor.Position; Rotation=actor.Rotation; Thrust=actor.Thrust
+                    Scale=(if liner then Seizure.linerScale else 1.0)
+                    Name=(if liner then site.Name else models.[int kind].Name)
+                    Detail=(if liner then Seizure.status phase else "AETHER · Beschlagnahmekommando")
+                    Claimed=liner && claimed; Broadcast=liner && phase <> Seizure.Arriving })
+        let extension = Seizure.bridgeExtension t
+        if extension > 0.001 then
+            match fleet.Contacts.[slot],fleet.Contacts.[slot+2] with
+            | Some liner,Some escort ->
+                let hatch = (CivilTrafficMeshes.boardingHatchCenter -1.0 + v -0.53 0. 0.) * liner.Scale
+                let target = liner.Position + Quat.rotateVec3 liner.Rotation hatch
+                let origin = escort.Position + Quat.rotateVec3 escort.Rotation AetherTrafficMeshes.boardingCollar
+                let span = target-origin
+                InstanceBatch.push fleet.Bridge origin (Quat.lookRotation -span Vec3.up)
+                    (v 1.28 1.28 (Vec3.length span * extension)) 1. 1. 1. 0.
+            | _ -> ()
 
     let push fleet sector time eye flame halo =
         for hull in fleet.Hulls do InstanceBatch.clear hull
+        InstanceBatch.clear fleet.Bridge
+        Array.fill fleet.Contacts 0 fleet.Contacts.Length None
         if sector >= 0 then
             let flights = manifests.[sector]
             for i in 0..flights.Length-1 do
                 let flight = flights.[i]
                 let p,q = shipPose flight time
-                fleet.Positions.[i] <- p
-                fleet.Rotations.[i] <- q
-                let distance = Vec3.distance eye p
-                if distance < 1600.0 then
-                    let model = models.[int flight.Class]
-                    InstanceBatch.push fleet.Hulls.[int flight.Class] p q Vec3.one 1.0 1.0 1.0 0.0
+                let model = models.[int flight.Class]
+                fleet.Contacts.[i] <- Some { Class=flight.Class; Position=p; Rotation=q; Scale=1.; Thrust=1.
+                                             Name=model.Name; Detail=(if model.Aether then "AETHER" else "Zivil")
+                                             Claimed=false; Broadcast=false }
+            match Seizure.sites.[sector] with
+            | Some site -> stageEncounter fleet flights.Length site (Seizure.clock site time)
+            | None -> ()
+            for i in 0..fleet.Contacts.Length-1 do
+                match fleet.Contacts.[i] with
+                | Some ship when Vec3.distanceSq eye ship.Position < 1600.0 * 1600.0 ->
+                    let p,q = ship.Position,ship.Rotation
+                    let model = models.[int ship.Class]
+                    InstanceBatch.push fleet.Hulls.[int ship.Class] p q (Vec3.one*ship.Scale) 1.0 1.0 1.0 0.0
                     let flare = 1.0 + 0.08*sin (time*3.2 + float i)
-                    let lamp = min 2.8 (1.1 + distance*0.002)
+                    let lamp = min 2.8 (1.1 + Vec3.distance eye p*0.002) * ship.Scale
                     let red,green,blue = if model.Aether then 1.2,0.53,0.16 else 0.20,0.64,1.15
-                    for nozzle,radius in model.Drives do
-                        flame p q nozzle (radius*5.4*flare) (radius*1.3) red green blue
-                        halo p q nozzle (max lamp (radius*1.8)) red green blue
-                    if model.Aether then
+                    if ship.Thrust > 0.03 then
+                        for socket,size in model.Drives do
+                            let nozzle,radius = socket*ship.Scale,size*ship.Scale
+                            flame p q nozzle (radius*5.4*flare*ship.Thrust) (radius*1.3) red green blue
+                            halo p q nozzle (max lamp (radius*1.8) * ship.Thrust) red green blue
+                    if model.Aether || ship.Claimed then
                         let phase = (time*0.8 + float i*0.37) % 1.0
                         let pulse = if phase < 0.07 || (phase > 0.14 && phase < 0.20) then 1.0 else 0.12
-                        for light in model.Lamps do halo p q light (lamp*1.45) (1.4*pulse) (0.05*pulse) (0.025*pulse)
+                        for light in model.Lamps do halo p q (light*ship.Scale) (lamp*1.45) (1.4*pulse) (0.05*pulse) (0.025*pulse)
                     else
-                        halo p q model.Lamps.[0] lamp 0.93 0.035 0.02
-                        halo p q model.Lamps.[1] lamp 0.035 0.84 0.22
+                        halo p q (model.Lamps.[0]*ship.Scale) lamp 0.93 0.035 0.02
+                        halo p q (model.Lamps.[1]*ship.Scale) lamp 0.035 0.84 0.22
+                | _ -> ()

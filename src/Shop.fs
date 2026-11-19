@@ -11,6 +11,7 @@ type ShopUi =
       Prices: HTMLElement[]
       Credits: HTMLElement
       Heading: HTMLElement
+      Bulletin: HTMLElement
       Notice: HTMLElement
       Cargo: HTMLElement
       CargoMeter: HTMLProgressElement
@@ -61,6 +62,7 @@ module Shop =
               Prices = Array.init 4 (fun i -> element ("price-" + string i))
               Credits = element "shop-credits"
               Heading = element "shop-heading"
+              Bulletin = element "port-bulletin"
               Notice = element "shop-notice"
               Cargo = element "cargo-status"
               CargoMeter = unbox<HTMLProgressElement> (element "cargo-meter")
@@ -193,7 +195,8 @@ module Shop =
         ui.Advance <- false
         ui.Heading.textContent <- outpost.Name
         ui.Root.setAttribute ("data-port", outpost.Id)
-        ui.Notice.textContent <-
+        ui.Notice.textContent <- ""
+        ui.Bulletin.textContent <-
             match outpost.Id with
             | "station-kestrel" -> "Kestrel erteilt vorläufige Dockfreigabe. Im Kurierregister gilt deine SIN weiter als terminiert."
             | "station-helios" -> "Schichtbericht Helios-IV. Todesfälle im Toleranzbereich. Beschwerdestelle geschlossen."
@@ -201,9 +204,9 @@ module Shop =
             | "station-kepler" -> "Werftfunk Kepler-07. Continuity-Drohnen prüfen die Lizenzen im Anflug."
             | "station-aether" -> "Relais Theta empfängt auf RT-9. Auch gespeicherte Notrufe laufen über diesen Kanal."
             | "station-bastion" -> "Flottenregister Morgenlicht. Immunität gilt ausschließlich für Platin-SINs."
-            | "station-kaltstrom" -> "Die Kondensatpumpen brauchen Treibstoffzellen. Für den Rückflug liegt Kryo-Erz bereit."
-            | "station-wracksaum" -> "Die Schlepper haben Plasmakerne und Titanschrott entladen. Ohne Geleit halten Späher und Kanonenboote auf dich zu."
-            | "station-schleierpass" -> "Die Relaiscrew kauft medizinische Vorräte an. Frisch vermessene Nav-Daten liegen zum Verkauf bereit."
+            | "station-kaltstrom" -> "Pumpenbuch Raureif. Die letzte Treibstoffzelle geht an Morgenlichts Kühlkreis. Der Aufenthaltsraum bleibt kalt."
+            | "station-wracksaum" -> "Schleppschein 44. Erst den Notruf abklemmen, dann Plasmakerne und Titanschrott ausbuchen."
+            | "station-schleierpass" -> "Aushang der Wacht. Unsere Nav-Daten sind zu haben. Wer euch unter unserer Kennung Geleit verkauft, fährt nicht für uns."
             | _ -> outpost.Name + " · Angedockt."
         ui.Root.removeAttribute "hidden"
         document.exitPointerLock ()

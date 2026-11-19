@@ -9,6 +9,7 @@ type ResearchUiRequest =
 
 type ResearchUi =
     { LabInstallation: HTMLElement
+      Channel: HTMLElement
       LabMaterials: HTMLElement
       LabButton: HTMLButtonElement
       StatusBanner: HTMLElement
@@ -31,7 +32,7 @@ module ResearchUi =
             sprintf "<span class='%s'>%s %d/%d</span>" cls def.ShortName have need)
         |> String.concat ""
 
-    let private sealedLog = "▒▒▒ Bandfragment unlesbar · wird mit dem Einbau entschlüsselt ▒▒▒"
+    let private sealedLog = "Aufzeichnung gesperrt. Der Einbau macht das Bandfragment lesbar."
 
     let create () =
         let get id = document.getElementById id
@@ -83,6 +84,7 @@ module ResearchUi =
 
         let ui =
             { LabInstallation = get "research-lab-installation"
+              Channel = get "research-channel"
               LabMaterials = get "research-lab-mats"
               LabButton = get "research-lab-install" :?> HTMLButtonElement
               StatusBanner = get "research-status"
@@ -129,6 +131,7 @@ module ResearchUi =
 
             if not state.LabInstalled then
                 ui.LabInstallation.removeAttribute "hidden"
+                ui.Channel.textContent <- "ANALOG-KANAL · DR. MARA LIND · RELAIS THETA"
                 ui.LabMaterials.innerHTML <- materialBadges cargo Research.labMaterials
                 let canInstall = Research.canInstallLab state sectorId wallet cargo
                 ui.LabButton.disabled <- not canInstall
@@ -142,19 +145,18 @@ module ResearchUi =
                     else "Einbauort: Forschungs-Relais Theta · Der Bandleser fehlt an Bord."
             else
                 ui.LabInstallation.setAttribute ("hidden", "")
+                ui.Channel.textContent <- "BORDFUNK · LOKALE AUFZEICHNUNG · SENDELEITUNG GETRENNT"
                 let here =
                     Research.nodes
-                    |> Array.filter (fun n ->
-                        not (Research.has state n.Id) && Research.atPort sectorId n.Id &&
-                        Research.prerequisitesMet state n.Id && Research.sealBroken relics n.Id)
+                    |> Array.filter (fun n -> Research.canResearch state sectorId relics wallet cargo n.Id)
                     |> Array.length
                 ui.StatusBanner.textContent <-
                     if doneCount = total then
                         "RT-9 · 15/15 Fragmente lesbar. Das Band ist vollständig. AETHER führt keins dieser Bauteile im Register."
                     elif here > 0 then
-                        sprintf "RT-9 · %d/%d Fragmente lesbar · An diesem Dock sind %d Einbauten möglich." doneCount total here
+                        sprintf "RT-9 · %d/%d Fragmente lesbar · Einbaufähige Bauteile an diesem Dock: %d." doneCount total here
                     else
-                        sprintf "RT-9 · %d/%d Fragmente lesbar · Hier ist nichts einbaubar. Jeder Knoten nennt sein Dock, seine Vorstufen und sein Siegel." doneCount total
+                        sprintf "RT-9 · %d/%d Fragmente lesbar · Kein Einbau bereit. Am Bauteil stehen Einbauort und fehlende Voraussetzungen." doneCount total
 
             for node in Research.nodes do
                 let i = node.Id

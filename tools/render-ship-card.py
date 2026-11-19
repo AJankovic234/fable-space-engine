@@ -1,6 +1,7 @@
 """After npm run build:
 blender --background artifacts/werft/eisvogel.blend --python tools/render-ship-card.py -- eisvogel [--save-scene]
 
+Pass catalogue art names or kepler-bomber (with both mounted torpedoes) to select hulls.
 Re-renders a shipyard card from the hull mesh the game draws. The camera and the positions of
 the lights come from the opened scene; their strength, the surround and the exposure are set
 below (YARD_LIGHT). With --save-scene the scene's own model of each rendered hull is replaced
@@ -17,7 +18,6 @@ import bpy
 from mathutils import Vector
 
 root = Path(__file__).resolve().parents[1]
-hulls = ["kutter", "lastkahn", "sperber", "eisvogel"]
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 save_scene = "--save-scene" in args
 names = [arg for arg in args if not arg.startswith("--")] or ["eisvogel"]
@@ -41,13 +41,36 @@ YARD_LIGHT = {
 
 # Transfer the same triangles, colours and emissions that WebGL draws.
 extract = """
-import { PlayerMeshes_models as models } from './build/PlayerMeshes.js';
+import { PlayerMeshes_models as models, PlayerMeshes_bomber as bomber, PlayerMeshes_torpedo as torpedo } from './build/PlayerMeshes.js';
+import { ShipCatalog_hulls as hulls } from './build/ShipCatalog.js';
+import { ShipHardpoints_bomberRails as rails } from './build/ProceduralMeshes.js';
 const pick = JSON.parse(process.argv[1]);
-console.log(JSON.stringify(pick.map(i => { const m = models[i](); return [Array.from(m.Vertices), Array.from(m.Indices)]; })));
+const byName = new Map(hulls.map((hull, i) => [hull.Art, models[i]]));
+const extract = mesh => [Array.from(mesh.Vertices), Array.from(mesh.Indices)];
+function card(name) {
+    if (name !== 'kepler-bomber') {
+        if (!byName.has(name)) throw new Error('Unknown ship card: ' + name);
+        return extract(byName.get(name)());
+    }
+    const [vertices, indices] = extract(bomber());
+    const payload = torpedo();
+    for (const rail of rails) {
+        const start = vertices.length / 10;
+        const mounted = payload.Vertices.slice();
+        for (let i = 0; i < mounted.length; i += 10) {
+            mounted[i] += rail.X;
+            mounted[i + 1] += rail.Y;
+            mounted[i + 2] += rail.Z;
+        }
+        for (const value of mounted) vertices.push(value);
+        for (const index of payload.Indices) indices.push(start + index);
+    }
+    return [vertices, indices];
+}
+console.log(JSON.stringify(pick.map(card)));
 """
-picked = [hulls.index(name) for name in names]
 meshes = json.loads(subprocess.check_output(
-    ["node", "--input-type=module", "-e", extract, json.dumps(picked)], cwd=root))
+    ["node", "--input-type=module", "-e", extract, json.dumps(names)], cwd=root))
 
 scene = bpy.context.scene
 scene.render.resolution_x = 720
@@ -83,7 +106,7 @@ def material(key):
     shader = mat.node_tree.nodes["Principled BSDF"]
     shader.inputs["Base Color"].default_value = (r, g, b, 1.0)
     shader.inputs["Metallic"].default_value = (0.12, 0.90, 0.15, 0.0)[surface]
-    shader.inputs["Roughness"].default_value = (0.38, 0.32, 0.16, 0.83)[surface]
+    shader.inputs["Roughness"].default_value = (0.54, 0.42, 0.16, 0.83)[surface]
     if surface == 2:
         shader.inputs["Coat Weight"].default_value = 0.50
     shader.inputs["Emission Color"].default_value = (r, g, b, 1.0)
@@ -121,7 +144,7 @@ for name, (vertices, indices) in zip(names, meshes):
     model = bpy.data.objects.new(name + "-card", data)
     scene.collection.objects.link(model)
     frame_hull(scene.camera, points)
-    scene.render.filepath = str(root / "public" / "assets" / "ships" / (name + ".webp"))
+    scene.render.filepath = bpy.path.relpath(str(root / "public" / "assets" / "ships" / (name + ".webp")))
     bpy.ops.render.render(write_still=True)
     model.hide_render = True
 

@@ -271,62 +271,62 @@ module RadioChatter =
     let exchanges : RadioExchange[] =
         [| // Abwertende AETHER-Zweierdialoge (Call & Response mit L/R-Panning)
            aether
-               ("AETHER AUDIT-04", "Schon wieder ein Schürfer mit geflicktem Transponder. Riecht bis hierher nach billigem Kühlmittel.", "chatter_0")
-               ("AETHER AUDIT-07", "Lass den Kutter durch. Wenn sein Stack reißt, spart das wenigstens die Hafensteuer.", "chatter_1")
+               ("AETHER AUDIT-04", "Schon wieder ein Schürfer mit geflicktem Transponder. Riecht bis hierher nach billigem Kühlmittel.", "faction_00")
+               ("AETHER AUDIT-07", "Lass den Kutter durch. Wenn sein Stack reißt, spart das wenigstens die Hafensteuer.", "faction_01")
                "aether-rustbucket" 1 3 [||] (Some false)
 
            aether
-               ("AETHER CLAIM-11", "Schichtwechsel auf Helios. Dreiundzwanzig unversicherte Lungen mehr auf der Liste.", "chatter_2")
-               ("AETHER CLAIM-14", "Solange der Schmelzofen brennt, zahlt die Konzernkasse keinen einzigen Filter.", "chatter_3")
+               ("AETHER CLAIM-11", "Schichtwechsel auf Helios. Dreiundzwanzig unversicherte Lungen mehr auf der Liste.", "faction_02")
+               ("AETHER CLAIM-14", "Solange der Schmelzofen brennt, zahlt die Konzernkasse keinen einzigen Filter.", "faction_03")
                "aether-helios-lungs" 1 3 [| "slag-refinery"; "outer-belt" |] (Some false)
 
            aether
-               ("AETHER ESCROW-02", "Die Graue Wacht markiert wieder Nebelspuren für umsonst. Unzertifizierte Amateure.", "chatter_4")
-               ("AETHER ESCROW-05", "Ab morgen verkaufen wir dieselbe Spur als Platin-Geleitschutz. Mit Stempel.", "chatter_5")
+               ("AETHER ESCROW-02", "Die Graue Wacht markiert wieder Nebelspuren für umsonst. Unzertifizierte Amateure.", "faction_04")
+               ("AETHER ESCROW-05", "Ab morgen verkaufen wir dieselbe Spur als Platin-Geleitschutz. Mit Stempel.", "faction_05")
                "aether-greywatch-scorn" 1 3 [| "schleierpass"; "frontier-drift" |] None
 
            aether
-               ("AETHER PREMIUM-09", "Mein letzter Sleeve hatte einen Kratzer am Handgelenk. Hab ihn auf Morgenlicht tauschen lassen.", "chatter_6")
-               ("AETHER PREMIUM-12", "Dekadent. Meine Police deckt erst ab Totalverlust – oder Gürtelkontakt.", "chatter_7")
+               ("AETHER PREMIUM-09", "Mein letzter Sleeve hatte einen Kratzer am Handgelenk. Hab ihn auf Morgenlicht tauschen lassen.", "faction_06")
+               ("AETHER PREMIUM-12", "Dekadent. Meine Police deckt erst ab Totalverlust – oder Gürtelkontakt.", "faction_07")
                "aether-sleeve-arrogance" 1 3 [| "kepler-yard"; "morgenlicht-bastion" |] None
 
            aether
-               ("AETHER ACTUARY-03", "Kapper auf Sektorband. Sollen die Drohnen eingreifen?", "chatter_8")
-               ("AETHER ACTUARY-06", "Negativ. Solange sie nur Gürtelfrachter plündern, sind das unbezahlte Marktregulatoren.", "chatter_9")
+               ("AETHER ACTUARY-03", "Kapper auf Sektorband. Sollen die Drohnen eingreifen?", "faction_08")
+               ("AETHER ACTUARY-06", "Negativ. Solange sie nur Gürtelfrachter plündern, sind das unbezahlte Marktregulatoren.", "faction_09")
                "aether-pirates-neglect" 1 3 [||] (Some true)
 
            aether
-               ("AETHER GRACE-07", "Leitstand, die gestrichene Kestrel-Kennung funkt schon wieder auf dem Nebenband.", "chatter_10")
-               ("AETHER DISPATCH", "Ignorieren. Und erwähnen Sie das Analogband nicht noch einmal – die Direktion hört mit.", "chatter_11")
+               ("AETHER GRACE-07", "Leitstand, die gestrichene Kestrel-Kennung funkt schon wieder auf dem Nebenband.", "faction_10")
+               ("AETHER DISPATCH", "Ignorieren. Und erwähnen Sie das Analogband nicht noch einmal – die Direktion hört mit.", "faction_11")
                "aether-act3-nervous" 3 3 [||] None
 
            aether
-               ("AETHER TARIFF VII", "Schlepper ohne Platin-Bürgschaft halten fünfzig Meter Abstand zur Sperrlinie.", "chatter_12")
-               ("AETHER AUDIT-02", "Verstanden. Wer die Linie kratzt, wird als Schrottgebühr verbucht.", "chatter_13")
+               ("AETHER TARIFF VII", "Schlepper ohne Platin-Bürgschaft halten fünfzig Meter Abstand zur Sperrlinie.", "faction_12")
+               ("AETHER AUDIT-02", "Verstanden. Wer die Linie kratzt, wird als Schrottgebühr verbucht.", "faction_13")
                "aether-blockade-scorn" 1 3 [| "slag-refinery"; "morgenlicht-bastion" |] None
 
            // Zivil-, Schlepper-, Graue-Wacht- und Kapper-Funk
-           single Civilian "TUG DEADWEIGHT" "AETHER Tariff VII steht wieder quer vor dem Tor. Für jeden Scan verlierst du zwei Stunden Sauerstoff." "chatter_14" -0.35 false 1 3 [| "outer-belt"; "slag-refinery" |] false (Some false)
-           single Civilian "HAULER COLD IRON" "Auf Drift-9 löten sie dir eine neue SIN aus Altmetall. Hält genau bis zur ersten Drohne." "chatter_15" 0.32 false 1 3 [| "frontier-drift"; "kepler-yard" |] false (Some false)
-           single Civilian "KALTSTROM RELAIS" "Zahlen in Zellen, nicht in Credits. Auf Raureif taut dir kein Konzernscheck den Verdampfer auf." "chatter_16" -0.25 false 1 3 [| "kaltstrom" |] false None
-           single Civilian "SALVAGE WIRE-40" "Wenn dir im Wracksaum ein Notruf zu sauber klingt, kapp die Leitung. Tote atmen nicht so ruhig." "chatter_17" 0.28 false 1 3 [| "wracksaum" |] false None
-           single GreyWatch "GRAUE WACHT 03" "Baken sind gesetzt. Lasst euch am Schleierpass kein AETHER-Geleit aufschwatzen – die Spur ist unsere." "chatter_18" -0.38 false 1 3 [| "schleierpass"; "frontier-drift" |] false None
-           single GreyWatch "GRAUE WACHT 08" "Achtung im Nebel: Zwei Drohnen ohne Transponder patrouillieren abseits der Baken." "chatter_19" 0.34 false 2 3 [| "schleierpass"; "aether-relay" |] false None
-           single Pirate "CLIPPER NULL-SIGN" "Kein AETHER-Stern in Reichweite. Der Erzfrachter da drüben gehört schon zur Hälfte uns." "chatter_20" 0.42 false 1 3 [| "outer-belt"; "frontier-drift"; "wracksaum" |] false (Some true)
-           single Pirate "UNBONDED-03" "Wirf die Ladung ab, Lizenzleiche, dann lassen wir dir genug Treibstoff bis Kestrel." "chatter_21" -0.40 false 1 3 [||] false (Some true)
-           single Civilian "THETA-RELAIS" "Analogband RT-9 meldet zwei identische Kennungen im selben Sektor. Prüft eure Transponder." "chatter_22" 0.22 false 2 3 [| "aether-relay"; "kepler-yard" |] false None
+           single Civilian "TUG DEADWEIGHT" "AETHER Tariff VII steht wieder quer vor dem Tor. Für jeden Scan verlierst du zwei Stunden Sauerstoff." "faction_14" -0.35 false 1 3 [| "outer-belt"; "slag-refinery" |] false (Some false)
+           single Civilian "HAULER COLD IRON" "Auf Drift-9 löten sie dir eine neue SIN aus Altmetall. Hält genau bis zur ersten Drohne." "faction_15" 0.32 false 1 3 [| "frontier-drift"; "kepler-yard" |] false (Some false)
+           single Civilian "KALTSTROM RELAIS" "Zahlen in Zellen, nicht in Credits. Auf Raureif taut dir kein Konzernscheck den Verdampfer auf." "faction_16" -0.25 false 1 3 [| "kaltstrom" |] false None
+           single Civilian "SALVAGE WIRE-40" "Wenn dir im Wracksaum ein Notruf zu sauber klingt, kapp die Leitung. Tote atmen nicht so ruhig." "faction_17" 0.28 false 1 3 [| "wracksaum" |] false None
+           single GreyWatch "GRAUE WACHT 03" "Baken sind gesetzt. Lasst euch am Schleierpass kein AETHER-Geleit aufschwatzen – die Spur ist unsere." "faction_18" -0.38 false 1 3 [| "schleierpass"; "frontier-drift" |] false None
+           single GreyWatch "GRAUE WACHT 08" "Achtung im Nebel: Zwei Drohnen ohne Transponder patrouillieren abseits der Baken." "faction_19" 0.34 false 2 3 [| "schleierpass"; "aether-relay" |] false None
+           single Pirate "CLIPPER NULL-SIGN" "Kein AETHER-Stern in Reichweite. Der Erzfrachter da drüben gehört schon zur Hälfte uns." "faction_20" 0.42 false 1 3 [| "outer-belt"; "frontier-drift"; "wracksaum" |] false (Some true)
+           single Pirate "UNBONDED-03" "Wirf die Ladung ab, Lizenzleiche, dann lassen wir dir genug Treibstoff bis Kestrel." "faction_21" -0.40 false 1 3 [||] false (Some true)
+           single Civilian "THETA-RELAIS" "Analogband RT-9 meldet zwei identische Kennungen im selben Sektor. Prüft eure Transponder." "faction_22" 0.22 false 2 3 [| "aether-relay"; "kepler-yard" |] false None
 
            aether
-               ("AETHER LIEN-09", "Warum riecht jeder Schlepper aus dem Wracksaum nach verbranntem Isolierband?", "chatter_23")
-               ("AETHER LIEN-10", "Weil ihre SIN-Lizenzen genauso geflickt sind wie ihre Hüllen.", "chatter_24")
+               ("AETHER LIEN-09", "Warum riecht jeder Schlepper aus dem Wracksaum nach verbranntem Isolierband?", "faction_23")
+               ("AETHER LIEN-10", "Weil ihre SIN-Lizenzen genauso geflickt sind wie ihre Hüllen.", "faction_24")
                "aether-wracksaum-scorn" 1 3 [| "wracksaum"; "frontier-drift" |] None
 
            aether
-               ("AETHER UNDERWRITER-01", "Kepler hat wieder einen Erzfrachter ohne Platin-Stempel abgewiesen.", "chatter_25")
-               ("AETHER UNDERWRITER-04", "Gut so. Sollen sie ihr Altmetall draußen im Gürtel rosten lassen.", "chatter_26")
+               ("AETHER UNDERWRITER-01", "Kepler hat wieder einen Erzfrachter ohne Platin-Stempel abgewiesen.", "faction_25")
+               ("AETHER UNDERWRITER-04", "Gut so. Sollen sie ihr Altmetall draußen im Gürtel rosten lassen.", "faction_26")
                "aether-kepler-scorn" 1 3 [| "kepler-yard"; "outer-belt" |] (Some false)
 
-           single Aether "AETHER GRACE PERIOD" "Unzertifizierte Einheiten räumen den Anflugkorridor. Schäden an Lackierungen werden in Rechnung gestellt." "chatter_27" 0.0 true 1 3 [| "slag-refinery"; "morgenlicht-bastion"; "kepler-yard" |] true None |]
+           single Aether "AETHER GRACE PERIOD" "Unzertifizierte Einheiten räumen den Anflugkorridor. Schäden an Lackierungen werden in Rechnung gestellt." "faction_27" 0.0 true 1 3 [| "slag-refinery"; "morgenlicht-bastion"; "kepler-yard" |] true None |]
 
     let matches (ctx: RadioContext) (ex: RadioExchange) =
         ctx.Act >= ex.MinAct

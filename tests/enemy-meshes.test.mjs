@@ -106,3 +106,20 @@ test("a fresh enemy slot starts with the drone collider until its role is config
     for (const axis of axes) assert.equal(fresh[name][axis], h[name][axis], `${name}.${axis}`);
   }
 });
+
+test("drones and the customs blocker wear dull fleet paint and keep their lamps", () => {
+  builders.forEach((build, r) => {
+    const v = build().Vertices;
+    let paint = 0, luminance = 0, peak = 0, lit = 0;
+    for (let i = 0; i < v.length; i += 10) {
+      if (v[i + 9] > 0.5) lit++;
+      if (v[i + 9] !== 0) continue;
+      paint++;
+      luminance += 0.2126 * v[i + 6] + 0.7152 * v[i + 7] + 0.0722 * v[i + 8];
+      peak = Math.max(peak, v[i + 6], v[i + 7], v[i + 8]);
+    }
+    assert.ok(luminance / paint < 0.32, `${names[r]}: mean paint luminance ${luminance / paint}`);
+    assert.ok(peak <= 0.6, `${names[r]}: brightest paint channel ${peak}`);
+    assert.ok(lit > 0, `${names[r]}: no lamps`);
+  });
+});

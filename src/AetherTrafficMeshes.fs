@@ -91,6 +91,16 @@ module AetherTrafficMeshes =
         inlay [| 0.06,0.19; 0.22,0.45; 0.72,-0.36; 0.41,-0.36 |] gold
         inlay [| 0.,-0.04; 0.14,-0.24; 0.,-0.46; -0.14,-0.24 |] ivory
 
+    /// Das rote Auge sitzt in einer dunklen, von der Seite her spitz zulaufenden Fassung.
+    let private watchEye (b: MeshBuilder) (center: Vec3) width height =
+        let face dx dy depth = center + Vec3(dx*width,dy*height,-depth)
+        let diamond halfWidth halfHeight depth =
+            [| face -halfWidth 0. depth; face 0. halfHeight depth
+               face halfWidth 0. depth; face 0. -halfHeight depth |]
+        ProceduralMeshes.armorPanel b (diamond 1. 1. 0.) (-Vec3.unitZ) 0.12 graphite bronze
+        ProceduralMeshes.armorPanel b (diamond 0.82 0.67 0.13) (-Vec3.unitZ) 0.05 redLens carmine
+        b.PolygonOutward(diamond 0.16 0.46 0.19,center,scanner)
+
     /// Gepanzerte Doppellafette mit zwei kantigen Projektorköpfen vor der Wiege.
     let private pulseTurret (b: MeshBuilder) y z scale =
         let platform h w l = terrace (y+h*scale) z (w*scale) (l*scale)
@@ -116,8 +126,8 @@ module AetherTrafficMeshes =
         let beam = ProceduralMeshes.beam b
         let keel =
             [| rib 0. -41.0 0.25 -0.62 0.18
-               rib 0. -29.0 3.70 -2.70 1.90
-               rib 0. -16.5 6.15 -3.65 3.45
+               rib 0. -29.0 4.65 -3.20 2.15
+               rib 0. -16.5 6.65 -4.05 3.65
                rib 0. -5.0 7.40 -4.30 4.30
                rib 0. 13.0 7.40 -4.30 4.30
                rib 0. 26.0 6.50 -3.90 3.65
@@ -153,7 +163,7 @@ module AetherTrafficMeshes =
         let forward = Vec3.normalize (Vec3(0.,0.05,-1.))
         fleetShield b (Vec3(0.,4.08,21.0)) (Vec3.unitX*2.52) (forward*3.04) deckNormal
 
-        // Eine gestufte Kommandobrücke mit umlaufendem Fensterband und schrägem Signalmast.
+        // Gestufte Kommandobrücke; die offene Krone darüber ist aus dem Anflugkorridor zu sehen.
         let tower rings color = b.Loft(rings, true, true, color)
         tower [| terrace 3.95 6.4 4.65 8.4; terrace 7.55 7.2 3.55 6.4 |] shadowIvory
         tower [| terrace 7.46 7.2 3.60 6.45; terrace 8.28 6.85 4.75 7.1 |] gold
@@ -166,26 +176,27 @@ module AetherTrafficMeshes =
         tower [| terrace 9.68 7.25 4.43 6.60; terrace 10.28 7.6 3.75 5.8 |] ivory
         // Abtasterleiste quer vor dem Brückenband.
         b.Box(Vec3(0.,8.98,0.18),Vec3(2.55,0.13,0.10),scanner)
-        b.Slab([| Vec3(0.,9.95,7.3); Vec3(0.,14.25,10.1); Vec3(0.,14.25,11.3); Vec3(0.,9.95,12.8) |],
-               [| 0.62; 0.22; 0.22; 0.64 |], Vec3.unitX, graphite)
-        beam (Vec3(0.,14.15,10.55)) (Vec3(0.,16.25,10.8)) 0.12 gold
-        shell b [| rib 0. 9.48 3.48 13.20 14.73; rib 0. 10.18 4.31 12.91 15.04
-                   rib 0. 11.62 3.65 13.28 14.75 |] bronze shadowIvory graphite graphite
+        // Zwei gespreizte Pfeiler lassen unter dem schwarzen Querhaupt den Himmel durchscheinen.
         for side in [| -1.; 1. |] do
-            let face x y = Vec3(side*x,y,9.47)
-            ProceduralMeshes.armorPanel b [| face 0.30 13.43; face 2.84 13.43; face 2.60 14.53; face 0.30 14.53 |]
-                (-Vec3.unitZ) 0.065 canopy gold
+            let p x y z = Vec3(side*x,y,z)
+            b.Slab([| p 2.7 9.7 4.8; p 5.8 13.7 5.4; p 5.6 14.3 11.7; p 2.7 9.7 12.6 |],
+                   [| 0.72; 0.57; 0.57; 0.72 |], Vec3.unitX, shadowIvory)
+            beam (p 2.7 9.7 4.8) (p 5.8 13.7 5.4) 0.26 bronze
+        shell b [| rib 0. 4.95 6.85 13.45 15.45; rib 0. 6.85 8.70 13.12 16.22
+                   rib 0. 10.90 7.95 13.32 16.08; rib 0. 12.45 6.15 13.70 15.40 |]
+                shadowIvory ivory graphite bronze
+        watchEye b (Vec3(0.,14.45,4.94)) 5.86 0.92
 
         // Seitliche Maschinenhäuser. Die freistehenden Glocken sitzen hinter den Kühllamellen.
         for side in [| -1.; 1. |] do
             let r x z w lo hi = rib (side*x) z w lo hi
-            let cheek = [| r 4.75 -20.7 0.45 -1.06 1.52; r 6.35 -13.5 1.78 -3.02 3.02
-                           r 6.92 -6.2 2.01 -3.65 3.93; r 6.92 2.1 2.01 -3.65 3.93
+            let cheek = [| r 5.95 -27.5 0.52 -1.52 1.72; r 7.40 -18.6 2.10 -3.62 3.32
+                           r 7.60 -6.2 2.55 -4.10 4.42; r 7.60 2.1 2.55 -4.10 4.42
                            r 6.14 5.6 1.04 -2.62 3.22 |]
             shell b cheek ivory shadowIvory graphite bronze
             let flank = if side > 0. then 2 else 6
             panel b cheek.[1] cheek.[2] flank 0.05 0.91 0.14 0.86 0.13 steel bronze
-            fleetShield b (Vec3(side*8.95,0.13,-2.16)) (Vec3.unitZ*(-side*2.45)) (Vec3.unitY*1.93) (Vec3.unitX*side)
+            fleetShield b (Vec3(side*10.16,0.13,-2.16)) (Vec3.unitZ*(-side*3.55)) (Vec3.unitY*2.18) (Vec3.unitX*side)
             let pod = [| r 5.0 1.0 0.85 -1.2 1.4; r 7.85 12.8 2.35 -2.45 2.85
                          r 8.6 19.0 2.65 -2.85 3.00; r 8.6 27.0 2.65 -2.85 3.00
                          r 8.6 33.1 2.15 -2.45 2.25 |]
@@ -204,7 +215,10 @@ module AetherTrafficMeshes =
         for p in frigateLights do positionLamp b p 0.48
         b.Build()
 
-    /// Flacher Eskortfächer mit vorgepfeilten, geschwärzten Außenklingen und einem einzelnen Zentraltriebwerk.
+    // The telescopic passage stows in the starboard nacelle, aft of the scanner.
+    let boardingCollar = Vec3(9.7, -0.1, -2.45)
+
+    /// Die Eskortkorvette trägt ihre Scannergondeln in zwei offenen Sicheln.
     let escort () : MeshData =
         let b = MeshBuilder()
         let beam = ProceduralMeshes.beam b
@@ -222,9 +236,9 @@ module AetherTrafficMeshes =
 
         for side in [| -1.; 1. |] do
             let p x y z = Vec3(x*side,y,z)
-            // Drei Querschnitte je Flügel. Der Knick in der Vorderkante umschließt eine offene Sichel.
-            let root = [| p 1.65 0.06 -3.9; p 1.7 0.12 10.65 |]
-            let elbow = [| p 6.6 -0.02 -2.5; p 7.8 -0.15 6.4 |]
+            // Hinterer Holm und gebogener Bugholm schließen ein freies Dreieck um die Gondel.
+            let root = [| p 1.72 0.06 4.85; p 1.7 0.12 11.20 |]
+            let elbow = [| p 7.0 -0.02 -1.8; p 7.8 -0.15 5.2 |]
             let tip = [| p 12.75 -0.52 -10.90; p 12.60 -0.52 -5.9 |]
             let wing (a: Vec3[]) (c: Vec3[]) ha hc color =
                 let outline = [| a.[0]; c.[0]; c.[1]; a.[1] |]
@@ -238,6 +252,9 @@ module AetherTrafficMeshes =
                 beam a.[0] c.[0] (min ha hc * 0.8) gold
             wing root elbow 0.85 0.63 ivory
             wing elbow tip 0.63 0.28 graphite
+            let forwardRoot = [| p 1.44 0.20 -9.55; p 1.75 0.28 -7.05 |]
+            let forwardPod = [| p 8.25 0.26 -7.00; p 8.22 0.25 -5.36 |]
+            wing forwardRoot forwardPod 0.49 0.40 graphite
             let outerFace = if side > 0. then 2 else 6
             panel b body.[1] body.[2] outerFace 0.06 0.94 0.18 0.78 0.07 carmine bronze
 
@@ -248,6 +265,8 @@ module AetherTrafficMeshes =
                          gondola 8.04 4.35 0.62 -0.76 0.53 |]
             shell b pod graphite ivory graphite bronze
             panel b pod.[1] pod.[2] outerFace 0.07 0.90 0.15 0.80 0.08 carmine bronze
+            b.Box(p 9.99 -0.10 -4.50,Vec3(0.08,0.38,1.58),graphite)
+            b.Box(p 10.08 -0.10 -4.50,Vec3(0.035,0.20,1.22),scanner)
             for offset in [| -0.78; 0.78 |] do
                 let tooth = gondola (8.42+offset)
                 shell b [| tooth -13.20 0.29 -0.52 0.20; tooth -12.38 0.43 -0.68 0.39
@@ -267,10 +286,15 @@ module AetherTrafficMeshes =
             b.Slab([| p 1.6 1.15 4.8; p 3.5 4.60 7.9; p 3.75 4.78 10.3; p 2.15 0.90 12.2 |],
                    [| 0.36; 0.15; 0.13; 0.40 |], Vec3.unitX, ivory)
             beam (p 1.6 1.15 4.8) (p 3.5 4.60 7.9) 0.16 gold
-        // Unter der Kanzel sitzt der dunkle Sensorkiel mit querliegendem Messfenster.
+        // Das Auge unter dem Bug hängt auch aus einem tiefen Anflug frei vor dem Rumpf.
         shell b [| rib 0. -8.6 0.32 -1.76 -1.04; rib 0. -4.0 1.05 -2.60 -1.44
                    rib 0. 1.3 0.90 -2.50 -1.55 |] graphite bronze canopy graphite
+        shell b [| rib 0. -6.50 1.56 -2.70 -1.50; rib 0. -5.20 2.08 -2.95 -1.25
+                   rib 0. -2.90 1.25 -2.62 -1.44 |] graphite bronze graphite shadowIvory
+        watchEye b (Vec3(0.,-2.10,-6.51)) 1.40 0.53
         b.Box(Vec3(0.,-2.62,-3.45),Vec3(0.57,0.10,0.25),scanner)
+        b.Box(boardingCollar,Vec3(0.36,0.90,1.16),graphite)
+        b.Box(boardingCollar+Vec3(0.35,0.,0.),Vec3(0.08,0.80,0.94),steel)
         for nozzle,radius in escortDrives do drive b nozzle radius
         for p in escortLights do positionLamp b p 0.39
         b.Build()

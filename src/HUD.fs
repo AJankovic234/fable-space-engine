@@ -882,31 +882,38 @@ module Hud =
                 else
                     queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
 
-    /// Identify one passing ship near the centre of the view. Combat locks take precedence.
-    let drawTraffic (hud: Hud) viewProj sector (fleet: Traffic.Fleet) position =
+    /// A seized liner broadcasts locally. Ordinary contacts still require looking at the hull.
+    let drawTraffic (hud: Hud) viewProj (fleet: Traffic.Fleet) position =
         if not hud.InCombat then
-            let flights = Traffic.manifests.[sector]
             let radius = min 90.0 (hud.Height*0.13)
             let mutable best = radius*radius
-            let mutable contact = -1
+            let mutable contact = None
             let mutable sx,sy = 0.0,0.0
-            for i in 0..flights.Length-1 do
-                let p = fleet.Positions.[i]
-                if Vec3.distanceSq p position <= 600.0*600.0 then
-                    project hud viewProj p.X p.Y p.Z
-                    if onScreen hud then
-                        let dx,dy = hud.ScreenX-hud.Width*0.5, hud.ScreenY-hud.Height*0.5
-                        let score = dx*dx + dy*dy
-                        if score < best then
-                            best <- score
-                            contact <- i
-                            sx <- hud.ScreenX
-                            sy <- hud.ScreenY
-            if contact >= 0 then
-                let model = Traffic.models.[int flights.[contact].Class]
-                let faction,tint = if model.Aether then "AETHER",Amber else "Zivil",Cyan
-                let distance = int (Vec3.distance fleet.Positions.[contact] position)
-                queueMarker hud HudContacts.Circle sx sy 4.0 tint 36 false model.Name (faction + " · " + string distance + " m")
+            for entry in fleet.Contacts do
+                match entry with
+                | Some ship ->
+                    let p = ship.Position
+                    let reach = if ship.Broadcast then 850.0 else 600.0
+                    if Vec3.distanceSq p position <= reach*reach then
+                        project hud viewProj p.X p.Y p.Z
+                        if onScreen hud then
+                            if ship.Broadcast then
+                                queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 5.0 Amber 43 false ship.Name ship.Detail
+                            else
+                                let dx,dy = hud.ScreenX-hud.Width*0.5, hud.ScreenY-hud.Height*0.5
+                                let score = dx*dx + dy*dy
+                                if score < best then
+                                    best <- score
+                                    contact <- entry
+                                    sx <- hud.ScreenX
+                                    sy <- hud.ScreenY
+                | None -> ()
+            match contact with
+            | Some ship ->
+                let tint = if Traffic.models.[int ship.Class].Aether then Amber else Cyan
+                let distance = int (Vec3.distance ship.Position position)
+                queueMarker hud HudContacts.Circle sx sy 4.0 tint 36 false ship.Name (ship.Detail + " · " + string distance + " m")
+            | None -> ()
 
     let drawWrecks (hud: Hud) (viewProj: Mat4) sector recoveries (position: Vec3) =
         for site in WreckFields.forSector sector do

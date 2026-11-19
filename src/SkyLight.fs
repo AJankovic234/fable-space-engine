@@ -59,13 +59,13 @@ module SkyLight =
         let tx, ty = yaw.[v]
         let gx = tx * d.X - ty * d.Z
         let gy = d.Y
-        // Band um die Ebene y + 0,38 x = 0,12; Wolken, Schleier und Staub im Mittel 0,45.
+        // Band um die Ebene y + 0,38 x = 0,12; Wolken, Schleier und Staub im Mittel 0,34.
         let offset = (gy + gx * 0.38 - 0.12) * 3.4
         let band = exp (-offset * offset)
-        let purple = Vec3(0.13, 0.035, 0.18)
-        let teal = Vec3(0.025, 0.22, 0.27)
+        let purple = Vec3(0.088, 0.036, 0.108)
+        let teal = Vec3(0.030, 0.118, 0.138)
         let nebula = Vec3.lerp purple teal (smooth -0.7 0.7 gx)
-        let mutable c = Vec3(0.003, 0.006, 0.017) + nebula * (band * 0.45) + Vec3(0.08, 0.13, 0.20) * (band * 0.03)
+        let mutable c = Vec3(0.003, 0.005, 0.013) + nebula * (band * 0.34) + Vec3(0.05, 0.075, 0.105) * (band * 0.03)
 
         if v <> 0 then
             let lum = c.X * 0.24 + c.Y * 0.62 + c.Z * 0.14

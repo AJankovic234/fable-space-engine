@@ -43,9 +43,12 @@ if (!PRICES) throw new Error('preise.json fehlt oder ist kein gültiges JSON');
 const MARKERS = PRICES.projektMarker.map(m => m.toLowerCase());
 const PROJECT_START = Date.parse(PRICES.projektStart ?? '2026-11-16');
 // Ändert sich die Preistabelle oder die Auswertung (Version), werden alle relevanten Protokolle neu gelesen.
-const PARSER_VERSION = 4;
-const PRICE_HASH = crypto.createHash('sha1').update(PARSER_VERSION + JSON.stringify(PRICES.modelle) + JSON.stringify(PRICES.zeit) + JSON.stringify(PRICES.projektMarker)).digest('hex').slice(0, 10);
+// 5: Gemini-Eingabe ohne doppelten Cache-Abzug, Gemini-Schritte ohne Modellangabe, nichts vor Projektbeginn.
+const PARSER_VERSION = 5;
+const PRICE_HASH = crypto.createHash('sha1').update(PARSER_VERSION + JSON.stringify(PRICES.modelle) + JSON.stringify(PRICES.zeit) + JSON.stringify(PRICES.projektMarker) + PRICES.projektStart).digest('hex').slice(0, 10);
 const hasMarker = s => { const l = String(s ?? '').toLowerCase(); return MARKERS.some(m => l.includes(m)); };
+// Manche Sitzungen (vor allem Antigravity) liefen schon vor Projektbeginn für andere Arbeit.
+const vorStart = t => Number.isFinite(t) && t < PROJECT_START;
 
 // ---------------------------------------------------------------------------------------------
 // Preise
@@ -124,8 +127,9 @@ function recordWrite(s, model, t, raw, cwd) {
 }
 
 // Shell-Befehle mit Schreibabsicht: Projektpfade darin gelten als geschrieben (grobe Heuristik).
-const WRITE_HINT = /(sed\s+-i|>\s*["']?[\w./\\:-]|\btee\b|\bcp\b|\bmv\b|writeFile|write_text|open\([^)]*["'][wa]|Set-Content|Out-File|apply_patch|git\s+apply|\bpatch\b|\.write\()/;
-function shellWrites(cmd) {
+// Eine Umleitung `>` zählt, `=>` (Pfeilfunktion), `->`, `>=`, `2>&1` und `> /dev/null` nicht.
+const WRITE_HINT = /(sed\s+-i|(?<![=\-<>])>>?\s*["']?(?!&|\/dev\/null)[\w./\\:-]|\btee\b|\bcp\b|\bmv\b|writeFile|write_text|open\([^)]*["'][wa]|Set-Content|Out-File|apply_patch|git\s+apply|\bpatch\b|\.write\()/;
+export function shellWrites(cmd) {
   const text = String(cmd ?? '');
   if (!WRITE_HINT.test(text)) return [];
   const out = new Set();
@@ -176,12 +180,13 @@ function claudeUserInput(o, subagent) {
   return c.some(b => (b.type === 'text' && !bad.test(b.text ?? '')) || b.type === 'image');
 }
 
-function parseClaude(file, text) {
+export function parseClaude(file, text) {
   const s = newSession('Claude Code', file);
   const subagent = /[\\/]subagents[\\/]/.test(file);
   const requests = new Map();
   for (const o of lines(text)) {
     const t = Date.parse(o.timestamp);
+    if (vorStart(t)) continue;
     if (!s.relevant && o.cwd && hasMarker(o.cwd)) s.relevant = true;
     const msg = o.message;
     if (o.type === 'assistant' && msg?.usage && msg.model && msg.model !== '<synthetic>') {
@@ -211,7 +216,7 @@ function parseClaude(file, text) {
 }
 
 // Codex: ~/.codex/sessions/JJJJ/MM/TT/rollout-*.jsonl (Unterthreads haben eigene Dateien)
-function parseCodex(file, text) {
+export function parseCodex(file, text) {
   const s = newSession('Codex', file);
   let model = 'unbekannt', cwd = null;
   const seen = new Set(), fallback = [];
@@ -220,7 +225,9 @@ function parseCodex(file, text) {
     let user = false;
     if (o.type === 'session_meta') { cwd = p.cwd ?? cwd; if (hasMarker(p.cwd)) s.relevant = true; s.id = p.id ?? s.id; }
     else if (o.type === 'turn_context') { model = p.model ?? model; cwd = p.cwd ?? cwd; if (hasMarker(p.cwd)) s.relevant = true; }
-    else if (o.type === 'response_item' && /call$/.test(p.type ?? '')) {
+    // Modell und Arbeitsordner gelten weiter, Verbrauch und Ereignisse vor Projektbeginn nicht.
+    if (vorStart(t)) continue;
+    if (o.type === 'response_item' && /call$/.test(p.type ?? '')) {
       // Ältere Sitzungen speichern den Patch JSON-maskiert (\n als Zeichenfolge).
       const input = String(p.input ?? p.arguments ?? '').replace(/(?<!\\)\\n/g, '\n');
       for (const m of input.matchAll(/\*\*\* (?:Update|Add|Delete) File: ([^\n`]+)|\*\*\* Move to: ([^\n`]+)/g)) recordWrite(s, model, t, (m[1] ?? m[2]).trim(), cwd);
@@ -247,13 +254,15 @@ function parseCodex(file, text) {
 }
 
 // Gemini/Antigravity: ~/.gemini/antigravity/brain/<id>/.system_generated/logs/chunks/transcript_full/*.jsonl
-function parseGemini(dir, text) {
+export function parseGemini(dir, text) {
   const s = newSession('Gemini', dir);
   const steps = new Map();
   let lastModel = null;
+  const ohneModell = [];
   for (const o of lines(text)) steps.set(o.step_index ?? steps.size, o);
   for (const o of steps.values()) {
     const t = Date.parse(o.created_at);
+    if (vorStart(t)) { if (o.model) lastModel = o.model; continue; }
     if (!s.relevant) s.relevant = hasMarker(o.content) || hasMarker(JSON.stringify(o.tool_calls ?? ''));
     // Antigravity speichert Argumente als JSON-Strings: '"e:\\HTML\\…"'.
     const arg = v => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch { return v; } };
@@ -264,10 +273,14 @@ function parseGemini(dir, text) {
       else if (c.name === 'run_command') for (const w of shellWrites(arg(a.CommandLine))) recordWrite(s, o.model ?? lastModel, t, w, arg(a.Cwd));
     }
     if (o.model) lastModel = o.model;
-    if (o.model && o.input_tokens != null) {
-      const cached = o.cache_read_tokens ?? 0;
-      addUsage(s, o.model, t, { eingabe: Math.max(0, o.input_tokens - cached), cacheLesen: cached,
-        cacheSchreiben5m: 0, cacheSchreiben1h: 0, cacheSchreiben: 0, ausgabe: o.output_tokens ?? 0 });
+    if (lastModel) for (const { t: tp, u } of ohneModell.splice(0)) addUsage(s, lastModel, tp, u);
+    // Antigravity zählt input_tokens OHNE den Cache: Prompt = input_tokens + cache_read_tokens
+    // (cache_read eines Schritts ≈ ganzer Prompt des vorigen). output_tokens enthält die Denk-Token.
+    if (o.input_tokens != null) {
+      const u = { eingabe: o.input_tokens, cacheLesen: o.cache_read_tokens ?? 0,
+        cacheSchreiben5m: 0, cacheSchreiben1h: 0, cacheSchreiben: 0, ausgabe: o.output_tokens ?? 0 };
+      // Schritte ohne Modellangabe gehören zum Modell der Sitzung (vorheriges, sonst erstes späteres).
+      if (lastModel) addUsage(s, lastModel, t, u); else ohneModell.push({ t, u });
     }
     s.events.push({ t, user: o.type === 'USER_INPUT' && String(o.source ?? '').startsWith('USER') });
     s.offen = o.type === 'USER_INPUT' || (o.tool_calls?.length ?? 0) > 0 || (o.status != null && o.status !== 'DONE');
@@ -368,10 +381,21 @@ export function totals(ledger) {
     }
   }
   const all = Object.values(werkzeuge);
-  const summe = { usd: all.reduce((a, w) => a + w.usd, 0), arbeitMs: all.reduce((a, w) => a + w.arbeitMs, 0),
+  // Token wie im Änderungsprotokoll: Eingabe (neu + Cache gelesen + Cache geschrieben) + Ausgabe (inkl. Denk-Token).
+  const KEYS = ['anfragen', 'eingabe', 'cacheLesen', 'cacheSchreiben', 'ausgabe', 'token', 'usd', 'arbeitMs'];
+  const liste = Object.values(modelle).sort((a, b) => b.usd - a.usd);
+  const anbieter = {};
+  for (const m of liste) {
+    m.token = m.eingabe + m.cacheLesen + m.cacheSchreiben + m.ausgabe;
+    const a = (anbieter[m.anbieter] ??= { name: m.anbieter, ...Object.fromEntries(KEYS.map(k => [k, 0])), modelle: [] });
+    for (const k of KEYS) a[k] += m[k];
+    a.modelle.push(m.name);
+  }
+  const summe = { ...Object.fromEntries(KEYS.map(k => [k, liste.reduce((s, m) => s + m[k], 0)])),
+    usd: all.reduce((a, w) => a + w.usd, 0), arbeitMs: all.reduce((a, w) => a + w.arbeitMs, 0),
     leerlaufMs: all.reduce((a, w) => a + w.leerlaufMs, 0), wandzeitMs: mergeIntervals(all.flatMap(w => w.intervalle)) };
   for (const w of all) { w.wandzeitMs = mergeIntervals(w.intervalle); delete w.intervalle; }
-  return { modelle: Object.values(modelle).sort((a, b) => b.usd - a.usd), werkzeuge, summe };
+  return { modelle: liste, anbieter: Object.values(anbieter).sort((a, b) => b.usd - a.usd), werkzeuge, summe };
 }
 
 // Kompakte Sicht für das Protokoll: Kosten je Modell, Zeiten je Werkzeug
@@ -414,7 +438,10 @@ export function fmtDur(ms) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
 }
 const usd = v => `$${v.toFixed(v < 10 ? 2 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-const mtok = v => v >= 1e6 ? `${(v / 1e6).toFixed(1)} M` : `${Math.round(v / 1e3)} k`;
+const mtok = v => v >= 1e9 ? `${(v / 1e9).toFixed(2)} B` : v >= 1e6 ? `${(v / 1e6).toFixed(1)} M` : `${Math.round(v / 1e3)} k`;
+// Durchschnittspreis: effektive Kosten je 1 Mio. Token über alle Tokenarten.
+const perM = (cost, tok) => tok > 0 ? `$${(cost * 1e6 / tok).toFixed(2)}` : '–';
+const AI_NAME = { Anthropic: 'Claude', OpenAI: 'GPT', Google: 'Gemini' };
 const stamp = ms => {
   const d = new Date(ms), off = -d.getTimezoneOffset(), pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} (UTC${off >= 0 ? '+' : '-'}${Math.abs(off / 60)})`;
@@ -426,7 +453,9 @@ const signed = v => `${v < 0 ? '−' : '+'}${usd(Math.abs(v))}`;
 function render(t, log) {
   const eur = t.summe.usd / PRICES.usdProEur;
   const rows = t.modelle.filter(m => m.anfragen > 0).map(m =>
-    `| ${m.name}${m.ohnePreis ? ' ⚠️ no price' : ''} | ${m.werkzeug} | ${m.anfragen.toLocaleString('en-US')} | ${mtok(m.eingabe + m.cacheLesen + m.cacheSchreiben)} (${mtok(m.cacheLesen)} cached) | ${mtok(m.ausgabe)} | ${usd(m.usd)} | ${fmtDur(m.arbeitMs)} | ${files(mainFiles(m)) || '–'} |`);
+    `| ${m.name}${m.ohnePreis ? ' ⚠️ no price' : ''} | ${m.werkzeug} | ${m.anfragen.toLocaleString('en-US')} | ${mtok(m.eingabe + m.cacheLesen + m.cacheSchreiben)} (${mtok(m.cacheLesen)} cached) | ${mtok(m.ausgabe)} | ${mtok(m.token)} | ${usd(m.usd)} | ${perM(m.usd, m.token)} | ${fmtDur(m.arbeitMs)} | ${files(mainFiles(m)) || '–'} |`);
+  const ais = t.anbieter.map(a =>
+    `| ${AI_NAME[a.name] ?? a.name} (${a.name}) | ${a.modelle.length} | ${mtok(a.token)} | ${(a.token / t.summe.token * 100).toFixed(0)} % | ${usd(a.usd)} | ${(a.usd / t.summe.usd * 100).toFixed(0)} % | ${perM(a.usd, a.token)} |`);
   const order = ['Claude Code', 'Codex', 'Gemini'];
   const tools = Object.entries(t.werkzeuge).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([k, w]) =>
     `| ${k} | ${w.sitzungen} | ${usd(w.usd)} | ${fmtDur(w.arbeitMs)} | ${fmtDur(w.wandzeitMs)} | ${fmtDur(w.leerlaufMs)} |`);
@@ -445,16 +474,20 @@ function render(t, log) {
   return [START,
     '### Effective cost & agent time (estimated)',
     '',
-    `*Who did what, where, and what it effectively cost. **Effective cost** = the tokens each model used, priced at public **API list prices** (USD); the subscriptions actually paid (Claude, ChatGPT/Codex, Gemini) are not deducted. Read from the local session logs of Claude Code, Codex and Gemini (Antigravity). Agent time = the agents working, credited to each session's main model; idle = waiting for user input (gaps over ${PRICES.zeit.leerlaufMaxMin} min count as breaks). Rough estimates, not an invoice; the change log above stays the measured token record. Maintained by the \`kostenbuch\` Haiku agent (\`tools/kostenbuch/\`), last update ${stamp(Date.now())}.*`,
+    `*Who did what, where, and what it effectively cost. **Effective cost** = the tokens each model used, priced at public **API list prices** (USD); the subscriptions actually paid (Claude, ChatGPT/Codex, Gemini) are not deducted. **Tokens** = input (new, cache reads and cache writes) + output (including reasoning), counted as in the change log; **Ø per 1M** = effective cost ÷ tokens, an average over all token kinds (far below the input list price because most input is read from the prompt cache). Read from the local session logs of Claude Code, Codex and Gemini (Antigravity) from the project start on. Agent time = the agents working, credited to each session's main model; idle = waiting for user input (gaps over ${PRICES.zeit.leerlaufMaxMin} min count as breaks). Rough estimates, not an invoice; the change log above stays the measured token record. The **ⓘ KI-Token & Kosten** button in the game's main menu shows the same figures (\`public/token-info.json\`). Maintained by the \`kostenbuch\` Haiku agent (\`tools/kostenbuch/\`), last update ${stamp(Date.now())}.*`,
     '',
-    `**Total effective cost: ${usd(t.summe.usd)} (≈ ${eur.toFixed(0)} €)** · agent working time ${fmtDur(t.summe.arbeitMs)} (wall clock ${fmtDur(t.summe.wandzeitMs)}) · idle ${fmtDur(t.summe.leerlaufMs)}`,
+    `**Total effective cost: ${usd(t.summe.usd)} (≈ ${eur.toFixed(0)} €)** for ${mtok(t.summe.token)} tokens (Ø ${perM(t.summe.usd, t.summe.token)} per 1M) · agent working time ${fmtDur(t.summe.arbeitMs)} (wall clock ${fmtDur(t.summe.wandzeitMs)}) · idle ${fmtDur(t.summe.leerlaufMs)}`,
+    '',
+    '| AI | Models | Tokens | Token share | Effective cost | Cost share | Ø per 1M tokens |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    ...ais,
     '',
     '| Tool | Sessions | Effective cost | Agent time | Wall clock | Idle |',
     '| --- | ---: | ---: | ---: | ---: | ---: |',
     ...tools,
     '',
-    '| Model | Tool | Requests | Input tokens | Output tokens | Effective cost | Agent time | Main files written |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |',
+    '| Model | Tool | Requests | Input tokens | Output tokens | Total tokens | Effective cost | Ø per 1M | Agent time | Main files written |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
     ...rows,
     '',
     ...(recent.length ? ['**Who did what, where** (latest entries)', '', ...recent, ''] : []),
@@ -482,6 +515,32 @@ export function writeReadme(t, log) {
   throw new Error('README wurde während der Aktualisierung geändert. Bitte erneut ausführen.');
 }
 
+// Für den Info-Schalter im Hauptmenü (public/token-info.js): nur Summen je Anbieter und Modell, keine
+// Sitzungs-IDs, Pfade oder Dateien. Geschrieben wird nur, wenn sich die Zahlen geändert haben.
+export const TOKEN_INFO = path.join(ROOT, 'public', 'token-info.json');
+export function tokenInfo(t, now = Date.now()) {
+  const pick = o => ({ anfragen: o.anfragen, eingabe: o.eingabe, cacheLesen: o.cacheLesen, cacheSchreiben: o.cacheSchreiben,
+    ausgabe: o.ausgabe, token: o.token, usd: +o.usd.toFixed(2), arbeitMs: Math.round(o.arbeitMs) });
+  return {
+    stand: new Date(now).toISOString(),
+    usdProEur: PRICES.usdProEur,
+    summe: pick(t.summe),
+    anbieter: t.anbieter.map(a => ({ name: a.name, ...pick(a) })),
+    modelle: t.modelle.filter(m => m.anfragen > 0).map(m => {
+      const p = priceFor(m.ids[0], now);
+      return { name: m.name, anbieter: m.anbieter, werkzeug: m.werkzeug, ...pick(m),
+        liste: p ? { eingabe: p.eingabe, ausgabe: p.ausgabe, cacheLesen: p.cacheLesen ?? p.eingabe } : null };
+    }),
+  };
+}
+export function writeTokenInfo(t) {
+  const info = tokenInfo(t);
+  const old = readJson(TOKEN_INFO, null);
+  if (old && JSON.stringify({ ...old, stand: '' }) === JSON.stringify({ ...info, stand: '' })) return false;
+  writeJson(TOKEN_INFO, info);
+  return true;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Projektdateien laut git (ohne die Kostenbuch-Dateien) mit Größe und Änderungszeit.
 function projectFiles() {
@@ -490,7 +549,7 @@ function projectFiles() {
   const out = [];
   for (const line of status.split('\n')) {
     const file = line.slice(3).trim().replace(/^"|"$/g, '');
-    if (!file || file === 'README.md' || file.startsWith('tools/kostenbuch/') || file.startsWith('.claude/')) continue;
+    if (!file || file === 'README.md' || file === 'public/token-info.json' || file.startsWith('tools/kostenbuch/') || file.startsWith('.claude/')) continue;
     out.push({ code: line.slice(0, 2), file, st: statOf(path.join(ROOT, file)) });
   }
   return out;
@@ -581,6 +640,7 @@ function main() {
   }
   if (text !== null || args.includes('--write')) {
     writeReadme(t, log);
+    writeTokenInfo(t);
     writeJson(FILES.zustand, { fingerprint: fingerprint(), aktualisiert: new Date().toISOString() });
   }
   const out = {

@@ -3,17 +3,22 @@ namespace SpaceEngine
 open System
 
 /// Stations are built in metres, relative to the docking target. World +Z faces traffic.
+/// The belt runs on what the Eclipse left behind: dull steel, faded signal paint, sodium lamps
+/// and fluorescent tubes, and a good third of the windows dark. Only Morgenlicht is fully lit.
 [<RequireQualifiedAccess>]
 module StationMeshes =
     let private v x y z = Vec3(x,y,z)
     let private rgb = MeshColor.rgb
     let private glow r g b = MeshColor.glow r g b 0.92
-    let private steel = rgb 0.28 0.36 0.41
-    let private alloy = rgb 0.67 0.72 0.71
-    let private iron = rgb 0.105 0.15 0.17
-    let private ochre = rgb 0.96 0.48 0.065
-    let private ice = glow 0.34 0.85 1.0
-    let private lamp = glow 1.0 0.71 0.27
+    let private steel = rgb 0.115 0.145 0.165
+    let private alloy = rgb 0.33 0.35 0.35
+    let private iron = rgb 0.045 0.058 0.066
+    let private ochre = rgb 0.52 0.25 0.04
+    /// Fluorescent tubes behind the crew windows: a pale, slightly green white.
+    let private ice = glow 0.62 0.90 0.74
+    /// Sodium-vapour work light.
+    let private lamp = glow 1.0 0.50 0.12
+    let private pane = MeshColor.glass 0.03 0.04 0.05 0.0
     let private red = glow 1.0 0.16 0.06
     let private bar = ProceduralMeshes.beam
     let private box (b: MeshBuilder) x y z hx hy hz color = b.Box(v x y z, v hx hy hz, color)
@@ -33,12 +38,30 @@ module StationMeshes =
                 v (x + r*cos a) y (z + r*sin a))
         b.Loft(Array.map section profile, true, true, color)
 
-    let private windows (b: MeshBuilder) x y z count pitch color =
+    /// Window band. `dark` of every eight panes stay unlit; which ones depends on the band.
+    let private windowBand (b: MeshBuilder) dark x y z count pitch color =
         let width = float count * pitch * 0.5
         box b x y z width 1.45 0.4 iron
         for i in 0 .. count-1 do
-            if i % 7 <> 2 then
-                box b (x-width + (float i+0.5)*pitch) y (z+0.5) (pitch*0.30) 0.71 0.2 color
+            let h = ((i * 73856093) ^^^ (int (abs x + 2.0 * abs y) * 19349663)) &&& 0x7fffffff
+            let centre = x-width + (float i+0.5)*pitch
+            if h % 8 >= dark then box b centre y (z+0.5) (pitch*0.30) 0.71 0.2 color
+            else box b centre y (z+0.45) (pitch*0.30) 0.71 0.15 pane
+
+    /// Belt stations ration their power: three panes in eight are dark.
+    let private windows (b: MeshBuilder) x y z count pitch color = windowBand b 3 x y z count pitch color
+
+    // The same AETHER inspection head looks down on arriving ships at Helios and Morgenlicht.
+    let private inspectionHead (b: MeshBuilder) x y z =
+        deck b x z [|y-2.,5.8,4.8; y+1.,5.8,4.8; y+3.,3.6,3.0|] steel
+        for side in [-1.; 1.] do
+            box b (x+side*4.0) (y+4.) z 0.8 2.8 1.7 alloy
+        let rim depth radius = ProceduralMeshes.ring(12, x, y+6., z+depth, radius, radius)
+        b.Loft([|rim -3. 3.4; rim 0. 4.2; rim 4. 3.8|],true,true,iron)
+        b.Loft([|rim 4. 2.9; rim 4.6 2.4|],true,true,MeshColor.metal 0.39 0.33 0.19)
+        b.Loft([|rim 4.6 2.35; rim 5.2 1.45|],true,true,MeshColor.glass 0.33 0.035 0.023 0.18)
+        box b x (y+6.) (z+5.25) 1.3 0.27 0.16 red
+        box b x (y+9.9) (z+1.3) 4.7 0.5 5.2 steel
 
     // Keep the cruiser's authored normals and stop at the forward inspection bulkhead.
     let private cruiserStern (b: MeshBuilder) (origin: Vec3) =
@@ -104,7 +127,7 @@ module StationMeshes =
            v 29 106 -146; v 83 98 -156; v 135 71 -158 |]
 
     let private kestrel (b: MeshBuilder) =
-        let rust = rgb 0.65 0.235 0.063
+        let rust = rgb 0.33 0.115 0.04
         let rock = v -116 38 -113
         // Exposed ore strata on the fractured quarry face. The parent rock still
         // shares its irregular silhouette with the field asteroids.
@@ -112,9 +135,9 @@ module StationMeshes =
         let vertex i = v (float stone.[i]) (float stone.[i+1]) (float stone.[i+2])
         let strata (p: Vec3) =
             let band = sin (p.Y*12. - p.X*5.5 + 1.4*sin (p.Z*4.3))
-            if band > 0.82 then rgb 0.76 0.58 0.35
-            elif band < -0.55 then rgb 0.27 0.28 0.31
-            else rgb 0.51 0.47 0.42
+            if band > 0.82 then rgb 0.55 0.42 0.25
+            elif band < -0.55 then rgb 0.195 0.20 0.225
+            else rgb 0.37 0.34 0.30
         for t in 0..stone.length/(3*Layout.VertexFloats)-1 do
             let i = t*3*Layout.VertexFloats
             let a,c,d = vertex i,vertex (i+Layout.VertexFloats),vertex (i+2*Layout.VertexFloats)
@@ -153,7 +176,7 @@ module StationMeshes =
         conveyor b (v 25 -12 -118) (v 110 2 -123) 8
         for i in 1..7 do
             let p = Vec3.lerp (v -89 47 -85) (v -20 17 -99) (float i/8.)
-            deck b p.X p.Z [|p.Y+3.,2.7,2.3; p.Y+5.,2.3,1.9; p.Y+6.5,1.0,1.0|] (rgb 0.40 0.33 0.26)
+            deck b p.X p.Z [|p.Y+3.,2.7,2.3; p.Y+5.,2.3,1.9; p.Y+6.5,1.0,1.0|] (rgb 0.24 0.20 0.16)
         // Ballast hoist and caged control cab above the mine head.
         bar b (v -38 12 -122) (v -48 56 -124) 2.0 ochre
         bar b (v -18 18 -124) (v -48 56 -124) 1.1 alloy
@@ -185,8 +208,8 @@ module StationMeshes =
             bar b (v (x-r) -48 -124) (v (x-r-8.) -31 -114) 2.2 rust
 
     let private helios (b: MeshBuilder) =
-        let oxide = rgb 0.53 0.19 0.085
-        let copper = rgb 0.83 0.39 0.15
+        let oxide = rgb 0.25 0.085 0.045
+        let copper = rgb 0.40 0.18 0.065
         let fire = glow 1.0 0.27 0.035
         deck b 0 -122 [|-37.,76.,22.; -24.,111.,31.; -10.,115.,33.; -4.,104.,28.|] iron
         for x,z,h,r in [-77.,-129.,80.,24.; -11.,-153.,139.,30.; 61.,-123.,105.,22.] do
@@ -219,6 +242,7 @@ module StationMeshes =
             drum b 10 x -113 [|23.,3.5; 26.,3.5|] oxide
         deck b 7 -91 [|-21.,32.,13.; -4.,32.,13.; 1.,26.,9.|] steel
         windows b 7 -9 -77.7 16 3.0 lamp
+        inspectionHead b 17. 1. -88.
         for a,c in [v -77 28 -136,v -11 50 -159; v -11 51 -159,v 61 35 -131] do
             bar b a c 2.15 steel
             bar b (a+v 0 3 0) (c+v 0 3 0) 0.62 copper
@@ -227,7 +251,7 @@ module StationMeshes =
 
         // Heat-recovery wings step outward from the furnaces. Dark fins break up
         // the hot ceramic faces, with cooler copper toward the outer tips.
-        let copperFrame = MeshColor.metal 0.74 0.39 0.19
+        let copperFrame = MeshColor.metal 0.40 0.21 0.10
         for i in 0 .. refineryRadiators.Length-1 do
             let p = refineryRadiators.[i]
             let h = 27. - 3. * float (i%3)
@@ -247,9 +271,11 @@ module StationMeshes =
             bar b (v x -73 -108) (v x -46 -110) 1.55 fire
 
     let private drift (b: MeshBuilder) =
-        let jade = rgb 0.095 0.57 0.52
-        let wine = rgb 0.56 0.16 0.25
-        let enamel = rgb 0.89 0.78 0.56
+        // Dark, grimy hulls and tarpaulin roofs under the neon: the signs are the only clean colour on Drift-9.
+        let jade = rgb 0.03 0.115 0.11
+        let wine = rgb 0.15 0.038 0.065
+        let enamel = rgb 0.225 0.20 0.15
+        let ochre = rgb 0.27 0.135 0.028
         let signs = [|glow 1.0 0.23 0.51; glow 0.05 1.0 0.80; lamp; glow 0.50 0.43 1.0|]
         // Retired hulls point to different moorings. Their old engine blocks, raised
         // wheelhouses and rows of portholes remain visible below the market decks.
@@ -281,10 +307,10 @@ module StationMeshes =
         houseboat (v -56 30 -143) 0.22 68.0 15.0 jade signs.[1]
         houseboat (v 57 -12 -104) -0.29 76.0 14.0 wine signs.[0]
         houseboat (v -83 -23 -102) 2.87 45.0 10.0 ochre signs.[2]
-        houseboat (v 53 52 -158) -2.94 53.0 10.0 (rgb 0.34 0.41 0.60) signs.[3]
+        houseboat (v 53 52 -158) -2.94 53.0 10.0 (rgb 0.07 0.09 0.145) signs.[3]
         // Pontoon with stacked customs containers, corrugated end doors and shop signs.
         deck b 0 -124 [|-24.,22.,22.; -15.,27.,26.; 11.,24.,22.|] steel
-        let colors = [|jade; ochre; wine; enamel; rgb 0.22 0.38 0.55|]
+        let colors = [|jade; ochre; wine; enamel; rgb 0.055 0.095 0.145|]
         let container x y z i =
             let paint = colors.[i%colors.Length]
             box b x y z 7.0 4.3 9.0 paint
@@ -345,8 +371,8 @@ module StationMeshes =
                         b.Box(Vec3.lerp a c t+v 0 1.3 0,v 0.84 1.6 0.58,light)
 
     let private kepler (b: MeshBuilder) =
-        let paint = rgb 0.98 0.53 0.08
-        let primer = rgb 0.50 0.225 0.115
+        let paint = rgb 0.46 0.245 0.045
+        let primer = rgb 0.27 0.11 0.06
         let weld = glow 0.52 0.87 1.0
         let origin = v 52 14 -148
         let k = CapitalFlight.hullScale
@@ -407,8 +433,8 @@ module StationMeshes =
         // Dock 07's overhead transfer crane is tall enough to raise a finished hull.
         // Keep its loading bay and the construction frames open below the girder.
         let blackened = MeshColor.metal 0.22 0.27 0.29
-        let rail = MeshColor.metal 0.62 0.68 0.69
-        let floodlight = MeshColor.glow 1.0 0.86 0.62 0.82
+        let rail = MeshColor.metal 0.36 0.38 0.39
+        let floodlight = MeshColor.glow 1.0 0.62 0.26 0.82
         for side in [-1.; 1.] do
             let x = side * 163.0
             deck b x -218. [|-49.,18.,21.; -34.,19.,23.; -11.,15.,19.; 126.,12.,17.; 148.,16.,19.|] blackened
@@ -451,9 +477,11 @@ module StationMeshes =
         root, span, chord, face
 
     let private theta (b: MeshBuilder) =
-        let cobalt = rgb 0.19 0.32 0.54
-        let ceramic = rgb 0.83 0.88 0.91
+        let cobalt = rgb 0.07 0.115 0.20
+        let ceramic = rgb 0.40 0.43 0.44
         let signal = glow 0.41 0.68 1.0
+        // The relay still runs on RT-9's analogue path: amber tube displays behind the crew windows.
+        let phosphor = glow 1.0 0.62 0.18
         let dish (hub: Vec3) (direction: Vec3) (radius: float) =
             let axis = Vec3.normalize direction
             let u = Vec3.normalize (Vec3.cross Vec3.up axis)
@@ -486,7 +514,7 @@ module StationMeshes =
         let left = dish (v -75 55 -136) (v -0.48 0.63 0.64) 61.0
         let right = dish (v 88 27 -123) (v 0.84 0.33 0.35) 40.0
         deck b 0 -124 [|-32.,25.,19.; -18.,34.,25.; -5.,30.,22.; 1.,21.,18.|] cobalt
-        windows b 0 -12 -99.1 13 3.5 ice
+        windows b 0 -12 -99.1 13 3.5 phosphor
         deck b 12 -150 [|-17.,13.,11.; -6.,14.,12.; -2.,11.,10.|] steel
         for (hub: Vec3), x in [left,-65.;right,79.] do
             drum b 12 x -133 [|-26.,11.; -21.,14.; -15.,10.|] alloy
@@ -512,10 +540,10 @@ module StationMeshes =
 
         // Independent solar banks descend behind the dishes. Their dark gaps
         // expose the panel mounts and let the two antenna silhouettes read.
-        let frame = MeshColor.metal 0.36 0.43 0.57
-        let backing = rgb 0.11 0.17 0.29
-        let cellBlue = MeshColor.glass 0.21 0.37 0.75 0.12
-        let cellIndigo = MeshColor.glass 0.13 0.24 0.55 0.10
+        let frame = MeshColor.metal 0.20 0.24 0.32
+        let backing = rgb 0.05 0.075 0.13
+        let cellBlue = MeshColor.glass 0.10 0.17 0.36 0.08
+        let cellIndigo = MeshColor.glass 0.06 0.11 0.27 0.06
         for side in [-1.; 1.] do
             let root, span, chord, face = thetaSolarFrame side
             let at along height depth = root + span * along + chord * height + face * depth
@@ -545,11 +573,14 @@ module StationMeshes =
             b.Box(at 189. 0. 0., v 1.9 1.55 1.55, red)
 
     let private morgenlicht (b: MeshBuilder) =
-        let ivory = MeshColor.glow 0.95 0.86 0.67 0.22
-        let gold = MeshColor.glow 0.96 0.64 0.20 0.17
-        let umber = rgb 0.30 0.17 0.15
-        let crimson = rgb 0.48 0.08 0.12
-        let slit = glow 1.0 0.80 0.45
+        // Vance's seat matches his fleet: cold platinum over a black keel, gold on the edges, carmine
+        // heraldry and cold light behind every slit. Nobody here rations power.
+        let ivory = MeshColor.glow 0.55 0.56 0.55 0.12
+        let gold = MeshColor.glow 0.60 0.385 0.085 0.10
+        let umber = rgb 0.045 0.05 0.06
+        let crimson = rgb 0.34 0.016 0.024
+        let slit = glow 0.72 0.88 1.0
+        let windows (b: MeshBuilder) x y z count pitch color = windowBand b 0 x y z count pitch color
         // An armoured flying citadel: upswept flanks, deep central keel and a
         // stepped keep. The flanks are readable by silhouette as well as heraldry.
         deck b 0 -131 [|-59.,13.,9.; -33.,42.,25.; -14.,70.,37.; 8.,77.,40.; 22.,63.,34.|] umber
@@ -591,6 +622,7 @@ module StationMeshes =
         deck b 0 -141 [|54.,26.,19.; 61.,28.,21.; 68.,18.,15.; 85.,15.,13.|] umber
         deck b 0 -141 [|65.,20.,16.; 73.,18.,15.; 88.,12.,11.|] ivory
         windows b 0 59 -116.8 10 3.0 slit
+        inspectionHead b 0. 56. -122.
         for side in [-1.;1.] do
             box b (side*9.) 45 -114 5.7 1.3 6.4 gold
             plate side [|4.,48.; 14.,47.; 13.,17.; 8.,10.; 4.,16.|] -108.5 0.9 crimson
@@ -604,8 +636,8 @@ module StationMeshes =
 
         // Armoured bastions rise from the ends of both flanks. Their stepped
         // faces leave the command keep isolated in the centre of the silhouette.
-        let brushedGold = MeshColor.metal 0.75 0.52 0.25
-        let armour = MeshColor.metal 0.46 0.47 0.49
+        let brushedGold = MeshColor.metal 0.50 0.34 0.12
+        let armour = MeshColor.metal 0.28 0.29 0.31
         for side in [-1.; 1.] do
             let x = side * 145.0
             deck b x -147. [|22.,15.,15.; 39.,24.,23.; 58.,22.,24.; 64.,20.,21.|] umber
