@@ -68,7 +68,10 @@ type Hud =
       mutable TurretOwned: bool
       mutable TurretTarget: int
       mutable MissileAmmo: int
+      mutable MissileCapacity: int
+      mutable MissileReserve: int
       mutable MissileReload: float
+      mutable ScannerAddon: bool
       mutable Salvaging: bool
       mutable RewardText: string
       mutable RewardTime: float
@@ -77,6 +80,12 @@ type Hud =
       mutable BannerSub: string
       mutable BannerTime: float
       mutable BannerDuration: float
+      mutable RadioCallsign: string
+      mutable RadioText: string
+      mutable RadioFactionTag: int
+      mutable RadioPan: float
+      mutable RadioTime: float
+      mutable RadioDuration: float
       /// > 0: Treffermarke am Fadenkreuz sichtbar (eigener Laser hat getroffen).
       mutable HitMarker: float
       /// 0..1: roter Bildrand nach erlittenem Schaden.
@@ -254,7 +263,10 @@ module Hud =
           TurretOwned = false
           TurretTarget = -1
           MissileAmmo = Missiles.MaxAmmo
+          MissileCapacity = Missiles.MaxAmmo
+          MissileReserve = 0
           MissileReload = 0.0
+          ScannerAddon = false
           Salvaging = false
           RewardText = ""
           RewardTime = 0.0
@@ -262,6 +274,12 @@ module Hud =
           BannerSub = ""
           BannerTime = 0.0
           BannerDuration = 1.0
+          RadioCallsign = ""
+          RadioText = ""
+          RadioFactionTag = 0
+          RadioPan = 0.0
+          RadioTime = 0.0
+          RadioDuration = 1.0
           HitMarker = 0.0
           DamageFlash = 0.0
           Target = -1
@@ -304,6 +322,15 @@ module Hud =
         hud.BannerSub <- sub
         hud.BannerTime <- duration
         hud.BannerDuration <- duration
+
+    /// Zeigt einen laufenden Fraktions-Funkspruch als kompakten Ticker im Cockpit-HUD.
+    let showRadio (hud: Hud) (callsign: string) (text: string) (factionTag: int) (pan: float) (duration: float) =
+        hud.RadioCallsign <- callsign
+        hud.RadioText <- text
+        hud.RadioFactionTag <- factionTag
+        hud.RadioPan <- pan
+        hud.RadioTime <- duration
+        hud.RadioDuration <- max 0.5 duration
 
     /// Eigener Laser hat ein Schiff getroffen.
     let hitMarker (hud: Hud) = hud.HitMarker <- HitMarkerTime
@@ -360,6 +387,7 @@ module Hud =
         hud.Time <- hud.Time + dt
         hud.RewardTime <- max 0.0 (hud.RewardTime - dt)
         hud.BannerTime <- Math.Max(0.0, hud.BannerTime - dt)
+        hud.RadioTime <- Math.Max(0.0, hud.RadioTime - dt)
         hud.HitMarker <- Math.Max(0.0, hud.HitMarker - dt)
         hud.KillMarker <- Math.Max(0.0, hud.KillMarker - dt)
         hud.DamageFlash <- Math.Max(0.0, hud.DamageFlash - dt * 1.6)
@@ -708,6 +736,9 @@ module Hud =
                         contact gate.Position Cyan HudContacts.Diamond 5.0 0.0
                     else
                         contact gate.Position "#ccb36f" HudContacts.Diamond 3.5 0.0
+                if hud.Trading then
+                    for site in WreckFields.forSector world.SectorIndex do
+                        contact site.Position Amber HudContacts.CargoCrate 3.8 0.0
 
         let enemies = world.Enemies
         for i in 0 .. enemies.Length-1 do
@@ -754,7 +785,7 @@ module Hud =
             marker freightSix Cyan ("Frachter Sechs · " + clearance) 8.0 60
         let distance = Vec3.distance player CapitalFlight.position
         if not blockade.Lifted then
-            marker CapitalFlight.position Amber ("AETHER · Zollkreuzer · " + string (int distance) + " m") 11.0 (if f.Role <> 0 then 120 else 75)
+            marker CapitalFlight.position Amber ("AETHER · Tariff VII · " + string (int distance) + " m") 11.0 (if f.Role <> 0 then 120 else 75)
             if f.Role <> 0 && distance < 460.0 then
                 for i in 0..1 do
                     if f.Guns.[i] > 0.0 then marker (CapitalFlight.position+CapitalFlight.gunOffsets.[i]) Red "" 5.5 125
@@ -850,6 +881,58 @@ module Hud =
                     queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 9.0 Cyan 72 hud.InCombat ("Kurs · " + title) ""
                 else
                     queueMarker hud HudContacts.Diamond hud.ScreenX hud.ScreenY 8.0 Amber 50 hud.InCombat title ""
+
+    /// Identify one passing ship near the centre of the view. Combat locks take precedence.
+    let drawTraffic (hud: Hud) viewProj sector (fleet: Traffic.Fleet) position =
+        if not hud.InCombat then
+            let flights = Traffic.manifests.[sector]
+            let radius = min 90.0 (hud.Height*0.13)
+            let mutable best = radius*radius
+            let mutable contact = -1
+            let mutable sx,sy = 0.0,0.0
+            for i in 0..flights.Length-1 do
+                let p = fleet.Positions.[i]
+                if Vec3.distanceSq p position <= 600.0*600.0 then
+                    project hud viewProj p.X p.Y p.Z
+                    if onScreen hud then
+                        let dx,dy = hud.ScreenX-hud.Width*0.5, hud.ScreenY-hud.Height*0.5
+                        let score = dx*dx + dy*dy
+                        if score < best then
+                            best <- score
+                            contact <- i
+                            sx <- hud.ScreenX
+                            sy <- hud.ScreenY
+            if contact >= 0 then
+                let model = Traffic.models.[int flights.[contact].Class]
+                let faction,tint = if model.Aether then "AETHER",Amber else "Zivil",Cyan
+                let distance = int (Vec3.distance fleet.Positions.[contact] position)
+                queueMarker hud HudContacts.Circle sx sy 4.0 tint 36 false model.Name (faction + " · " + string distance + " m")
+
+    let drawWrecks (hud: Hud) (viewProj: Mat4) sector recoveries (position: Vec3) =
+        for site in WreckFields.forSector sector do
+            let distance = Vec3.distance site.Position position
+            if distance <= WreckFields.MarkerRange then
+                let p = site.Position + Vec3(0.0, 13.0, 0.0)
+                project hud viewProj p.X p.Y p.Z
+                if onScreen hud then
+                    let stock = WreckFields.remaining recoveries site
+                    let title = site.Name + " · " + string (int distance) + " m"
+                    let voice = WreckVoices.state stock.Id
+                    let tint, detail =
+                        if not (WreckFields.hasLoot stock) then
+                            CyanDim, (match voice with
+                                      | Kept -> "Geborgen · Stimme im Archiv"
+                                      | Cut -> "Geborgen · Notruf gekappt"
+                                      | Sending -> "Bereits geborgen")
+                        elif distance <= WreckFields.SalvageRange then
+                            match voice with
+                            | Sending ->
+                                Amber, sprintf "Notruf wird aufgezeichnet %d %% · [G] kappen und bergen" (int (100.0 * WreckVoices.recorded stock.Id))
+                            | Kept -> Amber, "Stimme gesichert · [G] Bergen"
+                            | Cut -> Amber, "[G] Bergen"
+                        elif voice = Sending then Amber, "Sendet noch · Bergung ab 65 m"
+                        else Amber, "Bergung ab 65 m"
+                    queueMarker hud HudContacts.CargoCrate hud.ScreenX hud.ScreenY 8.0 tint 65 (hud.InCombat && distance > WreckFields.SalvageRange) title detail
 
     /// Das Flug-HUD.
     ///   viewProj/aspect : Kamera des aktuellen Frames
@@ -1050,14 +1133,15 @@ module Hud =
                     queueMarker hud HudContacts.Circle hud.ScreenX hud.ScreenY 7.0 "#deabf3" 65 hud.InCombat
                         ("Archiv · " + fst RelicArchive.entries.[sectorIndex]) (string (int distance) + " m")
         if school = FlightSchool.Off && scanElapsed >= 0.0 && scanElapsed <= 5.5 then
-            let scanRange = RelicArchive.range world.Pilot
+            let scanRange = RelicArchive.range world.Pilot + (if hud.ScannerAddon then 250.0 else 0.0)
+            let maxPings = if hud.ScannerAddon then 12 else 6
             let scanRangeSq = scanRange * scanRange
             let asteroids = world.Asteroids
             let data = asteroids.Data
             let mutable shown = 0
             for i in 0 .. asteroids.Count - 1 do
                 let ore = int asteroids.Ore.[i]
-                if ore > 0 && shown < 6 then
+                if ore > 0 && shown < maxPings then
                     let o = i * 16
                     let ax = float data.[o]
                     let ay = float data.[o + 1]
@@ -1411,7 +1495,7 @@ module Hud =
 
             let missileY = if comboActive then scoreBottom - 204.0 else scoreBottom - 166.0
             let lockReady =
-                target >= 0 && enemies.[target].Alive && hud.MissileAmmo > 0 &&
+                target >= 0 && enemies.[target].Alive && hud.MissileAmmo + hud.MissileReserve > 0 &&
                 Vec3.distance playerPosition enemies.[target].Position <= Missiles.Range
             fill ctx "rgba(3, 12, 23, 0.74)"
             ctx.fillRect (right - 190.0, missileY, 202.0, 32.0)
@@ -1421,14 +1505,19 @@ module Hud =
             ctx.textAlign <- "left"
             ctx.font <- FontLabel
             fill ctx (if lockReady then Amber else TextColor)
-            ctx.fillText ((if lockReady then "RAKETE [J] · BEREIT" else "RAKETEN [J]"), right - 178.0, missileY + 6.0)
-            for p in 0 .. Missiles.MaxAmmo - 1 do
-                let px = right - 178.0 + float p * 28.0
+            let missileStatus = if lockReady then "RAKETE [J] · BEREIT" else "RAKETEN [J]"
+            let reserve = if hud.MissileReserve > 0 then "  +" + string hud.MissileReserve + " RES." else ""
+            ctx.fillText (missileStatus + reserve, right - 178.0, missileY + 6.0, 184.0)
+            let cap = max 1 hud.MissileCapacity
+            let step = min 28.0 (118.0 / float cap)
+            let pipW = max 7.0 (step - 5.0)
+            for p in 0 .. cap - 1 do
+                let px = right - 178.0 + float p * step
                 let filled = p < hud.MissileAmmo
                 fill ctx (if filled then (if lockReady then Amber else Cyan) else "rgba(120, 175, 195, 0.18)")
-                ctx.fillRect (px, missileY + 21.0, 22.0, 5.0)
-            if hud.MissileAmmo < Missiles.MaxAmmo then
-                bar ctx (right - 60.0) (missileY + 21.0) 60.0 5.0 hud.MissileReload CyanDim
+                ctx.fillRect (px, missileY + 21.0, pipW, 5.0)
+            if hud.MissileAmmo < cap then
+                bar ctx (right - 54.0) (missileY + 21.0) 54.0 5.0 hud.MissileReload CyanDim
 
             fill ctx "rgba(3, 12, 23, 0.72)"
             ctx.fillRect (right - 190.0, scoreBottom - 126.0, 202.0, 116.0)
@@ -1539,6 +1628,42 @@ module Hud =
             hud.Reserved.Add(HudLayout.rect (centerX-width*0.5) bannerY width 56.0)
             ctx.globalAlpha <- 1.0
 
+        // ---- Fraktions-Funk-Ticker (unten mittig) ----
+        if hud.RadioTime > 0.0 && hud.RadioText <> "" then
+            let fadeOut = Math.Min(1.0, hud.RadioTime / 0.45)
+            let fadeIn = Math.Min(1.0, (hud.RadioDuration - hud.RadioTime) / 0.20)
+            let accent =
+                match hud.RadioFactionTag with
+                | 0 -> Amber
+                | 2 -> Red
+                | 3 -> "#9be7d8"
+                | _ -> Cyan
+            let panHint =
+                if hud.RadioPan < -0.2 then "◀ "
+                elif hud.RadioPan > 0.2 then "▶ "
+                else "· "
+            let header = panHint + "FUNK // " + hud.RadioCallsign
+            let boxW = min 540.0 (max 280.0 (w - 40.0))
+            let boxX = centerX - boxW * 0.5
+            let boxY = if w < 860.0 then h - 222.0 else h - 122.0
+            ctx.globalAlpha <- fadeOut * fadeIn
+            fill ctx "rgba(3, 12, 23, 0.84)"
+            ctx.fillRect (boxX, boxY, boxW, 46.0)
+            fill ctx accent
+            ctx.fillRect (boxX, boxY, 3.0, 46.0)
+            stroke ctx CyanDim
+            ctx.lineWidth <- 1.0
+            ctx.strokeRect (boxX, boxY, boxW, 46.0)
+            ctx.textAlign <- "left"
+            ctx.textBaseline <- "top"
+            ctx.font <- FontSmall
+            fill ctx accent
+            ctx.fillText (header, boxX + 12.0, boxY + 6.0, boxW - 24.0)
+            fill ctx TextColor
+            ctx.fillText (hud.RadioText, boxX + 12.0, boxY + 24.0, boxW - 24.0)
+            hud.Reserved.Add(HudLayout.rect boxX boxY boxW 46.0)
+            ctx.globalAlpha <- 1.0
+
         // ---- Statistik oben links & Systemstatus oben rechts ----
         ctx.textAlign <- "left"
         ctx.font <- FontSmall
@@ -1609,7 +1734,7 @@ module Hud =
            "T / Tab · RMB", "Ziel wechseln"
            "N", "Nächstes Ziel (erneut: nächstfernes)"
            "V · J", "Störimpuls · Torpedo (Bomber)"
-           "B · G", "Andocken · Archivscan"
+           "B · G", "Andocken · Archivscan / Wrack bergen"
            "C · H", "Kamera wechseln · Heckblick (halten)"
            "Bild ↑ / ↓", "Verfolgerkamera näher / weiter"
            "O", "Flugoptik 1,8× und Feinsteuerung"

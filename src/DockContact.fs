@@ -23,7 +23,7 @@ type DockContact =
           mutable Home: Transmission option
           mutable Current: Transmission option
           mutable Requested: Transmission option
-          mutable ArchiveState: (string * int * bool * bool) option
+          mutable ArchiveState: (string * int * int * int * bool * bool) option
           mutable Phase: ContactPhase
           mutable NextAttempt: float
           mutable Deadline: float
@@ -143,17 +143,21 @@ module DockContact =
 
     let refreshArchive ui pilot =
         let hasReveal = PilotSkills.level pilot 2 = 3 && PilotSkills.contains pilot.Relics 0
-        let key = Some (ui.Port, pilot.Relics, StoryRadio.hasSideband pilot, hasReveal)
+        let key = Some (ui.Port, pilot.Relics, pilot.Visited, WreckVoices.saved (), StoryRadio.hasSideband pilot, hasReveal)
         if ui.ArchiveState <> key then
             ui.ArchiveState <- key
             let clips = StoryRadio.archive pilot
             let local = clips |> Array.filter (fun clip -> clip.Port = ui.Port)
             ui.LetterText.textContent <- ""
-            if local.Length = 0 then ui.Letter.setAttribute ("hidden","")
+            // Frühere Rufe dieser Station bleiben am Dock nachhörbar.
+            let previous = StoryRadio.earlier pilot ui.Port
+            if local.Length = 0 && previous.Length = 0 then ui.Letter.setAttribute ("hidden","")
             else
+                for call in previous do appendRecording ui ui.LetterText call
                 for clip in local do appendRecording ui ui.LetterText clip.Call
                 ui.Letter.removeAttribute "hidden"
-            (document.getElementById "archive-count").textContent <- "Fundarchiv · " + string (PilotSkills.count pilot.Relics) + "/6"
+            (document.getElementById "archive-count").textContent <-
+                "Fundarchiv · " + string (PilotSkills.count pilot.Relics) + "/" + string RelicArchive.entries.Length
             let log = document.getElementById "archive-entries"
             log.textContent <- ""
             RelicArchive.entries |> Array.iteri (fun i (name, body) ->
@@ -174,6 +178,41 @@ module DockContact =
                 let entry = document.createElement "p"
                 entry.textContent <- "Stack-Abgleich · Die Prüfnummer aus Haldens Flugschreiber ist mir noch einmal begegnet. Mein Notfallprotokoll hat sie im eigenen Schiffskern gefunden. Ein Stück von Haldens Speicher war die ganze Zeit mit an Bord."
                 log.appendChild entry |> ignore
+            // Logbuch: wächst mit jedem besuchten Sektor und jedem Akt.
+            let heading = document.createElement "p"
+            let title = document.createElement "strong"
+            title.textContent <- "Logbuch · Akt " + string (StoryRadio.act pilot) + " von 3"
+            heading.appendChild title |> ignore
+            log.appendChild heading |> ignore
+            for place, note in StoryRadio.logbook pilot do
+                let p = document.createElement "p"
+                p.className <- "logbook-entry"
+                let label = document.createElement "strong"
+                label.textContent <- place + " · "
+                p.appendChild label |> ignore
+                p.appendChild (document.createTextNode note) |> ignore
+                log.appendChild p |> ignore
+            // Stimmenarchiv: gesicherte Notrufe der Wracks und die Bilanz der gekappten.
+            let voices = WreckVoices.kept ()
+            let cut = WreckVoices.cutCount ()
+            if voices.Length > 0 || cut > 0 then
+                let line (label: string) (body: string) =
+                    let p = document.createElement "p"
+                    p.className <- "logbook-entry"
+                    let strong = document.createElement "strong"
+                    strong.textContent <- label
+                    p.appendChild strong |> ignore
+                    p.appendChild (document.createTextNode body) |> ignore
+                    log.appendChild p |> ignore
+                line (sprintf "Stimmenarchiv · %d gesichert, %d gekappt" voices.Length cut) ""
+                for call in voices do
+                    line (call.Speaker + ", " + call.Ship + " · ") ("„" + call.Line + "“")
+                if voices.Length > 0 then
+                    line "Sera · " (if voices.Length >= 4 then "„Du bringst mehr Namen heim als mancher Konvoi Fracht. Ich lese sie jeden Abend einmal laut.“"
+                                    else "„Jeder Name, den du mitbringst, ist einer weniger, den Vance löschen kann.“")
+                if cut > 0 then
+                    line "Karst · " (if cut >= 4 then "„Du kappst sauberer als meine eigenen Leute. Sag Bescheid, wenn du einen Platz auf dem Schlepper willst.“"
+                                     else "„Ein stilles Wrack ist ein ehrliches Wrack. Der Schrott war gut.“")
             refreshButtons ui
 
     let leave ui =
@@ -195,7 +234,7 @@ module DockContact =
     let dock ui port pilot =
         leave ui
         ui.Port <- port
-        ui.Home <- StoryRadio.atPort port
+        ui.Home <- StoryRadio.contact pilot port
         refreshArchive ui pilot
         ui.Home |> Option.iter (fun call ->
             select ui call

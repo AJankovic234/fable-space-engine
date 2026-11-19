@@ -28,7 +28,8 @@ type SkyBackdrop =
 [<RequireQualifiedAccess>]
 module SkyBackdrop =
     let private atlasSectors =
-        [| "outer-belt"; "slag-refinery"; "frontier-drift"; "kepler-yard"; "aether-relay"; "morgenlicht-bastion" |]
+        [| "outer-belt"; "slag-refinery"; "frontier-drift"; "kepler-yard"; "aether-relay"; "morgenlicht-bastion"
+           "kaltstrom"; "wracksaum"; "schleierpass" |]
 
     let private vertex = """#version 300 es
 precision highp float;
@@ -109,7 +110,7 @@ const vec2 SKY_MIN = vec2(-1.24, -0.72);
 const vec2 SKY_SIZE = vec2(2.52, 1.70);
 """
     let private bodyFragment = bakeHeader + windowShader + """
-uniform vec3 uSuns[6];
+uniform vec3 uSuns[9];
 uniform int uCell;
 uniform vec2 uJitter;
 const vec3 SUN = vec3(0.8393, 0.4519, 0.3013);
@@ -258,6 +259,107 @@ vec4 eclipse(vec2 p) {
     return vec4(mix(radiance,night,cover),max(cover,photosphere));
 }
 
+// Kaltstrom: blasser Eisriese, dicht vor dem Fenster, mit schmalem Ring und dessen Schatten.
+vec4 iceGiant(vec3 d, vec3 sun) {
+    vec3 center=normalize(vec3(-0.50,0.06,-1.0))*9.0;
+    float radius=3.05;
+    vec3 ringN=normalize(vec3(0.10,0.93,0.34));
+    vec3 color=vec3(0.0);
+    float coverage=0.0;
+    float approach=length(cross(d,center));
+    color+=vec3(0.10,0.42,0.55)*exp(-max(approach-radius,0.0)*14.0)*step(radius,approach)*step(0.0,dot(d,center))*0.6;
+    float planetT=sphere(d,center,radius);
+    if (planetT<1e4) {
+        coverage=1.0;
+        vec3 n=normalize(d*planetT-center);
+        float lat=dot(n,ringN);
+        float turb=fbm(n*5.0+vec3(2.0,0.0,5.0));
+        float bands=0.5+0.5*sin(lat*26.0+turb*2.6);
+        vec3 surface=mix(vec3(0.30,0.55,0.66),vec3(0.78,0.90,0.92),bands*0.7+turb*0.25);
+        surface=mix(surface,vec3(0.16,0.34,0.52),smoothstep(0.55,0.95,abs(lat)));
+        float daylight=max(dot(n,sun),0.0);
+        // Der Ring wirft ein dunkles Band auf die Tagseite.
+        vec3 at=n*radius;
+        float toSun=dot(sun,ringN);
+        float shade=1.0;
+        if (abs(toSun)>0.001) {
+            float reach=-dot(at,ringN)/toSun;
+            float r=length(at+sun*reach);
+            if (reach>0.0) shade=1.0-0.62*smoothstep(3.55,3.75,r)*(1.0-smoothstep(5.0,5.25,r));
+        }
+        float limb=pow(1.0-max(dot(n,-d),0.0),3.0);
+        color=surface*(vec3(0.020,0.035,0.055)+vec3(0.95,1.0,1.05)*daylight*shade);
+        color+=vec3(0.12,0.50,0.66)*limb*(0.12+daylight*0.8);
+    }
+    float denom=dot(d,ringN);
+    float t=dot(center,ringN)/(abs(denom)>0.0001 ? denom : 0.0001);
+    vec3 q=d*t-center;
+    float r=length(q);
+    float fine=fwidth(r*40.0);
+    if (abs(denom)>0.0001 && t>0.0 && t<planetT && r>3.55 && r<5.25) {
+        float lanes=0.5+0.5*sin(r*40.0)*(1.0-smoothstep(0.6,1.8,fine));
+        float density=smoothstep(3.55,3.70,r)*(1.0-smoothstep(5.0,5.25,r))*(0.25+0.55*lanes)*(0.4+0.6*noise(vec3(r*7.0,2.0,9.0)));
+        float shadow=sphere(sun,-q,radius)<1e4 ? 0.10 : 1.0;
+        vec3 ringColor=mix(vec3(0.55,0.72,0.80),vec3(0.90,0.96,0.98),lanes)*shadow*0.9;
+        color=mix(color,ringColor,density);
+        coverage=mix(coverage,1.0,density);
+    }
+    return vec4(color,coverage);
+}
+
+// Wracksaum: aufgebrochener Mond mit glühender Wunde, darum ein Bogen aus Trümmern.
+vec4 brokenMoon(vec3 d, vec3 sun) {
+    vec3 center=normalize(vec3(0.50,0.26,-1.0))*11.0;
+    float radius=1.9;
+    vec4 body=vec4(0.0);
+    float moonT=sphere(d,center,radius);
+    if (moonT<1e4) {
+        vec3 n=normalize(d*moonT-center);
+        float gap=dot(n,normalize(vec3(-0.55,0.45,0.70)));
+        float crack=abs(fbm(n*4.0+vec3(3.0,1.0,7.0))-0.5);
+        float rock=fbm(n*11.0);
+        vec3 surface=mix(vec3(0.16,0.14,0.13),vec3(0.50,0.44,0.38),rock);
+        float daylight=max(dot(n,sun),0.0);
+        vec3 color=surface*(vec3(0.030,0.035,0.045)+vec3(1.0,0.86,0.70)*daylight);
+        float wound=smoothstep(0.80,0.93,gap);
+        float veins=exp(-crack*150.0)*smoothstep(0.50,0.90,gap);
+        color=mix(color,vec3(0.05,0.02,0.015),wound*0.85);
+        color+=vec3(1.6,0.42,0.06)*(veins*0.9+wound*exp(-crack*30.0)*0.8);
+        body=vec4(color,1.0);
+    }
+    vec3 ringN=normalize(vec3(-0.30,0.82,0.48));
+    float denom=dot(d,ringN);
+    float t=dot(center,ringN)/(abs(denom)>0.0001 ? denom : 0.0001);
+    vec3 q=d*t-center;
+    float r=length(q);
+    if (abs(denom)>0.0001 && t>0.0 && t<moonT && r>2.5 && r<4.6) {
+        float clump=fbm(q*1.3);
+        float chunks=smoothstep(0.80,0.86,noise(q*7.0)+0.35*clump-0.10);
+        float band=smoothstep(2.5,3.0,r)*(1.0-smoothstep(3.7,4.6,r));
+        float density=clamp(band*(clump*clump*0.22+chunks*0.9),0.0,1.0);
+        vec3 debris=mix(vec3(0.20,0.16,0.13),vec3(0.62,0.52,0.40),noise(q*5.0))*0.55;
+        body=vec4(mix(body.rgb,debris,density),mix(body.a,1.0,density));
+    }
+    return body;
+}
+
+// Schleierpass: leuchtender Nebelvorhang mit dunklen Staubbahnen, dahinter ein roter Zwerg.
+vec4 veil(vec2 p) {
+    vec2 q=p-vec2(-0.25,0.05);
+    float warp=fbm(vec3(q*1.6,3.0));
+    float fold=fbm(vec3(q.x*5.5+warp*2.4,q.y*1.1,8.0));
+    float across=(q.x+0.25*(warp-0.5)+0.18*sin(q.y*2.2))*1.7;
+    float sheet=exp(-across*across);
+    float filaments=fold*fold*fold*2.4;
+    float lane=smoothstep(0.42,0.62,fbm(vec3(q*4.0+vec2(warp),1.0)));
+    vec3 tone=mix(vec3(0.50,0.22,0.95),vec3(0.08,0.62,0.66),smoothstep(-0.5,0.5,q.y+warp-0.5));
+    tone=mix(tone,vec3(0.95,0.30,0.42),smoothstep(0.55,0.9,fold)*0.5);
+    vec3 color=tone*sheet*(0.25+filaments)*(1.0-0.75*lane)*0.9;
+    float star=length(p-vec2(0.52,0.30));
+    color+=vec3(1.9,0.55,0.22)*exp(-star*star/0.0009)+vec3(0.55,0.14,0.06)*exp(-star*9.0);
+    return vec4(color,clamp(sheet*(0.35+0.5*lane)+exp(-star*star/0.0007),0.0,0.85));
+}
+
 vec4 view(int sector, vec2 local) {
     vec2 p=SKY_MIN+SKY_SIZE*local;
     vec3 d=normalize(vec3(p,-1.0));
@@ -265,6 +367,9 @@ vec4 view(int sector, vec2 local) {
     if (sector==0) body=kestrel(d);
     else if (sector==4) body=pulsar(p);
     else if (sector==5) body=eclipse(p);
+    else if (sector==6) body=iceGiant(d,uSuns[6]);
+    else if (sector==7) body=brokenMoon(d,uSuns[7]);
+    else if (sector==8) body=veil(p);
     else {
         vec3 dir=sector==1 ? vec3(-0.49,0.16,-1.0) :
                  sector==2 ? vec3(0.54,0.22,-1.0) : vec3(-0.40,-0.17,-1.0);
@@ -307,10 +412,12 @@ uniform vec3 uSunColor;
 out vec4 outColor;
         """ + Shaders.displayTransform + windowShader + """
 // Longitude and colour of the shared galactic band, indexed by sector.
-const vec2 YAW[6]=vec2[6](vec2(1,0),vec2(0.362,0.932),vec2(-0.801,0.598),
-    vec2(-0.416,-0.909),vec2(0.697,-0.717),vec2(-0.942,-0.335));
-const vec3 TINT[6]=vec3[6](vec3(1),vec3(1.38,0.47,0.29),vec3(0.46,1.27,1.12),
-    vec3(0.67,0.85,1.36),vec3(0.94,0.56,1.57),vec3(1.43,0.42,0.49));
+const vec2 YAW[9]=vec2[9](vec2(1,0),vec2(0.362,0.932),vec2(-0.801,0.598),
+    vec2(-0.416,-0.909),vec2(0.697,-0.717),vec2(-0.942,-0.335),
+    vec2(0.259,-0.966),vec2(-0.500,0.866),vec2(0.940,0.342));
+const vec3 TINT[9]=vec3[9](vec3(1),vec3(1.38,0.47,0.29),vec3(0.46,1.27,1.12),
+    vec3(0.67,0.85,1.36),vec3(0.94,0.56,1.57),vec3(1.43,0.42,0.49),
+    vec3(0.55,0.95,1.30),vec3(1.25,0.80,0.45),vec3(0.80,0.62,1.35));
 void main() {
     vec2 xy = (vUv*2.0-1.0)*uLens;
     vec3 ray = normalize(transpose(mat3(uView))*vec3(xy,-1.0));

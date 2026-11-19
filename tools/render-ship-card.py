@@ -1,10 +1,11 @@
 """After npm run build:
 blender --background artifacts/werft/eisvogel.blend --python tools/render-ship-card.py -- eisvogel [--save-scene]
 
-Re-renders a shipyard card from the hull mesh the game draws. Camera, lights and colour
-management come from the opened scene. With --save-scene the scene's own model of each
-rendered hull is replaced by the game mesh and the .blend is saved, so a later render from
-the scene cannot fall back to an outdated model.
+Re-renders a shipyard card from the hull mesh the game draws. The camera and the positions of
+the lights come from the opened scene; their strength, the surround and the exposure are set
+below (YARD_LIGHT). With --save-scene the scene's own model of each rendered hull is replaced
+by the game mesh and the .blend is saved, so a later render from the scene cannot fall back
+to an outdated model.
 """
 import colorsys
 import json
@@ -13,15 +14,30 @@ import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 root = Path(__file__).resolve().parents[1]
 hulls = ["kutter", "lastkahn", "sperber", "eisvogel"]
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 save_scene = "--save-scene" in args
 names = [arg for arg in args if not arg.startswith("--")] or ["eisvogel"]
-# The scene's AgX view transform washes out saturated paint (the Eisvogel's azure turned sky grey).
-# Lit surfaces get this much extra saturation so hull colours read as they do in the game.
-PAINT_SATURATION = 1.4
+# The scene's AgX view transform washes out paint. Lit surfaces get this much extra saturation
+# so the weathered hull colours read as they do in the game, without turning back into candy.
+PAINT_SATURATION = 1.15
+
+# The cards are lit like a dock at night, not like a showroom: a dark cold surround, one hard
+# key, hardly any fill, a cool edge to cut the silhouette out of the panel and a sodium-vapour
+# rim. All values are absolute, so re-running on a saved scene gives the same picture.
+YARD_LIGHT = {
+    "surround": ((0.20, 0.27, 0.36, 1.0), 0.10),
+    "exposure": -0.55,
+    "lights": {
+        "Large warm key": (520.0, (1.0, 0.93, 0.84)),
+        "Camera fill": (70.0, (0.73, 0.86, 1.0)),
+        "Cool edge": (800.0, (0.62, 0.84, 1.0)),
+        "Rim strip": (340.0, (1.0, 0.56, 0.22)),
+    },
+}
 
 # Transfer the same triangles, colours and emissions that WebGL draws.
 extract = """
@@ -44,22 +60,48 @@ scene.render.image_settings.quality = 90
 for item in scene.objects:
     if item.type == "MESH":
         item.hide_render = True
+    elif item.type == "LIGHT" and item.name in YARD_LIGHT["lights"]:
+        item.data.energy, item.data.color = YARD_LIGHT["lights"][item.name]
+scene.view_settings.exposure = YARD_LIGHT["exposure"]
+if scene.world and scene.world.use_nodes:
+    for node in scene.world.node_tree.nodes:
+        if node.type == "BACKGROUND":
+            node.inputs[0].default_value, node.inputs[1].default_value = YARD_LIGHT["surround"]
 
 
 def material(key):
-    r, g, b, glow = key
-    if glow == 0:
+    r, g, b, channel = key
+    # PlayerMeshes packs metal, opaque canopy glass and rubber into the negative
+    # part of the emissive channel (Materials.fs). Its fraction is still light.
+    surface = int(-channel) if channel < 0 else 0
+    glow = -channel - surface if channel < 0 else channel
+    if surface == 0 and glow == 0:
         hue, saturation, value = colorsys.rgb_to_hsv(r, g, b)
         r, g, b = colorsys.hsv_to_rgb(hue, min(1.0, saturation * PAINT_SATURATION), value)
     mat = bpy.data.materials.new("card")
     mat.use_nodes = True
     shader = mat.node_tree.nodes["Principled BSDF"]
     shader.inputs["Base Color"].default_value = (r, g, b, 1.0)
-    shader.inputs["Metallic"].default_value = 0.22
-    shader.inputs["Roughness"].default_value = 0.38
+    shader.inputs["Metallic"].default_value = (0.12, 0.90, 0.15, 0.0)[surface]
+    shader.inputs["Roughness"].default_value = (0.38, 0.32, 0.16, 0.83)[surface]
+    if surface == 2:
+        shader.inputs["Coat Weight"].default_value = 0.50
     shader.inputs["Emission Color"].default_value = (r, g, b, 1.0)
     shader.inputs["Emission Strength"].default_value = glow * 4.0
     return mat
+
+
+def frame_hull(camera, points):
+    """Fit the model silhouette with the same margin on every landscape card."""
+    bpy.context.view_layer.update()
+    view = camera.matrix_world.inverted()
+    projected = [view @ Vector(p) for p in points]
+    left, right = min(p.x for p in projected), max(p.x for p in projected)
+    bottom, top = min(p.y for p in projected), max(p.y for p in projected)
+    centre = Vector(((left + right) / 2, (bottom + top) / 2, 0))
+    camera.location += camera.matrix_world.to_quaternion() @ centre
+    aspect = scene.render.resolution_x / scene.render.resolution_y
+    camera.data.ortho_scale = max(right - left, (top - bottom) * aspect) / 0.89
 
 
 for name, (vertices, indices) in zip(names, meshes):
@@ -78,6 +120,7 @@ for name, (vertices, indices) in zip(names, meshes):
         polygon.material_index = slots[key]
     model = bpy.data.objects.new(name + "-card", data)
     scene.collection.objects.link(model)
+    frame_hull(scene.camera, points)
     scene.render.filepath = str(root / "public" / "assets" / "ships" / (name + ".webp"))
     bpy.ops.render.render(write_still=True)
     model.hide_render = True

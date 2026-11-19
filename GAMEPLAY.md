@@ -18,9 +18,9 @@ Der Booster zehrt von einem Vorrat: voll reicht er für 8 s Dauerboost und erhol
 
 ## Eigene Schiffe und Spezialausrüstung
 
-Bei einem neuen Handelsflug wählst du in Kestrel dein Startschiff. Es gehört dir ab der ersten Flugstunde. Die Schwierigkeit ergibt sich aus Startkapital und Flugeigenschaften. Im Eisvogel kannst du sofort einen Großauftrag fliegen und Geleitschutz bezahlen. Beim Sperber füllt ein Kleinauftrag bereits den Laderaum, dafür ist er schnell und im Gefecht wendig. [Schiffswahl am Start](artifacts/werft/startschiff-auswahl.webp) · [Die vier Schiffe im Flug](artifacts/werft/startschiffe-im-flug.webp)
+Bei einem neuen Handelsflug oder einer neuen Kampfmission wählst du in Kestrel eines von vier Schiffen kostenlos aus. Die drei übrigen kannst du später an Ausrüstungshäfen kaufen. Im Handelsflug bestimmt das Schiff auch dein Startkapital. Im Eisvogel kannst du sofort einen Großauftrag fliegen und Geleitschutz bezahlen. Beim Sperber füllt ein Kleinauftrag bereits den Laderaum, dafür ist er schnell und im Gefecht wendig. Die Kampfmission beginnt mit jedem Schiff bei 0 CR. [Schiffswahl am Start](artifacts/werft/startschiff-auswahl.webp) · [Die vier Schiffe im Flug](artifacts/werft/startschiffe-im-flug.webp)
 
-| Startschiff | Handelsstart | Startkapital | Grundladeraum | Reisetempo | Laserschaden pro Treffer | Späterer Kaufpreis |
+| Startschiff | Handelsstart | Handelskapital | Grundladeraum | Reisetempo | Laserschaden pro Treffer | Späterer Kaufpreis |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | Eisvogel | Entspannt | 300 CR | 24 t | 74 m/s | 9 | 540 CR |
 | Bergungskutter | Standard | 200 CR | 16 t | 60 m/s | 12 | 200 CR |
@@ -29,13 +29,39 @@ Bei einem neuen Handelsflug wählst du in Kestrel dein Startschiff. Es gehört d
 
 Über **Schiffe** kannst du am Dock weitere Rümpfe kaufen. Auf Drift-9 kannst du das Angebot ansehen. Die Werftkarten berücksichtigen deine aktuellen Einbauten. Beim Wechsel behältst du dein Guthaben.
 
-Der Eisvogel ist ein Frachtkurier mit zwei Kufen. Sein Grundladeraum fasst einen kompletten 24-t-Großauftrag. In der Außenansicht sitzen die versiegelten Kisten paarweise auf den Kufen. Die Kufen laufen vorn in flache Schnäbel aus, unter denen die Arbeitslaser sitzen. Mit Kurierdüsen erreicht er 86 m/s Reisegeschwindigkeit. [Werftkarte](public/assets/ships/eisvogel.webp) · [Im Flug mit voller Ladung](artifacts/werft/eisvogel-im-flug.webp) · [Blender-Szene](artifacts/werft/eisvogel.blend)
+Am Bergungskutter sitzt der rostorange Gitterkran mit seinem Magnetkopf rechts neben dem Steuerhaus. Links bleibt der Blick in den Frachtkorb frei. Beim Lastkahn überspannen zwei Ladekräne mit gelbschwarzen Warnbalken die Frachtkassetten. Den Sperber erkennst du im Vorbeiflug an seinen kurzen grauen Vorflügeln, der roten Schwinge auf den dunklen Hauptflügeln und den roten Flossenköpfen.
+
+Keines der vier Schiffe ist neu. Der Lack ist ausgeblichen, einzelne Platten sind Ersatzbleche im rotbraunen Rostschutzgrund oder blank geschliffen, zum Heck hin wird der Rumpf rußig, und unter den Fugen laufen Rost- und Ölspuren. Die Kanzeln sind geschwärztes Rauchglas. Am Kutter stammt die Steuerbordhaube von einem ausgeschlachteten Lastkahn, auf dem Lastkahn steht eine Kassette im Karminrot der AETHER-Flotte. Jeder Rumpf trägt die Registermarke deiner Kurier-SIN als Strichcode mit rotem Löschvermerk: am Kutter an der Stirnwand des Frachtkorbs, am Lastkahn auf dem Rückgrat zwischen den Kassetten, am Sperber auf den Flügeln und am Eisvogel außen an den Kufen.
+
+Der Eisvogel ist ein Frachtkurier mit zwei Kufen. Sein Grundladeraum fasst einen kompletten 24-t-Großauftrag. In der Außenansicht sitzen die versiegelten Kisten paarweise auf den Kufen. Außen an den Kufen steigen zwei nachtblaue Heckflossen auf. Vorn laufen die Kufen in flache Schnäbel aus, unter denen die Arbeitslaser sitzen. Mit Kurierdüsen erreicht er 86 m/s Reisegeschwindigkeit. [Werftkarte](public/assets/ships/eisvogel.webp) · [Im Flug mit voller Ladung, noch im alten Lack](artifacts/werft/eisvogel-im-flug.webp) · [Blender-Szene](artifacts/werft/eisvogel.blend)
 
 Der Lastkahn dreht langsamer, der Sperber schneller als der Kutter. Gekaufte Rümpfe bleiben in deiner Flotte. Beim kostenlosen Wechsel ziehen Ladung, bezahlte Frachtraumerweiterungen, Waffen und Turret mit um. Bei Platzmangel zeigt die Werft, wie viele Tonnen du zuerst entladen musst. Ein Wechsel übernimmt auch die vorhandenen Schäden.
 
 Dein Rumpf hat einen Spezialplatz. **Kurierdüsen** für 90 CR bringen +12 m/s und einen längeren bernsteinfarbenen Abgasstrahl. **Impulsfokus** für 130 CR erhöht den Laserschaden um 25 % und färbt die Schüsse violett. Mit dem **Schildrelais** für 150 CR beginnt dein Schild bereits 2 s nach dem letzten Treffer wieder zu laden. Die Serientrimmung braucht 3,5 s. Gekaufte Kits kannst du an Ausrüstungshäfen kostenlos wechseln.
 
 Unter **Ausrüstung** lassen sich Laser, Schild und Panzerung unabhängig bis Stufe III ausbauen. Die Karte zeigt das nächste Bauteil und die Wirkung auf deinem aktiven Schiff. In der Außenansicht erkennst du die neue Stufe an den Waffenmündungen, den blauen Schildemittern oder den geschichteten Panzerplatten. Ein Rumpfwechsel übernimmt die Ausbaustufen.
+
+Unter **Schiffsemblem** im Hauptmenü oder in **F8 → Spielstände** kannst du ein eigenes PNG-, JPEG- oder WebP-Bild auswählen. Transparente Bildbereiche lassen die Hülle durchscheinen. Mit **C** wechselst du zur Außenansicht, um das Emblem zu sehen. Es bleibt bei einem Schiffswechsel und in diesem Browser erhalten.
+
+## Forschung: das RT-9 Bord-Labor
+
+Dr. Mara Lind baut dir auf Forschungs-Relais Theta für 900 CR, 3 NAV und 2 PLS das **RT-9 Bord-Labor** ein. Der Bandleser arbeitet ohne AETHER-Gateway und macht 15 Bandfragmente lesbar. Jedes Fragment ist ein Bauteil und kostet Credits und Fracht. Nach dem Einbau zeigt die Karte den Text des Fragments: einen Werkstattbucheintrag, einen Haftungsausschluss oder einen Satz von Lind, Sera, Orlov, Voss, Kipper, Ilka Tamm oder Odo Karst.
+
+| Zweig | Inhalt | Durchbruch (Stufe 4) | Apex (Stufe 5) |
+| --- | --- | --- | --- |
+| **Werkstattbuch Jahr Null** | Waffen aus Kepler-07 | Phasen-Railgun, nur Kepler-07 | Single-Seat-Schwarm, nur Kepler-07 |
+| **Stille Bänder** | Felder und Schilde von Theta | TG-4-Spoofingfilter, nur Relais Theta | Sleeve-7-Überladungskern, nur Relais Theta |
+| **Lizenzleichen-Logistik** | Fracht und Bergung | Letzte-Leine-Schleppfeld, Theta oder Kepler-07 | Spiegelkennung Graue Wacht, nur Drift-9 |
+
+Die Stufen 1 bis 3 baust du an Relais Theta oder Kepler-07 ein. Die drei Apex-Knoten brauchen mehr als ihre Vorstufe:
+
+| Apex | Zweite Vorstufe aus dem Nachbarzweig | Siegel: Fund im Archiv |
+| --- | --- | --- |
+| Single-Seat-Schwarm | Seras Horchantenne | Trockendock B (Jahr Null) |
+| Sleeve-7-Überladungskern | Null-Takt-Kühlung | Sleeve-Satellit (Vances Finsternis) |
+| Spiegelkennung Graue Wacht | Puffer-Siphon | Kursprotokoll 17 (Schleierpass) |
+
+Jede Karte nennt, was noch fehlt: Vorstufe, Fund oder Dock.
 
 ## Frachtaufträge
 
@@ -63,7 +89,7 @@ Triebwerke ziehen eine feine, schnell verblassende Spur, die mit dem Schub helle
 
 Auch das Gestein wechselt mit dem Sektor. Kestrel hat staubige Schichtfelsen, Helios dunkle Schlacke mit rostroten Nähten und Drift-9 grünliches Gestein mit zwei gerundeten Lappen. Bei Kepler brechen blauweiße Eisblöcke entlang flacher Ebenen. Theta hat violettgraue Rippen und Morgenlicht metallische, eingedellte Meteoriten. Diese Merkmale gehören zur Geologie des gesamten Felds. Ob ein einzelner Brocken abbaubares Erz enthält, erfährst du beim Treffer.
 
-Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Am Äther-Relais sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis.
+Beim Anflug auf Kestrel steht ein Ringplanet über der Station. Bei Helios ist eine Lavawelt zu sehen, bei Drift-9 ein Ozeanplanet mit zwei Monden und bei Kepler eine Eiswelt links unten im Cockpitfenster. Bei Theta sind die Jets eines Pulsars sichtbar, bei Bastion der kupferfarbene Lichtsaum einer Finsternis. Die drei Randsektoren haben eigene Himmel: Über Raureif im Kaltstrom steht ein blasser Eisriese, dessen Ring einen Schatten auf die Tagseite wirft. Im Wracksaum hängt ein aufgebrochener Mond mit glühender Bruchstelle und einem Bogen aus Trümmern. Im Schleierpass leuchtet ein Nebelvorhang mit dunklen Staubbahnen vor einem roten Zwerg.
 
 Der Bergungskutter trägt backbord einen offenen Frachtkorb und steuerbord einen Bergekran. Beim Einkauf oder Bergen füllen sich bis zu drei Plätze im Korb. Zwischen den gelben Holmen sind gestapelte Titanplatten, Druckbehälter oder versiegelte Transportkisten zu sehen. Welche Waren außen liegen, hängt von ihrem Volumenanteil an der Ladung ab.
 
@@ -71,9 +97,15 @@ Am Bergbau-Depot Kestrel fassen zwei beleuchtete Klammern den Erzbrocken ein. He
 
 Schiffe und Laser treffen auf die massiven Stationsbauten. Andockring und Anflugschneise bleiben frei. Asteroiden zeigen Schichtungen unabhängig vom Erzvorrat.
 
-Der Kepler-Bomber trägt seine beiden Torpedos über den Tragflächen. In der Verfolgeransicht siehst du nach jedem Abschuss die freie Schiene. Am Zollkreuzer sitzt die Brücke über der seitlichen Kontrollbucht. Nach dem ersten Torpedotreffer ist das mittlere Schott aufgerissen, dahinter glüht eine Leitung.
+Der Kepler-Bomber trägt seine beiden Torpedos zwischen den erhöhten Triebwerksverkleidungen und den äußeren Flügelträgern. In der Verfolgeransicht siehst du nach jedem Abschuss die freie Schiene. Unter dem Bug sitzt eine verglaste Beobachtungskanzel. [Kepler-Bomber im Einsatz, noch im alten Lack](artifacts/werft/kepler-im-flug.webp)
 
-Im Handelsflug liegt ein ziviler Containerfrachter am Außenliegeplatz, ein zweiter fliegt eine Warteschleife über der Station. Dazu pendeln drei oder vier Shuttles zwischen Station, Toren und Warteposition. Alle sind Kulisse ohne Kollision. Auf den Routenkarten zeigen [sechs gerenderte Stationsansichten](public/assets/port-portraits.webp) die Zielhäfen. Freigelegtes Erz besteht aus mehreren verwachsenen Kristallspitzen. Drohne, Späher, Kanonenboot, Bomber und Kommandoschiff haben eigene 3D-Silhouetten: Ringdrohne, Nadel-Späher, Breitseiten-Kanonenboot, Nutzlast-Bomber und eine 24 m lange Kommando-Korvette mit goldenem Bug. Jeder Gegner trägt ein Positionslicht in seiner Rollenfarbe, das auch auf große Entfernung sichtbar bleibt. Piraten im Handelsflug erkennst du an verwitterter Lackierung und flackernden grünen oder bernsteinfarbenen Lichtern, AETHER-Kräfte an Elfenbein, Gold und roten Doppelblitzen.
+Am Zollkreuzer sitzt die Brücke über der seitlichen Kontrollbucht. Nach dem ersten Torpedotreffer ist das mittlere Schott aufgerissen, dahinter glüht eine Leitung.
+
+Im Handelsflug pendeln Hafenshuttles zwischen Station und Toren. Bei Kestrel ziehen Bergungsschlepper im rotbraunen Rostschutzgrund unter dem Hafen vorbei. Zwischen ihren Arbeitsscheinwerfern liegen die offenen, gelben Greifarme mit freiliegenden Kolben und Gelenkbolzen. Darüber fliegen grauweiße Passagierliner mit dunklem Kiel. Ihre Aussichtsgalerie aus geschwärztem Glas sitzt auf dem Oberdeck, nur wenige Kabinenfenster sind erleuchtet, und die Rettungskapseln hängen unter den Kabinenfenstern. Containerfrachter belegen den Außenliegeplatz und die Warteposition.
+
+Über Helios und dem Forschungs-Relais Theta patrouilliert eine AETHER-Fregatte mit einer Eskortkorvette. Vor der Bastion Morgenlicht fliegt eine zweite Korvette auf der anderen Flanke. Auf dem Vorschiff der knapp 79 m langen Fregatte stehen zwei gepanzerte Doppeltürme hintereinander. Über der Brücke sitzt ein breiter Radarkopf. Die kleineren Korvetten tragen gegabelte Impulsgondeln an den vorgepfeilten Flügeln. Beide Klassen fliegen sauber: platingraue Panzerung über schwarzem Gürtel, verspiegelte Brücken und kalt erleuchtete Fenster. Gold tragen nur der Schnabel der Fregatte, die Vorderkanten und das Wappen, ein goldenes, gebrochenes A auf karminrotem Schild. An Bug und Brücke der Fregatte und unter dem Kiel der Korvette leuchten rote Abtaster. Richte im kampffreien Handelsflug den Blick auf ein Schiff. Bis 600 m zeigt das HUD Klasse, Zugehörigkeit und Entfernung. Der vorbeiziehende Verkehr ist Kulisse, du kannst durch die Schiffe hindurchfliegen. [Die vier Schiffsmodelle](public/assets/raumverkehr.webp)
+
+Auf den Routenkarten zeigen [sechs gerenderte Stationsansichten](public/assets/port-portraits.webp) die Zielhäfen. Freigelegtes Erz besteht aus mehreren verwachsenen Kristallspitzen. Drohne, Späher, Kanonenboot, Bomber und Kommandoschiff haben eigene 3D-Silhouetten: Ringdrohne, Nadel-Späher, Breitseiten-Kanonenboot, Nutzlast-Bomber und eine 24 m lange Kommando-Korvette mit goldenem Bug. Jeder Gegner trägt ein Positionslicht in seiner Rollenfarbe, das auch auf große Entfernung sichtbar bleibt. Piraten im Handelsflug erkennst du an verwitterter Lackierung und flackernden grünen oder bernsteinfarbenen Lichtern, AETHER-Kräfte an Elfenbein, Gold und roten Doppelblitzen.
 
 Fünf Bojenpaare markieren den Stationsanflug. Bei freiem Dock läuft ein türkises Lichtsignal von außen zur Station. Bei Kampfsperre leuchten alle Bojen durchgehend bernsteinfarben. Die HUD-Anzeige gibt weiterhin die Entfernung und den Andockstatus an.
 
@@ -132,6 +164,24 @@ Das gewählte Ziel trägt einen goldenen Rahmen. Links unten zeigt die Zielanzei
 
 Eigene Schüsse sind kühl gefärbt (Bordkanone grün, Impulsfokus violett, Turret blau), gegnerische warm (Bomber magenta, Kommandoschiff gold). Treffer auf einen Schild zeigen blaue Ringe und eine blaue Treffermarke, Treffer auf die Hülle Funken und eine helle Marke. Ein rotes Kreuz bestätigt den Abschuss. Rote Bögen um die Bildmitte zeigen, aus welcher Richtung du getroffen wirst. Schwere Schiffe brennen unter einem Viertel Hülle sichtbar und zerbrechen in mehreren Stufen.
 
+## Sektoren und Universumskarte
+
+Jeder Sektor hat einen Namen und eine Station mit Rufnamen. Tore und Kartenknoten tragen den Rufnamen der Station.
+
+| Sektor | Station | Rufname | Art | Gefahr |
+| --- | --- | --- | --- | ---: |
+| Haldens Ruh | Bergbau-Depot Kestrel | Kestrel | Bergbau | 1 |
+| Neunte Sohle | Raffinerie Helios-IV | Helios-IV | Hütte | 2 |
+| Zwölf Stimmen | Freihafen Drift-9 | Drift-9 | Freihafen | 2 |
+| Jahr Null | Orbitalwerft Kepler-07 | Kepler-07 | Werft | 3 |
+| Stille Bänder | Forschungs-Relais Theta | Theta | Relais | 3 |
+| Vances Finsternis | Bastion Morgenlicht | Morgenlicht | Flotte | 4 |
+| Kaltstrom | Destille Raureif | Raureif | Bergbau | 1 |
+| Wracksaum | Schlepperdock Letzte Leine | Letzte Leine | Werft | 4 |
+| Schleierpass | Zollfeuer Graue Wacht | Graue Wacht | Relais | 3 |
+
+**F7** öffnet die Universumskarte. Jeder Knoten zeigt ein Symbol für die Stationsart, den Rufnamen, den Sektornamen und die Gefahrenstufe als vier Marken, dazu eine Farbkante von Grün bis Rot. Ein geplanter Kurs nummeriert seine Etappen an den Knoten. Rechts steht zum gewählten Sektor eine kurze Beschreibung.
+
 ## Grafik und Leistung
 
 Im Hauptmenü wählst du unter **Grafik** die Qualitätsstufe: Niedrig, Mittel, Hoch, Ultra oder Auto. Auto misst die ersten Sekunden im Flug und wählt dann eine Stufe. Die dynamische Auflösung senkt die 3D-Auflösung bei anhaltender Last in Schritten bis auf 50 % und hebt sie wieder an, sobald die Bildzeiten stabil sind. Das HUD bleibt dabei scharf. Beides merkt sich der Browser. **F3** zeigt neben Bildrate und Draw-Calls die aktive Stufe und Skalierung.
@@ -175,9 +225,22 @@ Die **Universumskarte** öffnet sich mit **F7** im Handelsflug oder unter **Rout
 - **Wracksaum** verbindet Drift-9 mit Morgenlicht. Das Schlepperdock handelt mit Plasmakernen und Titanschrott. Im Eigenflug greifen zuerst ein Späher und ein Kanonenboot an, später folgt ein zweites Paar. Aus zerstörten Kanonenbooten lassen sich Plasmakerne bergen.
 - **Schleierpass** verbindet Kaltstrom mit Wracksaum. Das Relais kauft medizinische Vorräte an und verkauft Nav-Daten. Wer ohne Geleit fliegt, trifft auf Sperrjäger. Ihre gelbgrünen Waffenarme leuchten vor der Fächersalve auf. Nach dem Schuss drehen sie seitlich weg. In ihren Wracks finden sich Nav-Daten und Titanschrott.
 
+### Asteroiden und Trümmerfelder
+
+In den Gürteln treiben 16 Asteroidenformen, darunter Eisplatten, Eisnadeln, Eisenblöcke und poröse Kohlenstoffbrocken. Die Dichte und der Erzanteil frisch erzeugter Felder unterscheiden sich je nach Sektor. Den Inhalt eines einzelnen Asteroiden erkennst du an den Kristallen, sobald er zerbricht.
+
+In **jedem Sektor** markieren bernsteinfarbene Kisten im Radar havarierte Frachter und Patrouillenschiffe; in Wracksaum und Schleierpass liegen je zwei. Flieg bis auf **65 m** heran und drücke **G**. Titanschrott belegt Frachtraum. Intakte Abfangraketen gehen in eine Reserve von bis zu sechs Stück und werden mit **J** verwendet, sobald das normale Magazin leer ist. Was gerade keinen Platz hat, bleibt im Wrack. Frachtraum, Waffenreserve und der Restbestand in jedem Wrack bleiben im Spielstand erhalten.
+
+**Notrufe.** Jedes Wrack sendet noch. Sobald du in Bergungsreichweite bist, hörst du den letzten Funkspruch der Besatzung, und der Bordfunk zeichnet ihn auf. Das dauert sieben Sekunden in Reichweite; verlässt du sie, pausiert die Aufzeichnung.
+
+- **Warten, dann bergen:** Die Stimme ist gesichert. Name und Wortlaut stehen im Stimmenarchiv, das du im Dock unter dem Fundarchiv findest. Das ist Seras Weg.
+- **Sofort bergen:** **G** vor dem Ende kappt den Sender. Der Senderblock bringt 2 t Titanschrott zusätzlich, die Stimme ist verloren. Das ist Karsts Weg.
+
+Die Entscheidung gilt je Wrack und lässt sich nicht zurücknehmen. Im Archiv kommentieren Sera und Karst deine Bilanz.
+
 **Enter/Klick** öffnet beim ersten Handelsflug die Schiffswahl. Bei einem
 vorhandenen Spielstand setzt du den Flug fort. Über **Spielstände → Neuer Handelsflug**
-kannst du erneut ein Startschiff wählen. **F2** startet im Titelbild die Kampfmission
+kannst du erneut ein Startschiff wählen. **F2** öffnet im Titelbild die Schiffswahl für die Kampfmission
 „Operation Morgenlicht“. Der Handelsflug beginnt mit leerem Laderaum nahe Kestrel.
 Ein erstes Handelsziel ist, Erz zu kaufen oder zu bergen und es in Helios zu verkaufen.
 

@@ -25,8 +25,10 @@ type ShopUi =
       RepairCredits: HTMLButtonElement
       RepairScrap: HTMLButtonElement
       RepairStatus: HTMLElement
+      AddonButtons: HTMLButtonElement[]
       Next: HTMLButtonElement
       mutable Purchase: int
+      mutable AddonPurchase: int
       mutable TradeAction: int
       mutable RepairAction: int
       mutable TravelAction: int
@@ -73,8 +75,19 @@ module Shop =
               RepairCredits = unbox<HTMLButtonElement> (element "repair-credits")
               RepairScrap = unbox<HTMLButtonElement> (element "repair-scrap")
               RepairStatus = element "repair-status"
+              AddonButtons =
+                let host = element "addon-cards"
+                Economy.addons |> Array.map (fun addon ->
+                    let card = document.createElement "article"
+                    card.className <- "addon-card"
+                    card.innerHTML <-
+                        "<p class='eyebrow'>" + addon.Tag + "</p><h3>" + addon.Name + "</h3><p>" + addon.Effect + "</p>" +
+                        "<button type='button' class='buy-button'><span>INSTALLIEREN</span><strong>" + string addon.Price + " CR</strong></button>"
+                    host.appendChild card |> ignore
+                    card.querySelector("button") :?> HTMLButtonElement)
               Next = unbox<HTMLButtonElement> (element "next-sector")
               Purchase = -1
+              AddonPurchase = -1
               TradeAction = -1
               RepairAction = -1
               TravelAction = -1
@@ -94,7 +107,9 @@ module Shop =
         ui.Expand.addEventListener ("click", fun _ -> ui.TradeAction <- 13)
         ui.RepairCredits.addEventListener ("click", fun _ -> ui.RepairAction <- 1)
         ui.RepairScrap.addEventListener ("click", fun _ -> ui.RepairAction <- 2)
-        let tabs = [| "market"; "equipment"; "routes"; "skills"; "blockade"; "ships" |]
+        for i in 0 .. ui.AddonButtons.Length - 1 do
+            ui.AddonButtons.[i].addEventListener ("click", fun _ -> ui.AddonPurchase <- i)
+        let tabs = [| "market"; "equipment"; "routes"; "skills"; "research"; "blockade"; "ships" |]
         let selectTab selected =
             for name in tabs do
                 if name = selected then (element (name + "-panel")).removeAttribute "hidden"
@@ -154,9 +169,21 @@ module Shop =
             ui.Prices.[i].textContent <-
                 if not available then (if i = 0 then "INSTALLIERT" else "MAXIMAL AUSGEBAUT")
                 else string price + " CR" + (if i > 0 then " · STUFE " + string (levels.[i-1] + 1) else "")
+        for i in 0 .. ui.AddonButtons.Length - 1 do
+            let btn = ui.AddonButtons.[i]
+            let owned = Economy.hasAddon wallet i
+            let cost = Economy.addonPriceFor terms i
+            btn.disabled <- owned || wallet.Credits < cost || not outpost.HasUpgrades
+            btn.closest "article" |> Option.iter (fun card -> card.setAttribute ("data-owned", if owned then "true" else "false"))
+            (btn.querySelector "span").textContent <- if owned then "INSTALLIERT" else "EINBAUEN"
+            (btn.querySelector "strong").textContent <-
+                if owned then "AKTIV"
+                elif not outpost.HasUpgrades then string cost + " CR · ANDERER HAFEN"
+                else string cost + " CR"
 
     let show (ui: ShopUi) (outpost: Outpost) =
         ui.Purchase <- -1
+        ui.AddonPurchase <- -1
         ui.TradeAction <- -1
         ui.RepairAction <- -1
         ui.TravelAction <- -1

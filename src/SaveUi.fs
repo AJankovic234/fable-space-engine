@@ -22,7 +22,7 @@ module SaveUi =
     let private readFile (input: HTMLInputElement) (success: string -> unit) (failure: string -> unit) : unit = jsNative
     [<Emit("(()=>{const scope=$1.hidden?$0:$1;const els=[...scope.querySelectorAll('button:not([disabled]),select:not([disabled]),input:not([disabled])')].filter(e=>e.offsetParent!==null);if(!els.length){$2.preventDefault();return;}const i=els.indexOf(document.activeElement);if(i<0||($2.shiftKey&&i===0)||(!$2.shiftKey&&i===els.length-1)){$2.preventDefault();els[$2.shiftKey?els.length-1:0].focus();}})()")>]
     let private trapTab (root: HTMLElement) (confirm: HTMLElement) (key: KeyboardEvent) : unit = jsNative
-    [<Emit("$0.querySelectorAll('.save-header,#save-cards,.save-transfer,.save-footer').forEach(e=>{e.inert=$1;})")>]
+    [<Emit("$0.querySelectorAll('.save-header,#save-cards,.save-transfer,.save-footer,[data-ship-emblem-settings]').forEach(e=>{e.inert=$1;})")>]
     let private lockControls (root: HTMLElement) (locked: bool) : unit = jsNative
 
     let label slot = if slot = "auto" then "AUTOMATISCHER SPIELSTAND" else "SPEICHERPLATZ " + slot.Substring(4)

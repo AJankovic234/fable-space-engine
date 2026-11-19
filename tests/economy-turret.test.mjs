@@ -6,12 +6,14 @@ import {
   Economy_priceFor as priceFor, Economy_buyFor as buyFor,
   Economy_repairCostFor as repairCostFor, Economy_repairWithCredits as repairWithCredits,
   Economy_repairWithScrap as repairWithScrap,
+  Economy_hasAddon as hasAddon, Economy_addonPriceFor as addonPriceFor, Economy_buyAddonFor as buyAddonFor,
 } from "../build/Economy.js";
 import { TradeSystem_createCargo as createCargo, TradeSystem_loadSalvage as loadSalvage, TradeSystem_quantityOf as quantityOf } from "../build/TradeSystem.js";
 import {
   Turret_create as createTurret, Turret_reset as resetTurret, Turret_update as updateTurret,
   Missiles_create as createMissiles, Missiles_tryLaunch as launchMissile,
   Missiles_update as updateMissiles, Missiles_reload as reloadMissiles,
+  Missiles_configure as configureMissiles,
 } from "../build/Turret.js";
 import {
   WorldModule_create as createWorld, WorldModule_reset as resetWorld,
@@ -175,6 +177,42 @@ test("homing micro-missiles require a locked target in range, track, damage and 
   rack.Ammo = 1;
   reloadMissiles(rack);
   assert.equal(rack.Ammo, 4);
+});
+
+test("stackable ship addons apply fixer discounts, block duplicates and stack with MissilePod", () => {
+  const { wallet } = shop();
+  const standard = { SignalLevel: 0, FixerLevel: 0 };
+  const fixer = { SignalLevel: 0, FixerLevel: 1 };
+  assert.equal(addonPriceFor(standard, 0), 210);
+  assert.equal(addonPriceFor(fixer, 0), 157);
+  earn(wallet, 200, false);
+  assert.equal(buyAddonFor(standard, wallet, 0), false);
+  assert.equal(buyAddonFor(fixer, wallet, 0), true);
+  assert.equal(hasAddon(wallet, 0), true);
+  assert.equal(wallet.Credits, 43);
+  assert.equal(buyAddonFor(fixer, wallet, 0), false);
+  const rack = createMissiles();
+  configureMissiles(rack, true, hasAddon(wallet, 0));
+  assert.equal(rack.Capacity, 8);
+  assert.equal(rack.Damage, 52);
+  assert.ok(Math.abs(rack.ReloadInterval - 9.0 * 0.65) < 1e-9);
+});
+
+test("salvaged missiles back up an empty magazine and survive a field reload", () => {
+  const { world } = encounter(180);
+  const rack = createMissiles();
+  rack.Reserve = 2;
+  assert.equal(launchMissile(world, rack, 0).tag, 0);
+  assert.equal(rack.Reserve, 2);
+  reloadMissiles(rack);
+  rack.Ammo = 0;
+  assert.equal(launchMissile(world, rack, -1).tag, 1);
+  assert.equal(rack.Reserve, 2);
+  assert.equal(launchMissile(world, rack, 0).tag, 0);
+  assert.equal(rack.Ammo, 0);
+  assert.equal(rack.Reserve, 1);
+  reloadMissiles(rack);
+  assert.equal(rack.Reserve, 1);
 });
 
 test("turrets cannot fire before purchase, for dead players, at dead targets or outside 280 units", () => {

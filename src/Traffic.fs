@@ -2,21 +2,21 @@ namespace SpaceEngine
 
 open System
 
-/// Civilian service launches. Each timetable and its geometry are fixed in world space.
+/// Civilian services and AETHER patrols follow local timetables on the saved world clock.
 [<RequireQualifiedAccess>]
 module Traffic =
     let private v x y z = Vec3(x,y,z)
     let private engine = v 0.0 -0.29 6.45
     let private portLight = v -3.86 0.80 1.9
     let private starboardLight = v 3.86 0.80 1.9
-    let capacity = 1 + (Universe.sectors |> Array.map (fun sector -> sector.Gates.Length) |> Array.max)
 
     let launch () =
         let b = MeshBuilder()
-        let steel = MeshColor.rgb 0.18 0.24 0.28
-        let ivory = MeshColor.rgb 0.86 0.87 0.77
-        let orange = MeshColor.rgb 0.94 0.39 0.075
-        let glass = MeshColor.glow 0.10 0.30 0.37 0.28
+        // Port launches are as worn as the rest of the belt: grimy white, faded signal paint, blacked-out glass.
+        let steel = MeshColor.rgb 0.095 0.115 0.13
+        let ivory = MeshColor.rgb 0.40 0.39 0.345
+        let orange = MeshColor.rgb 0.50 0.195 0.04
+        let glass = MeshColor.glass 0.035 0.045 0.052 0.08
         let shell x profile color =
             b.Loft(profile |> Array.map (fun (z,w,lo,hi) -> ProceduralMeshes.hullSection x z w lo hi), true, true, color)
         // Pushed-out wheelhouse, short keel and two detachable service containers.
@@ -100,27 +100,128 @@ module Traffic =
         let heading = (b-a)*(6.0*u*(1.0-u)) + m*(3.0*u2-4.0*u+1.0) + n*(3.0*u2-2.0*u)
         position, Quat.lookRotation heading Vec3.up
 
-    type Fleet = { Hulls: InstanceBatch; Routes: Route[][] }
+    type ShipClass = Shuttle = 0 | Tug = 1 | Liner = 2 | Frigate = 3 | Escort = 4
+
+    type ShipModel =
+        { Name: string; Aether: bool; Radius: float; Mesh: unit -> MeshData
+          Drives: (Vec3 * float)[]; Lamps: Vec3[] }
+
+    let models =
+        [| { Name="Hafenshuttle"; Aether=false; Radius=7.2; Mesh=launch
+             Drives=[|engine,0.85|]; Lamps=[|portLight;starboardLight|] }
+           { Name="Bergungsschlepper"; Aether=false; Radius=18.9; Mesh=CivilTrafficMeshes.tug
+             Drives=CivilTrafficMeshes.tugDrives; Lamps=CivilTrafficMeshes.tugLights }
+           { Name="Passagierliner"; Aether=false; Radius=24.1; Mesh=CivilTrafficMeshes.liner
+             Drives=CivilTrafficMeshes.linerDrives; Lamps=CivilTrafficMeshes.linerLights }
+           { Name="Patrouillenfregatte"; Aether=true; Radius=41.1; Mesh=AetherTrafficMeshes.frigate
+             Drives=AetherTrafficMeshes.frigateDrives
+             Lamps=AetherTrafficMeshes.frigateLights }
+           { Name="Eskortkorvette"; Aether=true; Radius=16.9; Mesh=AetherTrafficMeshes.escort
+             Drives=AetherTrafficMeshes.escortDrives; Lamps=AetherTrafficMeshes.escortLights } |]
+
+    type Flight = { Class: ShipClass; Lane: Route; WingOffset: Vec3 }
+
+    let private schedules (sector: SectorDef) =
+        let port = sector.Outpost.Position
+        let flight kind lane offset = { Class=kind; Lane=lane; WingOffset=offset }
+        let single kind lane = flight kind lane Vec3.zero
+        let local points speed phase = timetable (points |> Array.map ((+) port)) speed phase
+        let tugLane () =
+            local [|v -110.0 -38.0 166.0; v -215.0 -52.0 90.0; v -295.0 -64.0 -40.0
+                    v -200.0 -69.0 -40.0; v -108.0 -62.0 22.0; v -80.0 -44.0 96.0|] 12.5 0.02
+        let linerLane () =
+            // An express bypass above the shuttle feeders, turning back short of the first gate.
+            let gate = sector.Gates.[0].Position
+            let delta = gate-port
+            let along = Vec3.normalize (v delta.X 0.0 delta.Z)
+            let across = Vec3.cross along Vec3.up
+            let length = sqrt (delta.X*delta.X + delta.Z*delta.Z)
+            let at d x y = along*d + across*x + Vec3.up*y
+            local [|at -55.0 88.0 151.0; at 80.0 138.0 161.0; at (length*0.66) 98.0 175.0
+                    at (length*0.78) 8.0 177.0; at (length*0.65) -100.0 188.0
+                    at 55.0 -128.0 173.0; at -98.0 -40.0 159.0|] 26.0 0.05
+        let patrolLane () =
+            local [|v -175.0 256.0 274.0; v -385.0 276.0 45.0; v -297.0 293.0 -223.0
+                    v 35.0 310.0 -354.0; v 351.0 287.0 -182.0; v 308.0 264.0 101.0
+                    v 95.0 246.0 295.0|] 32.0 0.015
+        [| for lane in routes sector do yield single ShipClass.Shuttle lane
+           match sector.Outpost.Kind with
+           | MiningDepot | Refinery | OrbitalYard -> yield single ShipClass.Tug (tugLane ())
+           | _ -> ()
+           match sector.Id with
+           | "outer-belt" | "frontier-drift" | "kepler-yard" | "aether-relay" | "morgenlicht-bastion" ->
+               yield single ShipClass.Liner (linerLane ())
+           | "schleierpass" -> yield single ShipClass.Tug (tugLane ())
+           | _ -> ()
+           match sector.Id with
+           | "morgenlicht-bastion" | "aether-relay" | "slag-refinery" ->
+               let patrol = patrolLane ()
+               yield single ShipClass.Frigate patrol
+               yield flight ShipClass.Escort patrol (v -64.0 8.0 66.0)
+               if sector.Id = "morgenlicht-bastion" then
+                   yield flight ShipClass.Escort patrol (v 64.0 8.0 66.0)
+           | "outer-belt" | "kepler-yard" | "kaltstrom" ->
+               yield single ShipClass.Escort (patrolLane ())
+           | _ -> () |]
+
+    let manifests = Array.map schedules Universe.sectors
+    let capacity = manifests |> Array.map Array.length |> Array.max
+    let driveCapacity =
+        manifests |> Array.map (Array.sumBy (fun flight -> models.[int flight.Class].Drives.Length)) |> Array.max
+    let lampCapacity = driveCapacity + 2*capacity
+
+    let shipPose flight time =
+        let p,q = pose flight.Lane time
+        if flight.WingOffset = Vec3.zero then p,q
+        else p + Quat.rotateVec3 q flight.WingOffset,q
+
+    // Sample each swept hull only when its sector is first populated. Half a
+    // second of travel fits within the extra clearance on either side of a sample.
+    let private clearances = manifests |> Array.map (fun flights -> lazy (
+        flights |> Array.map (fun flight ->
+            let count = int (ceil (flight.Lane.Period*2.0))
+            let points = Array.init count (fun i -> fst (shipPose flight (float i*flight.Lane.Period/float count)))
+            models.[int flight.Class].Radius + 17.0, points)))
+
+    let inShippingLane sector point rockRadius =
+        clearances.[sector].Value |> Array.exists (fun (radius,points) ->
+            let clearance = radius + rockRadius
+            points |> Array.exists (fun p -> Vec3.distanceSq point p <= clearance*clearance))
+
+    type Fleet = { Hulls: InstanceBatch[]; Positions: Vec3[]; Rotations: Quat[] }
 
     let create renderer =
-        let hulls = Renderer.createBatch renderer (Renderer.createMesh renderer (launch ())) capacity Opaque
-        hulls.Shininess <- 36.0
-        hulls.Specular <- 0.26
-        { Hulls=hulls; Routes=Array.map routes Universe.sectors }
+        let hulls = models |> Array.mapi (fun i model ->
+            let count = manifests |> Array.map (Array.sumBy (fun f -> if int f.Class = i then 1 else 0)) |> Array.max
+            let batch = Renderer.createBatch renderer (Renderer.createMesh renderer (model.Mesh ())) count Opaque
+            batch.Shininess <- if model.Aether then 50.0 else 36.0
+            batch.Specular <- if model.Aether then 0.39 else 0.26
+            batch)
+        { Hulls=hulls; Positions=Array.create capacity Vec3.zero; Rotations=Array.create capacity Quat.identity }
 
     let push fleet sector time eye flame halo =
-        InstanceBatch.clear fleet.Hulls
+        for hull in fleet.Hulls do InstanceBatch.clear hull
         if sector >= 0 then
-            let lanes = fleet.Routes.[sector]
-            for i in 0..lanes.Length-1 do
-                let p,q = pose lanes.[i] time
+            let flights = manifests.[sector]
+            for i in 0..flights.Length-1 do
+                let flight = flights.[i]
+                let p,q = shipPose flight time
+                fleet.Positions.[i] <- p
+                fleet.Rotations.[i] <- q
                 let distance = Vec3.distance eye p
                 if distance < 1600.0 then
-                    let blue = if i = lanes.Length-1 then 0.76 else 1.0
-                    InstanceBatch.push fleet.Hulls p q Vec3.one 1.0 1.0 blue 0.0
-                    let flare = 1.0 + 0.09*sin (time*3.2 + float i)
-                    flame p q engine (4.6*flare) 1.10 0.20 0.64 1.15
+                    let model = models.[int flight.Class]
+                    InstanceBatch.push fleet.Hulls.[int flight.Class] p q Vec3.one 1.0 1.0 1.0 0.0
+                    let flare = 1.0 + 0.08*sin (time*3.2 + float i)
                     let lamp = min 2.8 (1.1 + distance*0.002)
-                    halo p q engine (lamp*1.45) 0.25 0.70 1.0
-                    halo p q portLight lamp 0.93 0.035 0.02
-                    halo p q starboardLight lamp 0.035 0.84 0.22
+                    let red,green,blue = if model.Aether then 1.2,0.53,0.16 else 0.20,0.64,1.15
+                    for nozzle,radius in model.Drives do
+                        flame p q nozzle (radius*5.4*flare) (radius*1.3) red green blue
+                        halo p q nozzle (max lamp (radius*1.8)) red green blue
+                    if model.Aether then
+                        let phase = (time*0.8 + float i*0.37) % 1.0
+                        let pulse = if phase < 0.07 || (phase > 0.14 && phase < 0.20) then 1.0 else 0.12
+                        for light in model.Lamps do halo p q light (lamp*1.45) (1.4*pulse) (0.05*pulse) (0.025*pulse)
+                    else
+                        halo p q model.Lamps.[0] lamp 0.93 0.035 0.02
+                        halo p q model.Lamps.[1] lamp 0.035 0.84 0.22

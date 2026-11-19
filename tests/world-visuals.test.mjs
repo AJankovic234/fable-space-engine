@@ -10,11 +10,14 @@ import { Vec3, QuatModule_rotateVec3 as rotate } from '../build/Math3D.js';
 
 test('all saved variants resolve to two stable silhouettes within the collision and mesh budgets', () => {
   assert.deepEqual([0,1,2,3].flatMap(v => [variant(v, 0.25), variant(v, -0.25)]), [0,4,1,5,2,6,3,7]);
+  assert.deepEqual([4,5,6,7].flatMap(v => [variant(v, 0.25), variant(v, -0.25)]), [8,12,9,13,10,14,11,15]);
   for (const sector of sectors) {
     const shapes = new Set();
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       const { Vertices, Indices } = rock(sector.Outpost.Kind, i);
       assert.ok(Indices.length <= 2400); // Previous field averaged 800 triangles per visible rock.
+      assert.ok(Indices instanceof Uint16Array);
+      assert.ok(Indices.every(index => index * 10 < Vertices.length));
       const shape = createHash('sha256'), edges = new Map();
       let radius = 0;
       for (let t = 0; t < Indices.length; t += 3) {
@@ -24,20 +27,23 @@ test('all saved variants resolve to two stable silhouettes within the collision 
           const xyz = Vertices.subarray(at,at+3);
           radius = Math.max(radius, Math.hypot(...xyz));
           assert.ok(Math.abs(Math.hypot(...Vertices.subarray(at+3,at+6))-1) < 0.0001);
+          assert.equal(Vertices[at+9], 0, 'intact surfaces do not glow regardless of material');
           shape.update(xyz);
           triangle.push(xyz.join(','));
         }
         for (let j = 0; j < 3; j++) {
           const a = triangle[j], b = triangle[(j+1)%3];
           const key = a < b ? a+'|'+b : b+'|'+a;
-          edges.set(key,(edges.get(key) ?? 0) + (a < b ? 1 : -1));
+          const [count, direction] = edges.get(key) ?? [0, 0];
+          edges.set(key, [count + 1, direction + (a < b ? 1 : -1)]);
         }
       }
       assert.ok(radius > 0.999 && radius <= 1);
-      assert.ok([...edges.values()].every(n => n === 0), 'every crater rim and cap shares oppositely wound edges');
+      assert.ok([...edges.values()].every(([count, direction]) => count === 2 && direction === 0),
+        `mesh ${i} closes each edge with exactly two oppositely wound triangles`);
       shapes.add(shape.digest('hex'));
     }
-    assert.equal(shapes.size,8,sector.Name);
+    assert.equal(shapes.size, 16, sector.Name);
   }
 });
 

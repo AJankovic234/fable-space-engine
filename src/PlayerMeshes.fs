@@ -18,8 +18,10 @@ type PlayerHull =
       Relay: Vec3 }
 
 /// Die Schiffe des Spielers: zivile Arbeitsmaschinen mit aufgesetzter Beplankung, dunklem
-/// Bauch und Signalfarben. Jede Rumpffacette ist eine eigene Platte; der Grundkörper bleibt
-/// als dunkle Fuge sichtbar, damit die Form auch ohne Textur im Streiflicht Tiefe hat.
+/// Bauch und verwitterten Signalfarben. Jede Rumpffacette ist eine eigene Platte; der Grundkörper
+/// bleibt als dunkle Fuge sichtbar, damit die Form auch ohne Textur im Streiflicht Tiefe hat.
+/// Nichts hier ist neu: Platten sind ausgeblichen, ersetzt oder blank, das Heck ist verrußt, und
+/// jeder Rumpf trägt die Registermarke der Kurier-SIN mit ihrem roten Löschvermerk.
 [<RequireQualifiedAccess>]
 module PlayerMeshes =
     let private section = ProceduralMeshes.hullSection
@@ -27,31 +29,65 @@ module PlayerMeshes =
     let private beam = ProceduralMeshes.beam
     let private panel = ProceduralMeshes.armorPanel
 
-    let private seam = MeshColor.rgb 0.050 0.066 0.080
+    let private seam = MeshColor.rgb 0.030 0.036 0.042
     // Materialklassen: Fender und Dichtungen Gummi, Träger, Läufe und Düsen blankes Metall,
-    // Kanzeln Glas mit Kabinenlicht. Lackierte Platten bleiben Lack.
-    let private rubber = MeshColor.rubber 0.024 0.032 0.038
-    let private iron = MeshColor.metal 0.11 0.14 0.16
-    let private steel = MeshColor.metal 0.27 0.32 0.35
-    let private alloy = MeshColor.metal 0.46 0.52 0.55
+    // Kanzeln Glas mit Kabinenlicht. Lackierte Platten bleiben Lack. Im Gürtel ist nichts
+    // neu: Stahl ist stumpf, Warnfarbe ausgeblichen, die Kanzeln sind geschwärztes Rauchglas.
+    let private rubber = MeshColor.rubber 0.020 0.024 0.028
+    let private iron = MeshColor.metal 0.085 0.095 0.10
+    let private steel = MeshColor.metal 0.20 0.22 0.23
+    let private alloy = MeshColor.metal 0.34 0.36 0.37
     /// Angelaufener Düsenstahl.
-    let private scorch = MeshColor.metal 0.34 0.24 0.18
-    let private hazard = MeshColor.rgb 0.96 0.70 0.07
-    let private glass = MeshColor.glass 0.03 0.21 0.29 0.22
+    let private scorch = MeshColor.metal 0.24 0.14 0.08
+    let private hazard = MeshColor.rgb 0.68 0.45 0.05
+    let private glass = MeshColor.glass 0.045 0.042 0.040 0.10
     let private portRed = MeshColor.glow 1.0 0.10 0.04 0.95
     let private starGreen = MeshColor.glow 0.08 0.95 0.40 0.90
-    let private white = MeshColor.glow 0.95 0.97 1.0 0.95
-    let private amber = MeshColor.glow 1.0 0.70 0.25 0.85
+    let private white = MeshColor.glow 0.86 0.90 0.95 0.90
+    /// Natriumdampf: Arbeitslicht der Docks.
+    let private amber = MeshColor.glow 1.0 0.50 0.11 0.80
     let private gunLamp = MeshColor.glow 0.47 0.92 1.0 0.8
     let private jet = MeshColor.glow 0.80 0.92 1.0 1.0
     let private jetWall = MeshColor.glow 0.06 0.13 0.26 0.30
     let private ember = MeshColor.glow 1.0 0.36 0.10 0.50
 
-    /// Leicht unterschiedlich ausgeblichene Platten: gebrauchter Lack statt Neuware.
+    /// Rostschutzgrund auf Ersatzblechen, blanker Stahl, wo der Lack ab ist.
+    let private primer = MeshColor.rgb 0.29 0.105 0.065
+    let private bare = MeshColor.metal 0.25 0.26 0.26
+    let private rustRun = MeshColor.rgb 0.20 0.080 0.038
+    let private soot = MeshColor.rgb 0.042 0.038 0.034
+    /// Schablonenweiß der Registermarken und das Rot der Löschvermerke.
+    let private stencil = MeshColor.rgb 0.62 0.61 0.56
+    let private strike = MeshColor.rgb 0.60 0.055 0.035
+
+    let private hashOf (seed: int) (s: int) (f: int) =
+        ((s * 73856093) ^^^ (f * 19349663) ^^^ (seed * 83492791)) &&& 0x7fffffff
+
+    /// Anteil 0..1 aus einem Hash; `digit` wählt eine unabhängige Dezimalgruppe.
+    let private share (h: int) (digit: int) = float ((h / digit) % 1000) / 1000.0
+
+    let private blend (a: MeshColor) (c: MeshColor) (t: float) =
+        MeshColor.rgb (a.R + (c.R - a.R) * t) (a.G + (c.G - a.G) * t) (a.B + (c.B - a.B) * t)
+
+    /// Gebrauchter Lack: Jede Platte ist anders ausgeblichen und verdreckt. Etwa jede zwölfte
+    /// ist ein Ersatzblech im Rostschutzgrund, jede zwanzigste blank geschliffen.
     let private worn (seed: int) (s: int) (f: int) (c: MeshColor) =
-        let h = (s * 73856093) ^^^ (f * 19349663) ^^^ (seed * 83492791)
-        let k = 0.89 + 0.15 * float ((h &&& 0x7fffffff) % 1000) / 1000.0
-        MeshColor.rgb (min 1.0 (c.R * k)) (min 1.0 (c.G * k)) (min 1.0 (c.B * k))
+        let h = hashOf seed s f
+        let dirt = 0.24 * share h 1000
+        match (h / 7) % 60 with
+        | 0 | 1 | 2 | 3 | 4 -> blend primer soot dirt
+        | 5 | 6 | 7 -> bare
+        | _ ->
+            let fade = 0.80 + 0.26 * share h 1
+            blend (MeshColor.rgb (min 1.0 (c.R * fade)) (min 1.0 (c.G * fade)) (min 1.0 (c.B * fade))) soot dirt
+
+    /// Ruß nimmt zum Heck hin zu, wo die Glocken den eigenen Rumpf anblasen. Metall, Glas,
+    /// Gummi und Lampen behalten ihren Ton.
+    let private sooted (z: float) (c: MeshColor) =
+        if c.Emissive <> 0.0 then c
+        else
+            let t = max 0.0 (min 1.0 ((z - 0.30) / 1.5))
+            blend c soot (0.55 * t * t)
 
     let private pair x y z = [| Vec3(-x, y, z); Vec3(x, y, z) |]
 
@@ -96,6 +132,56 @@ module PlayerMeshes =
                 let j = (i + 1) % 4
                 b.PolygonOutward([| foot.[i]; foot.[j]; top.[j]; top.[i] |], core, edge)
 
+    /// Rost- oder Ölläufer unter einer Plattenfuge: schmaler Keil von der oberen Kante der
+    /// Facette abwärts. Etwa zwei von fünf Flankenplatten tragen einen.
+    let private runStain (b: MeshBuilder) (a0: Vec3) (a1: Vec3) (c0: Vec3) (c1: Vec3) (inside: Vec3) lift (h: int) =
+        if h % 100 < 40 then
+            let topA, lowA, topC, lowC = if a0.Y >= a1.Y then a0, a1, c0, c1 else a1, a0, c1, c0
+            let run = topC - topA
+            let fall = Vec3.length (lowA - topA)
+            if Vec3.length run > 0.24 && fall > 0.10 then
+                let along = Vec3.normalize run
+                let t = 0.18 + 0.64 * share h 100
+                let top = Vec3.lerp topA topC t
+                let low = Vec3.lerp lowA lowC t
+                let raw = Vec3.normalize (Vec3.cross run (lowA - topA))
+                let centre = (topA + topC + lowA + lowC) / 4.0
+                let n = if Vec3.dot raw (centre - inside) < 0.0 then -raw else raw
+                let width = 0.022 + 0.030 * share h 7
+                let drop = 0.50 + 0.42 * share h 13
+                let head = Vec3.lerp top low 0.10 + n * (lift + 0.004)
+                let tail = Vec3.lerp top low drop + n * (lift + 0.004)
+                // Die Mündungen liegen dicht an den Gondelflanken; ihre Schusslinie bleibt frei.
+                let muzzle = ShipHardpoints.playerGunRight
+                let inLineOfFire (p: Vec3) =
+                    p.Z < muzzle.Z + 0.1 && Vec3.length (Vec3(abs p.X - muzzle.X, p.Y - muzzle.Y, 0.0)) < 0.13
+                if not (inLineOfFire head || inLineOfFire tail || inLineOfFire ((head + tail) * 0.5)) then
+                    b.PolygonOutward([| head - along * width; head + along * width
+                                        tail + along * (width * 0.25); tail - along * (width * 0.25) |],
+                                     inside, (if h % 3 = 0 then soot else rustRun))
+
+    /// Registermarke: Strichcode der Kennung auf dem Viereck a, b, c, d (Striche stehen entlang
+    /// a→d, die Folge läuft a→b). Die Kurier-SIN des Piloten führt das Register als terminiert,
+    /// deshalb zieht sich ein roter Löschvermerk quer über die Marke.
+    let private sinMark (b: MeshBuilder) (p0: Vec3) (p1: Vec3) (p2: Vec3) (p3: Vec3) (inside: Vec3) lift =
+        let at u v = Vec3.lerp (Vec3.lerp p0 p1 u) (Vec3.lerp p3 p2 u) v
+        let raw = Vec3.normalize (Vec3.cross (p1 - p0) (p3 - p0))
+        let n = if Vec3.dot raw (p0 - inside) < 0.0 then -raw else raw
+        // Abwechselnd Strich und Lücke in Modulbreiten; die drei langen Striche sind die Randzeichen.
+        let modules = [| 2; 1; 1; 2; 3; 1; 1; 1; 2; 2; 1; 3; 3; 1; 1; 2; 2; 1; 1; 1; 3; 2; 1; 1; 2 |]
+        let total = float (Array.sum modules)
+        let mutable u = 0.0
+        modules |> Array.iteri (fun i w ->
+            let next = u + float w / total
+            if i % 2 = 0 then
+                let low = if i = 0 || i = 12 || i = modules.Length - 1 then 0.0 else 0.16
+                b.PolygonOutward([| at u low + n * lift; at next low + n * lift
+                                    at next 1.0 + n * lift; at u 1.0 + n * lift |], inside, stencil)
+            u <- next)
+        let over = n * (lift + 0.004)
+        b.PolygonOutward([| at -0.04 0.02 + over; at 1.04 0.66 + over; at 1.04 0.96 + over; at -0.04 0.32 + over |],
+                         inside, strike)
+
     /// Beplankter Spantenrumpf um die Längsachse bei `x`. `paint` wählt je Segment und
     /// Facette die Farbe (0 Deck, 1/7 obere Fasen, 2/6 Flanken, 3/5 untere Fasen, 4 Kiel);
     /// None lässt die Fuge stehen.
@@ -106,11 +192,14 @@ module PlayerMeshes =
             let a = rings.[s]
             let c = rings.[s + 1]
             let inside = (Array.reduce (+) a + Array.reduce (+) c) / 16.0
+            let zMid = (a.[0].Z + c.[0].Z) * 0.5
             for f in 0 .. 7 do
                 match paint s f with
                 | Some color ->
                     let g = (f + 1) % 8
-                    quadPanel b [| a.[f]; a.[g]; c.[g]; c.[f] |] inside gap lift seam color
+                    quadPanel b [| a.[f]; a.[g]; c.[g]; c.[f] |] inside gap lift seam (sooted zMid color)
+                    if color.Emissive = 0.0 && (f = 1 || f = 2 || f = 6 || f = 7) then
+                        runStain b a.[f] a.[g] c.[f] c.[g] inside lift (hashOf (int (x * 100.0) + 311) (s + int (zMid * 37.0)) f)
                 | None -> ()
 
     /// Triebwerksglocke mit Austritt bei `exit` (Öffnung nach +Z): angelaufener Ring,
@@ -221,10 +310,13 @@ module PlayerMeshes =
 
     let cutter () : MeshData =
         let b = MeshBuilder()
-        let cream = MeshColor.rgb 0.84 0.83 0.76
-        let orange = MeshColor.rgb 0.94 0.57 0.05
-        let slate = MeshColor.rgb 0.38 0.47 0.52
-        let belly = MeshColor.rgb 0.15 0.20 0.24
+        // Schmutziges Werftweiß, verwitterte Signalfarbe, Maschinengrau.
+        let cream = MeshColor.rgb 0.46 0.45 0.40
+        let orange = MeshColor.rgb 0.56 0.215 0.04
+        let slate = MeshColor.rgb 0.15 0.175 0.19
+        let belly = MeshColor.rgb 0.055 0.065 0.075
+        // Lack der ausgeschlachteten Maschine, von der die Steuerbordhaube stammt.
+        let donor = MeshColor.rgb 0.105 0.165 0.145
 
         // Segmente: 0 Bug, 1-2 Vorschiff, 3-4 Mittschiff, 5 Schulter, 6-8 Maschinensteg.
         plating b 0.0 (refine cutterKeel [ -1.10; 0.85 ]) 0.022 0.014 (fun s f ->
@@ -232,7 +324,7 @@ module PlayerMeshes =
             elif lower f then Some belly
             elif s = 0 then Some orange
             elif s >= 6 then Some (worn 1 s f slate)
-            elif flank f && s = 3 then Some orange
+            elif flank f && s = 3 then Some (worn 1 s f slate)
             else Some (worn 1 s f cream))
         // Gummifender am Stoßbug, zwei Scheinwerfer.
         b.Box(Vec3(0.0, -0.01, -2.515), Vec3(0.20, 0.055, 0.022), rubber)
@@ -253,9 +345,22 @@ module PlayerMeshes =
                -0.42, 0.38, 0.15, 0.40 |]
         plating b 0.0 cabin 0.026 0.012 (fun s f ->
             if lower f || f = 4 then None
-            elif s = 1 && f = 0 then Some orange
+            elif s = 1 && f = 0 then Some slate
             elif s = 2 && f <> 0 then Some cream
             else Some glass)
+        // A tubular guard stands clear of the windscreen. Its upper corners carry the work lights.
+        for side in [| -1.; 1. |] do
+            let post x y z = Vec3(side*x,y,z)
+            beam b (post 0.43 0.26 -1.96) (post 0.47 0.72 -1.50) 0.042 steel
+            beam b (post 0.47 0.72 -1.50) (post 0.45 0.75 -0.81) 0.035 slate
+            beam b (post 0.45 0.75 -0.81) (post 0.40 0.34 -0.52) 0.035 slate
+            b.Box(post 0.43 0.72 -1.52,Vec3(0.087,0.060,0.068),iron)
+            b.Box(post 0.43 0.72 -1.59,Vec3(0.064,0.037,0.008),white)
+        beam b (Vec3(-0.45,0.75,-0.81)) (Vec3(0.45,0.75,-0.81)) 0.036 steel
+        // Nachgerüstete Peitschenantennen für den RT-9-Pfad und ein außen verlegter Kabelstrang.
+        beam b (Vec3(0.30, 0.70, -0.92)) (Vec3(0.38, 0.97, -0.70)) 0.010 iron
+        beam b (Vec3(-0.34, 0.70, -1.05)) (Vec3(-0.40, 0.95, -0.86)) 0.010 iron
+        beam b (Vec3(0.36, 0.58, -0.50)) (Vec3(0.44, 0.39, -0.05)) 0.020 rubber
         // Dachträger, Arbeitsscheinwerfer, Funkmast und Radarbalken.
         for x in [| -0.31; 0.31 |] do
             beam b (Vec3(x, 0.70, -1.44)) (Vec3(x, 0.72, -0.76)) 0.016 steel
@@ -289,11 +394,13 @@ module PlayerMeshes =
                    0.30, 0.33, -0.30, 0.358
                    1.02, 0.33, -0.30, 0.358
                    1.22, 0.27, -0.24, 0.31 |]
+            // Die Steuerbordhaube ist ein Spenderteil und wurde nie umlackiert.
+            let coat = if side > 0.0 then donor else cream
             plating b engine.X (refine cowl [ 0.66 ]) 0.022 0.012 (fun s f ->
                 if f = 4 then None
                 elif lower f then Some belly
-                elif s = 0 || f = 0 then Some orange
-                else Some (worn 2 s (f + int side) cream))
+                elif s = 0 then Some (worn 2 s f slate)
+                else Some (worn 2 s (f + int side) coat))
             engineBlock b engine [| 1.10, 0.24; 1.20, 0.29; 1.74, 0.29; 1.78, 0.24 |] iron [ 1.30; 1.58 ] alloy
             bell b engine 0.30 0.26 alloy
 
@@ -330,41 +437,50 @@ module PlayerMeshes =
         for x in [| -2.00; -1.28 |] do
             for z in [| -0.86; 0.465; 1.16 |] do
                 beam b (Vec3(x, 0.12, z)) (Vec3(x, 0.43, z)) 0.042 steel
-            beam b (Vec3(x, 0.40, -0.86)) (Vec3(x, 0.40, 1.16)) 0.036 orange
+            beam b (Vec3(x, 0.40, -0.86)) (Vec3(x, 0.40, 1.16)) 0.036 slate
             beam b (Vec3(x, 0.28, -0.86)) (Vec3(x, 0.28, 1.16)) 0.016 steel
         b.Box(Vec3(-1.64, 0.27, -0.86), Vec3(0.36, 0.10, 0.04), orange)
+        // Die Stirnwand des Korbs trägt die Kennung, unter der der Kutter registriert war.
+        sinMark b (Vec3(-1.96, 0.20, -0.9)) (Vec3(-1.32, 0.20, -0.9)) (Vec3(-1.32, 0.345, -0.9)) (Vec3(-1.96, 0.345, -0.9))
+            (Vec3(-1.64, 0.27, -0.86)) 0.004
         hazardBar b (Vec3(-1.99, 0.235, 1.16)) (Vec3(-1.29, 0.235, 1.16)) (Vec3(0.0585, 0.065, 0.04)) 6
 
-        // Steuerbord: Arbeitsdeck mit Winde, Drehkranz und gefaltetem Kranarm; die
-        // Greifbacken reichen über die Gondelnase nach vorn.
+        // Steuerbord trägt der Drehkranz den Ausleger. Sein Magnetkopf ruht über der Gondelnase.
         b.Loft([| section 1.64 -0.90 0.33 0.06 0.17; section 1.64 1.18 0.34 0.06 0.17 |], true, true, steel)
         hazardBar b (Vec3(1.33, 0.175, 1.14)) (Vec3(1.95, 0.175, 1.14)) (Vec3(0.052, 0.006, 0.035)) 6
         drumX b (Vec3(1.64, 0.28, 0.98)) 0.105 0.17 seam
+        for x in [| 1.51; 1.56; 1.61; 1.66; 1.71; 1.76 |] do
+            drumX b (Vec3(x,0.28,0.98)) 0.111 0.015 alloy
         for x in [| 1.45; 1.83 |] do
             drumX b (Vec3(x, 0.28, 0.98)) 0.135 0.018 alloy
             beam b (Vec3(x, 0.17, 0.86)) (Vec3(x, 0.28, 0.98)) 0.025 steel
         drumY b (Vec3(1.64, 0.0, 0.50)) 0.22 0.17 0.24 iron
-        let foot, elbow, tip = Vec3(0.0, 0.25, 0.52), Vec3(0.0, 0.71, 0.34), Vec3(0.0, 0.50, -0.70)
-        for x in [| 1.51; 1.77 |] do
+        let foot, elbow, tip = Vec3(0.0, 0.25, 0.52), Vec3(0.0, 0.85, 0.37), Vec3(0.0, 0.56, -0.94)
+        for x in [| 1.50; 1.78 |] do
             let at (q: Vec3) = Vec3(x, q.Y, q.Z)
             beam b (at foot) (at elbow) 0.062 orange
-            // Ausleger: Signalorange, die Spitze mit Warnstreifen.
-            for i in 0 .. 5 do
-                let a = Vec3.lerp elbow tip (float i / 6.0)
-                let c = Vec3.lerp elbow tip (float (i + 1) / 6.0)
-                beam b (at a) (at c) 0.050 (if i = 4 then rubber elif i = 5 then hazard else orange)
-            // Greifbacke mit Haken
-            beam b (at tip) (Vec3(x, 0.34, -0.92)) 0.030 steel
-            beam b (Vec3(x, 0.34, -0.92)) (Vec3(x, 0.25, -0.80)) 0.026 steel
-        for t in [| 0.2; 0.45; 0.7 |] do
-            let c = Vec3.lerp elbow tip t
-            beam b (Vec3(1.51, c.Y, c.Z)) (Vec3(1.77, c.Y, c.Z)) 0.02 iron
-        drumX b (Vec3(1.64, elbow.Y, elbow.Z)) 0.085 0.19 iron
-        drumX b (Vec3(1.64, tip.Y, tip.Z)) 0.06 0.17 iron
-        // Hydraulikzylinder und Arbeitslampe an der Auslegerspitze.
-        beam b (Vec3(1.64, 0.19, 0.05)) (Vec3(1.64, 0.38, -0.10)) 0.038 iron
-        beam b (Vec3(1.64, 0.38, -0.10)) (Vec3(1.64, 0.53, -0.22)) 0.019 alloy
-        b.Box(Vec3(1.64, 0.445, -0.72), Vec3(0.06, 0.02, 0.03), amber)
+            // Open lattice on both sides of the boom, with a separate hoist cable through the sheaves.
+            let top t = at (Vec3.lerp elbow tip t)
+            let low t = top t - Vec3.unitY*(0.20-0.085*t)
+            beam b (top 0.0) (top 1.0) 0.041 orange
+            beam b (low 0.0) (low 1.0) 0.034 orange
+            for bay in 0..2 do
+                let t = float bay/3.0
+                beam b (low t) (top (t+1.0/6.0)) 0.025 slate
+                beam b (top (t+1.0/6.0)) (low (t+1.0/3.0)) 0.025 slate
+            beam b (at tip) (Vec3(x,0.40,-0.97)) 0.021 steel
+        for point in [|elbow;tip|] do
+            drumX b (Vec3(1.64,point.Y,point.Z)) 0.084 0.19 iron
+        beam b (Vec3(1.64,0.37,0.98)) (Vec3(1.64,0.92,0.37)) 0.018 alloy
+        beam b (Vec3(1.64,0.92,0.37)) (Vec3(1.64,0.63,-0.94)) 0.018 alloy
+        // Wide magnetic pickup shoe, with two exposed pole faces underneath.
+        b.Loft([|section 1.64 -1.24 0.23 0.21 0.33; section 1.64 -1.16 0.30 0.19 0.43
+                 section 1.64 -0.85 0.30 0.19 0.43; section 1.64 -0.80 0.22 0.22 0.34|],true,true,slate)
+        for x in [|1.44;1.84|] do
+            b.Box(Vec3(x,0.186,-1.01),Vec3(0.072,0.035,0.19),iron)
+            b.Box(Vec3(x,0.30,-1.247),Vec3(0.052,0.024,0.012),amber)
+        beam b (Vec3(1.64,0.20,0.08)) (Vec3(1.64,0.50,0.16)) 0.060 steel
+        beam b (Vec3(1.64,0.50,0.16)) (Vec3(1.64,0.71,0.22)) 0.028 alloy
         b.Build()
 
     // ---------------------------------------------------------------------------------
@@ -392,18 +508,19 @@ module PlayerMeshes =
 
     let hauler () : MeshData =
         let b = MeshBuilder()
-        let green = MeshColor.rgb 0.15 0.40 0.40
-        let petrol = MeshColor.rgb 0.06 0.24 0.27
-        let ochre = MeshColor.rgb 0.94 0.54 0.08
-        let sand = MeshColor.rgb 0.84 0.76 0.54
-        let rust = MeshColor.rgb 0.56 0.17 0.08
-        let pale = MeshColor.rgb 0.55 0.63 0.67
-        let belly = MeshColor.rgb 0.07 0.10 0.11
+        // Schichtbund-Grün unter Jahren von Schlackestaub; die Kassetten in Rostrot, Senf und Beton.
+        let green = MeshColor.rgb 0.105 0.165 0.145
+        let petrol = MeshColor.rgb 0.05 0.095 0.10
+        let ochre = MeshColor.rgb 0.58 0.35 0.05
+        let sand = MeshColor.rgb 0.42 0.37 0.27
+        let rust = MeshColor.rgb 0.33 0.105 0.055
+        let pale = MeshColor.rgb 0.29 0.31 0.32
+        let belly = MeshColor.rgb 0.042 0.052 0.055
 
         plating b 0.0 (refine haulerKeel [ -1.65; -0.15 ]) 0.024 0.014 (fun s f ->
             if f = 4 then None
             elif lower f then Some belly
-            elif s = 0 then Some ochre
+            elif s = 0 then Some (worn 4 s f petrol)
             elif s >= 3 && s <= 5 then Some (worn 4 s f petrol)
             else Some (worn 4 s f green))
         // Stumpfer Bug: Gummistoßleiste, Warnbalken, zwei Scheinwerfer.
@@ -425,7 +542,7 @@ module PlayerMeshes =
             elif s = 1 && flank f then Some glass
             elif s = 2 && f = 0 then Some glass
             else Some (worn 5 s f green))
-        b.Box(Vec3(0.0, 0.705, -1.99), Vec3(0.36, 0.014, 0.06), ochre)
+        b.Box(Vec3(0.0, 0.705, -1.99), Vec3(0.36, 0.014, 0.06), petrol)
         b.Box(Vec3(0.0, 0.725, -1.80), Vec3(0.28, 0.022, 0.035), iron)
         for x in [| -0.20; -0.07; 0.07; 0.20 |] do
             b.Box(Vec3(x, 0.752, -1.80), Vec3(0.04, 0.008, 0.024), amber)
@@ -438,14 +555,31 @@ module PlayerMeshes =
         // Laderost: Querträger unter den Kassetten, Rahmenspanten zwischen den Buchten.
         for z in [| -1.84; -1.005; -0.175; 0.655 |] do
             b.Box(Vec3(0.0, -0.255, z), Vec3(1.62, 0.055, 0.07), iron)
-        for z in [| -1.005; -0.175 |] do
-            b.Box(Vec3(0.0, 0.505, z), Vec3(1.49, 0.022, 0.028), steel)
-            for x in [| -1.455; 1.455 |] do
-                b.Box(Vec3(x, 0.15, z), Vec3(0.03, 0.375, 0.028), steel)
+        // Portal cranes straddle the gaps between container rows. The two trolleys
+        // are parked on opposite sides so the centre of each loading bay stays open.
+        for z, trolleyX in [| -1.005,-0.84; -0.175,0.84 |] do
+            for side in [-1.;1.] do
+                let p x y dz = Vec3(side*x,y,z+dz)
+                b.Box(p 1.65 0.26 0.0,Vec3(0.12,0.12,0.115),petrol)
+                beam b (p 1.65 0.21 0.0) (p 1.52 0.72 0.0) 0.068 steel
+                beam b (p 1.52 0.72 0.0) (p 1.31 0.84 0.0) 0.063 steel
+                beam b (p 1.59 0.57 0.0) (p 1.18 0.80 0.0) 0.028 alloy
+            b.Box(Vec3(0.0,0.81,z),Vec3(1.37,0.06,0.052),iron)
+            hazardBar b (Vec3(-1.37,0.867,z)) (Vec3(1.37,0.867,z)) (Vec3(0.1245,0.022,0.067)) 11
+            b.Box(Vec3(trolleyX,0.812,z),Vec3(0.17,0.095,0.081),petrol)
+            drumX b (Vec3(trolleyX,0.681,z)) 0.083 0.13 iron
+            for x in [-0.098;0.098] do
+                beam b (Vec3(trolleyX+x,0.68,z)) (Vec3(trolleyX+x,0.555,z)) 0.014 alloy
+            b.Box(Vec3(trolleyX,0.54,z),Vec3(0.13,0.022,0.034),hazard)
         // Maschinenschott hinter der letzten Bucht.
         b.Box(Vec3(0.0, 0.03, 0.71), Vec3(1.50, 0.335, 0.05), petrol)
 
-        let paints = [| rust; ochre; pale; green; sand; rust |]
+        // Eine der Kassetten trägt noch das Karmin der AETHER-Flotte: beschlagnahmt oder gestohlen.
+        let seized = MeshColor.rgb 0.30 0.02 0.03
+        let paints = [| rust; ochre; pale; seized; sand; rust |]
+        // Registermarke auf dem Rückgrat zwischen den Kassettenreihen.
+        sinMark b (Vec3(-0.21, 0.276, -0.84)) (Vec3(-0.21, 0.276, -0.06)) (Vec3(0.21, 0.276, -0.06)) (Vec3(0.21, 0.276, -0.84))
+            (Vec3(0.0, 0.0, -0.45)) 0.004
         for side, engine, gun in sides do
             let p x y z = Vec3(side * x, y, z)
             // Schwere Außenkufe mit Rammschuh, Fendern und Bremsdüse.
@@ -503,13 +637,21 @@ module PlayerMeshes =
             b.Box(p 1.28 0.03 1.705, Vec3(0.24, 0.075, 0.012), rubber)
             for x in [| 1.17; 1.39 |] do
                 b.Box(p x 0.03 1.724, Vec3(0.076, 0.033, 0.008), amber)
-            engineBlock b engine [| 0.74, 0.30; 0.92, 0.37; 1.68, 0.37; 1.76, 0.29 |] sand [ 1.02; 1.50 ] iron
+            // Armoured heat exchanger outside each drive, with fins visible from astern.
+            let cooler = p 1.78 0.16 1.21
+            let hoop dz r = oval 10 cooler.X cooler.Y (cooler.Z+dz) r r
+            b.Loft([|hoop -0.48 0.15;hoop -0.35 0.22;hoop 0.32 0.22;hoop 0.46 0.15|],true,true,petrol)
+            for dz in [-0.26;-0.12;0.02;0.16;0.30] do
+                b.Loft([|hoop dz 0.24;hoop (dz+0.037) 0.24|],true,true,steel)
+            b.Loft([|hoop 0.36 0.19;hoop 0.45 0.165|],false,true,ochre)
+            b.Box(p 1.78 0.16 1.68,Vec3(0.068,0.032,0.014),ember)
+            engineBlock b engine [| 0.74, 0.30; 0.92, 0.37; 1.68, 0.37; 1.76, 0.29 |] iron [ 1.02; 1.50 ] alloy
             bell b engine 0.335 0.26 alloy
         b.Build()
 
     // ---------------------------------------------------------------------------------
     //  Sperber: Nadelbug, lange Kanzel, geknickte Pfeilflügel mit Randschienen und zwei
-    //  ausgestellte Flossen. Schieferblau über Silber, rote Vorderkanten.
+    //  ausgestellte Flossen. Geschützgrau über fast schwarzem Deck, rote Schwingen und Flossenköpfe.
     // ---------------------------------------------------------------------------------
 
     let sparrowHull =
@@ -532,11 +674,12 @@ module PlayerMeshes =
 
     let sparrow () : MeshData =
         let b = MeshBuilder()
-        let silver = MeshColor.rgb 0.80 0.83 0.86
-        let slate = MeshColor.rgb 0.17 0.26 0.39
-        let red = MeshColor.rgb 0.88 0.10 0.065
-        let crimson = MeshColor.rgb 0.50 0.04 0.045
-        let belly = MeshColor.rgb 0.09 0.12 0.15
+        // Geschwärzter Jäger: Geschützgrau, fast schwarzes Deck, Vorderkanten in getrocknetem Rot.
+        let silver = MeshColor.rgb 0.15 0.16 0.172
+        let slate = MeshColor.rgb 0.04 0.048 0.06
+        let red = MeshColor.rgb 0.46 0.036 0.026
+        let crimson = MeshColor.rgb 0.25 0.024 0.028
+        let belly = MeshColor.rgb 0.045 0.052 0.062
 
         plating b 0.0 (refine sparrowKeel [ -1.10; 0.62 ]) 0.018 0.010 (fun s f ->
             if f = 4 then None
@@ -570,8 +713,8 @@ module PlayerMeshes =
                 [| wingSection 0.29 -0.006 -1.36 1.43 0.15
                    wingSection 0.99 -0.018 -0.66 1.46 0.11
                    wingSection 1.60 -0.028 0.43 1.53 0.078
-                   wingSection 1.80 -0.011 0.69 1.50 0.059
-                   wingSection 2.06 0.044 1.03 1.41 0.030 |]
+                   wingSection 1.80 -0.011 0.62 1.30 0.059
+                   wingSection 2.06 0.044 0.95 1.71 0.030 |]
             for span in 0 .. sections.Length - 2 do
                 let inner = sections.[span]
                 let outer = sections.[span + 1]
@@ -580,12 +723,23 @@ module PlayerMeshes =
                     let next = (face + 1) % inner.Length
                     let quad = [| inner.[face]; inner.[next]; outer.[next]; outer.[face] |]
                     match face with
-                    | 0 -> b.PolygonOutward(quad, inside, red)
+                    | 0 -> b.PolygonOutward(quad, inside, slate)
                     | 1 | 2 ->
-                        // Oberseite: Platten mit Fuge, Ruderfläche in Schiefer, rotes Band außen.
+                        // Graues Feld mit eingesetzter roter Schwinge und dunklen Rudern.
                         b.PolygonOutward(quad, inside, seam)
-                        let paint = if span = 2 || (span = 3 && face = 1) then red elif face = 2 then slate else worn 9 span face silver
+                        let paint = if face = 1 then worn 9 span (face + int side) silver elif span >= 2 then crimson else slate
                         quadPanel b quad inside 0.022 0.008 seam paint
+                        if face = 1 then
+                            let stripes = [| 0.30,0.74; 0.23,0.62; 0.14,0.45; 0.11,0.32; 0.09,0.15 |]
+                            let a,c = stripes.[span]
+                            let d,e = stripes.[span+1]
+                            let feather (r: Vec3[]) t = Vec3.lerp r.[1] r.[2] t + Vec3.unitY*0.014
+                            b.PolygonOutward([| feather inner a; feather outer d; feather outer e; feather inner c |],
+                                             inside,red)
+                            if span = 1 then
+                                // Registermarke hinter der roten Schwinge.
+                                let at ts tc = Vec3.lerp (Vec3.lerp inner.[1] inner.[2] tc) (Vec3.lerp outer.[1] outer.[2] tc) ts
+                                sinMark b (at 0.14 0.93) (at 0.90 0.93) (at 0.90 0.72) (at 0.14 0.72) inside 0.013
                     | _ -> b.PolygonOutward(quad, inside, belly)
                 if span = sections.Length - 2 then b.PolygonOutward(outer, inside, crimson)
             // Randschiene mit Positionslicht vorn und Hecklicht.
@@ -596,7 +750,13 @@ module PlayerMeshes =
             // Rote Wangen vom Bug bis zur Tragflächenwurzel.
             panel b
                 [| p 0.105 0.04 -2.10; p 0.28 0.085 -1.63; p 0.60 0.095 -0.83
-                   p 0.50 0.16 -0.79; p 0.245 0.18 -1.40 |] Vec3.unitY 0.014 red crimson
+                   p 0.50 0.16 -0.79; p 0.245 0.18 -1.40 |] Vec3.unitY 0.014 crimson seam
+            // Abgesetzter Vorflügel am Kanzelfuß. Zwischen seiner Spitze und dem Hauptflügel bleibt Luft.
+            let canard = [| p 0.18 0.055 -1.94; p 0.91 0.010 -1.41
+                            p 0.96 0.006 -1.12; p 0.27 0.067 -1.29 |]
+            b.Slab(canard,[| 0.055; 0.019; 0.017; 0.057 |],Vec3.unitY,slate)
+            panel b [| p 0.23 0.112 -1.86; p 0.90 0.033 -1.39; p 0.93 0.030 -1.18; p 0.32 0.120 -1.32 |]
+                Vec3.unitY 0.010 silver slate
             // Unter dem Flügel eingestrakte Waffenschiene, Mündung vor der Nasenkante.
             b.Loft([| section gun.X -0.56 0.11 -0.18 -0.028; section gun.X -0.18 0.153 -0.20 0.015
                       section gun.X 0.59 0.12 -0.13 0.06 |], true, true, silver)
@@ -612,18 +772,29 @@ module PlayerMeshes =
             plating b engine.X (refine duct [ 0.95 ]) 0.018 0.010 (fun s f ->
                 if f = 4 then None
                 elif lower f then Some belly
-                elif s = 0 then Some red
+                elif s = 0 then Some crimson
                 elif s >= 4 then Some steel
-                elif f = 0 && s = 2 then Some red
+                elif f = 0 && s = 2 then Some slate
                 else Some (worn 10 s (f + int side) silver))
             b.Box(Vec3(engine.X, -0.015, -0.745), Vec3(0.125, 0.095, 0.012), rubber)
             b.Box(p 1.05 0.03 -0.52, Vec3(0.045, 0.035, 0.08), steel)
             retro b (p 1.05 0.03 -0.60)
             bell b engine 0.28 0.26 alloy
+            // Vier angelaufene Düsenblätter fassen den freien Austritt in der Heckansicht.
+            let hood z radius = oval 16 engine.X engine.Y z radius radius
+            let root, shoulder, trailing = hood 1.64 0.276, hood 1.80 0.307, hood 1.93 0.318
+            for first in [| 0; 4; 8; 12 |] do
+                for i in first .. first + 2 do
+                    let j = i+1
+                    let core = Vec3(engine.X,engine.Y,1.80)
+                    b.PolygonOutward([| root.[i]; root.[j]; shoulder.[j]; shoulder.[i] |],core,scorch)
+                    b.PolygonOutward([| shoulder.[i]; shoulder.[j]; trailing.[j]; trailing.[i] |],core,iron)
+                    let rim k = Vec3.lerp (Vec3(engine.X,engine.Y,1.93)) trailing.[k] 0.94
+                    b.PolygonOutward([| trailing.[i]; trailing.[j]; rim j; rim i |],core,alloy)
 
             // Ausgestellte Doppelflossen: Schieferfuß, helles Feld, roter Kopf mit Hecklicht.
-            let finRootFront, finRootRear = p 0.97 0.056 0.30, p 0.99 0.06 1.53
-            let finTopFront, finTopRear = p 1.36 0.70 1.27, p 1.43 0.71 1.66
+            let finRootFront, finRootRear = p 0.97 0.056 0.20, p 0.99 0.06 1.53
+            let finTopFront, finTopRear = p 1.31 0.78 1.18, p 1.49 0.85 1.74
             let finBand low high color =
                 let at t a c = Vec3.lerp a c t
                 b.Slab([| at low finRootFront finTopFront; at low finRootRear finTopRear
@@ -634,12 +805,12 @@ module PlayerMeshes =
             finBand 0.30 0.34 seam
             finBand 0.34 0.66 silver
             finBand 0.66 1.0 red
-            b.Box(p 1.43 0.70 1.675, Vec3(0.014, 0.022, 0.012), white)
+            b.Box(p 1.49 0.845 1.748, Vec3(0.014, 0.022, 0.012), white)
         b.Build()
 
     // ---------------------------------------------------------------------------------
     //  Kepler-Bomber: dicker Buckelrumpf, breite Tragfläche mit zwei offenen Torpedowiegen,
-    //  schwere Gondeln und hohe Außenflossen. Werftfarben Petrol, Keramik und Warngelb.
+    //  schwere Gondeln und hohe Außenflossen. Werftfarben dunkles Petrol, graue Keramik und stumpfes Warngelb.
     // ---------------------------------------------------------------------------------
 
     let bomberHull =
@@ -660,11 +831,11 @@ module PlayerMeshes =
 
     let bomber () : MeshData =
         let b = MeshBuilder()
-        let teal = MeshColor.rgb 0.07 0.37 0.38
-        let ceramic = MeshColor.rgb 0.80 0.80 0.72
-        let yellow = MeshColor.rgb 0.97 0.60 0.08
-        let frame = MeshColor.rgb 0.07 0.11 0.13
-        let belly = MeshColor.rgb 0.06 0.09 0.10
+        let teal = MeshColor.rgb 0.05 0.15 0.16
+        let ceramic = MeshColor.rgb 0.43 0.42 0.37
+        let yellow = MeshColor.rgb 0.62 0.39 0.05
+        let frame = MeshColor.rgb 0.045 0.06 0.07
+        let belly = MeshColor.rgb 0.04 0.05 0.055
 
         plating b 0.0 (refine bomberKeel [ -1.55; 0.0 ]) 0.026 0.016 (fun s f ->
             if f = 4 then None
@@ -675,15 +846,22 @@ module PlayerMeshes =
         b.Loft([| section 0.0 -2.90 0.17 -0.115 0.095; section 0.0 -2.74 0.26 -0.165 0.145 |], true, true, frame)
         // Gerahmte Bomberkanzel; der Pilot sitzt bei Z = -1.30.
         let canopy =
-            [| -2.30, 0.28, 0.20, 0.30
-               -1.68, 0.40, 0.26, 0.64
-               -0.95, 0.38, 0.30, 0.70
+            [| -2.36, 0.29, 0.19, 0.32
+               -1.78, 0.43, 0.26, 0.69
+               -1.03, 0.45, 0.30, 0.75
                -0.45, 0.28, 0.32, 0.44 |]
         plating b 0.0 canopy 0.028 0.012 (fun s f ->
             if lower f || f = 4 then None
             elif s = 1 && f = 0 then Some teal
             elif s = 2 then Some (worn 12 s f teal)
             else Some glass)
+        // Unter der vorgezogenen Kanzel sitzt die verglaste Bauchkapsel des Beobachters.
+        plating b 0.0 [| -2.69,0.16,-0.24,-0.06; -2.29,0.32,-0.59,-0.11
+                         -1.78,0.33,-0.62,-0.22; -1.41,0.23,-0.43,-0.26 |] 0.018 0.010 (fun s f ->
+            if s = 0 && (lower f || f = 4) then Some glass
+            elif s = 1 && flank f then Some glass
+            elif f = 4 then Some steel
+            else Some ceramic)
         // Der heiße Wärmetauscher liegt zwischen den Gondeln im Blick der Verfolgerkamera.
         b.Box(Vec3(0.0, 0.43, 0.25), Vec3(0.30, 0.035, 0.64), frame)
         b.Box(Vec3(0.0, 0.468, 0.25), Vec3(0.22, 0.006, 0.56), ember)
@@ -695,6 +873,11 @@ module PlayerMeshes =
         for rail in ShipHardpoints.bomberRails do
             let side = if rail.X < 0.0 then -1.0 else 1.0
             let p x y z = Vec3(side * x, y, z)
+            // Stirnpanzer an den Kanzelwangen; dahinter bleiben die seitlichen Fenster sichtbar.
+            let cheek x z w lo hi = section (side*x) z w lo hi
+            b.Loft([| cheek 0.24 -2.52 0.12 -0.20 0.13; cheek 0.43 -2.15 0.20 -0.22 0.25
+                      cheek 0.52 -1.55 0.22 -0.24 0.34; cheek 0.51 -1.14 0.14 -0.21 0.24 |],true,true,ceramic)
+            beam b (p 0.57 0.18 -2.13) (p 0.71 0.22 -1.56) 0.034 yellow
             // Gepfeilte Haupttragfläche; um die Glocken bleibt Durchblick.
             b.Slab([| p 0.38 0.10 -1.90; p 2.39 0.04 0.05; p 2.54 0.05 1.23; p 0.41 0.10 0.57 |],
                    Array.create 4 0.11, Vec3.unitY, frame)
@@ -706,6 +889,14 @@ module PlayerMeshes =
                 Vec3.unitY 0.035 teal frame
             panel b [| p 1.90 0.166 0.74; p 2.30 0.154 0.86; p 2.42 0.154 1.14; p 1.90 0.166 0.98 |]
                 Vec3.unitY 0.030 ceramic frame
+            // Breiter, nach unten gekröpfter Randträger neben der abnehmbaren Außenlast.
+            let sponson = [| -0.94,0.12,-0.26,0.03; -0.58,0.23,-0.38,0.20
+                             0.10,0.28,-0.43,0.27; 0.72,0.27,-0.38,0.24; 1.37,0.19,-0.25,0.12 |]
+            plating b (side*2.14) sponson 0.018 0.012 (fun s f ->
+                if s = 0 then Some yellow
+                elif lower f || f = 4 then Some steel
+                elif s = 2 && f = 0 then Some ceramic
+                else Some teal)
             // Warngelbe Flügelspitze mit Positionslicht.
             b.Box(p 2.50 0.07 0.72, Vec3(0.035, 0.08, 0.50), yellow)
             b.Box(p 2.535 0.10 1.05, Vec3(0.012, 0.035, 0.07), (if side < 0.0 then portRed else starGreen))
@@ -736,6 +927,20 @@ module PlayerMeshes =
                 elif s = 3 then Some teal
                 elif s = 4 then Some steel
                 else Some (worn 13 s (f + int side) ceramic))
+            // Hohe Motorschultern flankieren den offenen Wärmetauscher.
+            // Die zurückversetzten Lüftungsschlitze sind aus der Verfolgerkamera sichtbar.
+            let dorsal =
+                [| -0.45,0.12,0.31,0.44; -0.04,0.23,0.35,0.68
+                   0.76,0.23,0.35,0.71; 1.47,0.20,0.25,0.62 |]
+            plating b (side*0.68) dorsal 0.015 0.013 (fun s f ->
+                if f = 0 then Some (if s = 1 then teal else ceramic)
+                elif flank f then Some frame
+                else Some teal)
+            b.Box(p 0.68 0.43 1.475,Vec3(0.142,0.11,0.012),rubber)
+            for y in [| 0.37; 0.43; 0.49 |] do
+                b.Box(p 0.68 y 1.491,Vec3(0.113,0.010,0.015),scorch)
+            beam b (p 0.46 0.57 0.35) (p 0.35 0.45 0.35) 0.040 steel
+            beam b (p 0.46 0.56 0.62) (p 0.35 0.45 0.62) 0.040 steel
             retro b (p 1.45 0.09 -0.88)
             bell b engine 0.36 0.43 alloy
             let gun = if side < 0.0 then ShipHardpoints.playerGunLeft else ShipHardpoints.playerGunRight
@@ -745,8 +950,8 @@ module PlayerMeshes =
     /// Dasselbe Modell sitzt auf den Außenschienen und fliegt nach dem Auslösen weiter.
     let torpedo () : MeshData =
         let b = MeshBuilder()
-        let ochre = MeshColor.rgb 0.96 0.50 0.09
-        let ceramic = MeshColor.rgb 0.85 0.84 0.75
+        let ochre = MeshColor.rgb 0.62 0.36 0.05
+        let ceramic = MeshColor.rgb 0.40 0.39 0.35
         let arming = MeshColor.glow 1.0 0.30 0.08 0.75
         let shell z r = oval 10 0.0 0.0 z r r
         b.Loft([| shell -1.34 0.045; shell -1.04 0.15; shell -0.73 0.215; shell 0.67 0.215; shell 0.99 0.16 |],
@@ -770,7 +975,7 @@ module PlayerMeshes =
     // ---------------------------------------------------------------------------------
     //  Eisvogel: Frachtkurier mit kurzer Mittelgondel zwischen zwei langen Kufen. Jede
     //  Kufe trägt drei Frachtplätze und läuft vorn in einen flachen Schnabel aus, unter
-    //  dem der Arbeitslaser sitzt. Azurblau oben, Kupfer am Bauch, heller Schnabel.
+    //  dem der Arbeitslaser sitzt. Nachtblau oben, angelaufenes Kupfer am Bauch, grauer Schnabel.
     // ---------------------------------------------------------------------------------
 
     let kingfisherHull =
@@ -804,12 +1009,13 @@ module PlayerMeshes =
 
     let kingfisher () : MeshData =
         let b = MeshBuilder()
-        let azure = MeshColor.rgb 0.07 0.40 0.66
-        let teal = MeshColor.rgb 0.05 0.52 0.58
-        let ice = MeshColor.rgb 0.86 0.92 0.94
-        let copper = MeshColor.rgb 0.86 0.39 0.12
-        let deck = MeshColor.rgb 0.16 0.22 0.27
-        let belly = MeshColor.rgb 0.07 0.11 0.15
+        // Nachtblau statt Azur, das Kupfer angelaufen, der helle Schnabel grau vom Staub.
+        let azure = MeshColor.rgb 0.04 0.125 0.25
+        let teal = MeshColor.rgb 0.04 0.17 0.21
+        let ice = MeshColor.rgb 0.44 0.48 0.50
+        let copper = MeshColor.rgb 0.50 0.205 0.065
+        let deck = MeshColor.rgb 0.075 0.095 0.115
+        let belly = MeshColor.rgb 0.04 0.055 0.075
 
         let pod = refine kingfisherPod [ -0.40 ]
         let podZ s = let z, _, _, _ = pod.[s] in z
@@ -834,6 +1040,13 @@ module PlayerMeshes =
             elif s = 1 && f = 0 then Some ice
             elif s = 2 && f <> 0 then Some (worn 15 s f azure)
             else Some glass)
+        // The courier has a low glass spine set into its pale canopy roof.
+        let skylight =
+            [| section 0.0 -0.86 0.115 0.49 0.54; section 0.0 -0.69 0.20 0.51 0.66
+               section 0.0 -0.32 0.20 0.535 0.70; section 0.0 -0.17 0.14 0.54 0.60 |]
+        b.Loft(skylight,true,true,glass)
+        for ring in [|skylight.[1];skylight.[2]|] do
+            for edge in [|7;0;1|] do beam b ring.[edge] ring.[(edge+1)%8] 0.013 ice
         for x in [| -0.17; 0.17 |] do
             b.Box(Vec3(x, 0.455, 0.112), Vec3(0.06, 0.02, 0.012), amber)
         beam b (Vec3(0.18, 0.55, -0.42)) kingfisherHull.Beacon 0.013 steel
@@ -855,9 +1068,11 @@ module PlayerMeshes =
                 elif f = 0 then Some deck
                 else Some (worn 16 s (f + int side) azure))
             b.Box(p 1.36 0.105 -2.492, Vec3(0.04, 0.02, 0.008), white)
-            // Heller Streifen auf der Außenflanke, darunter Fender und Bremsdüse.
+            // Dunkle Kennplatte mit der Registermarke auf der Außenflanke, darunter Fender und Bremsdüse.
             panel b [| p 1.812 0.03 -0.60; p 1.812 0.19 -0.50; p 1.812 0.19 0.80; p 1.812 0.03 0.80 |]
-                (p 1.0 0.0 0.0) 0.024 ice seam
+                (p 1.0 0.0 0.0) 0.024 deck seam
+            sinMark b (p 1.838 0.05 0.72) (p 1.838 0.05 -0.44) (p 1.838 0.172 -0.44) (p 1.838 0.172 0.72)
+                (p 1.0 0.1 0.15) 0.003
             b.Box(p 1.83 -0.10 0.05, Vec3(0.02, 0.03, 0.80), rubber)
             b.Box(p 1.85 0.10 -0.68, Vec3(0.05, 0.07, 0.11), steel)
             retro b (p 1.875 0.10 -0.79)
@@ -876,6 +1091,19 @@ module PlayerMeshes =
             b.Box(p 1.36 0.06 1.906, Vec3(0.18, 0.055, 0.010), rubber)
             b.Box(p 1.47 0.06 1.920, Vec3(0.055, 0.03, 0.008), (if side < 0.0 then portRed else starGreen))
             b.Box(p 1.27 0.06 1.920, Vec3(0.08, 0.014, 0.008), white)
+
+            // Two swept tail vanes give the catamaran a forked wake. The roots
+            // sit outboard of the freight rails and shield sockets.
+            let fin = [|p 1.67 0.28 0.94; p 1.91 0.83 1.40
+                        p 1.98 0.89 1.82; p 1.59 0.19 1.71|]
+            b.Slab(fin,[|0.066;0.032;0.026;0.076|],Vec3.unitX,azure)
+            let stripe a c t = Vec3.lerp a c t + p 0.049 0.0 0.0
+            let slash = [|stripe fin.[0] fin.[1] 0.60; stripe fin.[0] fin.[1] 0.76
+                          stripe fin.[3] fin.[2] 0.90; stripe fin.[3] fin.[2] 0.68|]
+            panel b slash (p 1.0 0.0 0.0) 0.010 ice azure
+            beam b (p 1.68 0.36 1.02) (p 1.86 0.71 1.39) 0.039 copper
+            b.Box(p 1.62 0.22 1.73,Vec3(0.10,0.052,0.10),deck)
+            b.Box(p 1.63 0.22 1.837,Vec3(0.057,0.021,0.014),gunLamp)
 
             // Brückenkasten und vorderer Stützholm zwischen Gondel und Kufe.
             let spar x front rear y =

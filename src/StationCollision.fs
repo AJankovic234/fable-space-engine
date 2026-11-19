@@ -7,7 +7,7 @@ module StationCollision =
         | Sphere of center: Vec3 * radius: float
         | Box of center: Vec3 * half: Vec3 * axisX: Vec3 * axisY: Vec3 * axisZ: Vec3
 
-    type Hull = private { Bodies: Body[]; Port: Vec3; BoundsCenter: Vec3; BoundsRadius: float }
+    type Hull = private { Bodies: Body[]; Port: Vec3; Bounds: (Vec3 * float)[] }
 
     let private v x y z = Vec3(x,y,z)
     let private box x y z hx hy hz =
@@ -87,18 +87,26 @@ module StationCollision =
                    box x 90 -149 16 28 19 |]
 
     let private hulls =
-        Universe.sectors |> Array.map (fun s ->
+        Universe.sectors |> Array.mapi (fun index s ->
             let port = s.Outpost
-            { Bodies = bodies port.Kind; Port = port.Position
-              BoundsCenter = port.Position + StationMeshes.worksCenter
-              BoundsRadius = StationMeshes.worksRadius port.Kind })
+            let wrecks = WreckFields.forSector index
+            let wreckBodies = wrecks |> Array.map (fun wreck ->
+                let q = wreck.Rotation
+                Box(wreck.Position - port.Position, WreckFields.solidHalf wreck.Kind, Quat.right q, Quat.up q, -Quat.forward q))
+            { Bodies = Array.append (bodies port.Kind) wreckBodies
+              Port = port.Position
+              Bounds =
+                  [| yield port.Position + StationMeshes.worksCenter, StationMeshes.worksRadius port.Kind
+                     for wreck in wrecks do
+                         yield wreck.Position, Vec3.length (WreckFields.solidHalf wreck.Kind) |] })
 
     let forSector index = hulls.[max 0 (min (hulls.Length-1) index)]
 
     let private nearHull hull padding x0 y0 z0 x1 y1 z1 =
-        let c, r = hull.BoundsCenter, hull.BoundsRadius + padding
-        let overlaps p q mid = min p q <= mid+r && max p q >= mid-r
-        overlaps x0 x1 c.X && overlaps y0 y1 c.Y && overlaps z0 z1 c.Z
+        hull.Bounds |> Array.exists (fun (c, radius) ->
+            let r = radius + padding
+            let overlaps p q mid = min p q <= mid+r && max p q >= mid-r
+            overlaps x0 x1 c.X && overlaps y0 y1 c.Y && overlaps z0 z1 c.Z)
 
     let private slab start delta half =
         if abs delta < 1e-12 then
@@ -140,7 +148,7 @@ module StationCollision =
                 index <- i
         struct (index, time)
 
-    /// Earliest station hit along a bolt, or 2.0 beyond the segment.
+    /// Earliest station or wreck hit along a bolt, or 2.0 beyond the segment.
     let laserHit hull x0 y0 z0 x1 y1 z1 =
         if nearHull hull 0. x0 y0 z0 x1 y1 z1 then
             let start = v (x0-hull.Port.X) (y0-hull.Port.Y) (z0-hull.Port.Z)

@@ -95,6 +95,9 @@ type Ship =
       mutable FireInterval: float
       /// Schaden pro Bolt (veraenderlich: das Wave-System skaliert die Gegner).
       mutable LaserDamage: float
+      mutable PiercingShots: bool
+      mutable ScatterShots: bool
+      mutable BoltSpeedScale: float
       mutable BrakeAssist: float
       mutable FireCooldown: float
       // --- Zustand ---
@@ -198,6 +201,9 @@ module Ship =
           GunRight = gunRight
           FireInterval = fireInterval
           LaserDamage = laserDamage
+          PiercingShots = false
+          ScatterShots = false
+          BoltSpeedScale = 1.0
           BrakeAssist = 1.0
           FireCooldown = 0.0
           MaxHull = hull
@@ -590,7 +596,7 @@ module AsteroidField =
 
     /// Anzahl unterschiedlicher Asteroiden-Meshes.
     [<Literal>]
-    let Variants = 4
+    let Variants = 8
 
     let create (capacity: int) : AsteroidField =
         { Data = JS.Constructors.Float32Array.Create(capacity * Stride)
@@ -669,6 +675,7 @@ module AsteroidField =
         let archive = RelicArchive.position outpost.Position sectorIndex
         let works = outpost.Position + StationMeshes.worksCenter
         let worksRadius = StationMeshes.worksRadius outpost.Kind
+        let wrecks = WreckFields.forSector sectorIndex
         let mutable i = 0
         while i < field.Count do
             let o = i * Stride
@@ -684,13 +691,14 @@ module AsteroidField =
             let nearGate =
                 sector.Gates |> Array.exists (fun gate -> Vec3.distance point gate.Position < gate.TriggerRadius + radius + 24.0)
             let inStation = Vec3.distance point works < worksRadius + radius + 6.0 || Vec3.distance point outpost.Position < outpost.DockRadius + radius + 25.0
-            if inArrivalLane || inCustomsLane || nearGate || inStation || Vec3.distance point archive < radius + 60.0 then
+            let nearWreck = wrecks |> Array.exists (fun wreck -> Vec3.distance point wreck.Position < WreckFields.SalvageRange + radius + 18.0)
+            if inArrivalLane || inCustomsLane || nearGate || inStation || nearWreck || Vec3.distance point archive < radius + 60.0 then
                 remove field i
             else i <- i + 1
 
     /// Erzeugt das Startfeld: ein dichtes, durchfliegbares Feld vor dem Startpunkt
     /// und einen flachen Guertel um den Ursprung. Nur beim Setup/Neustart aufrufen.
-    let generate (field: AsteroidField) (rng: Rng) (count: int) =
+    let private generateBelt (field: AsteroidField) (rng: Rng) count oreChance =
         field.Count <- 0
 
         for i in 0 .. count - 1 do
@@ -750,8 +758,14 @@ module AsteroidField =
                     (if bluish then shade else shade * 0.84)
                     (i % Variants)
 
-            if added && (i < 3 || rng.NextFloat() < 0.25) then
+            if added && (i < 3 || rng.NextFloat() < oreChance) then
                 field.Ore.[field.Count - 1] <- if i % 3 = 1 then 2uy else 1uy
+
+    let generate field rng count = generateBelt field rng count 0.25
+
+    let generateForSector (field: AsteroidField) rng count (sector: SectorDef) =
+        let density = min field.Capacity (int (round (float count * sector.AsteroidDensity)))
+        generateBelt field rng density sector.OreRichness
 
     /// Bewegt driftende Asteroiden (Bruchstuecke); die Drift klingt langsam ab.
     let update (field: AsteroidField) (dt: float) =
@@ -1974,6 +1988,18 @@ module Physics =
         let dmg = if ship.Overdrive > 0.0 then ship.LaserDamage * 1.3 else ship.LaserDamage
 
         let owner = if ship.Team = Team.Player then CombatVfx.OwnerPlayer else CombatVfx.OwnerEnemySlot + Math.Max(0, slot)
+        let boltSpeed = Combat.LaserSpeed * (if ship.BoltSpeedScale > 0.0 then ship.BoltSpeedScale else 1.0)
+        let spawnBolt (origin: Vec3) (dir: Vec3) =
+            let ok =
+                LaserPool.spawn world.Lasers origin.X origin.Y origin.Z
+                    (dir.X * boltSpeed + ship.Velocity.X)
+                    (dir.Y * boltSpeed + ship.Velocity.Y)
+                    (dir.Z * boltSpeed + ship.Velocity.Z)
+                    q.X q.Y q.Z q.W dmg ship.Team
+            if ok then
+                LaserPool.tag world.Lasers owner
+                if ship.PiercingShots then world.Lasers.Piercing.[world.Lasers.Count - 1] <- 1uy
+            ok
         let mutable leftFired = false
         let mutable rightFired = false
         if ship.Convergence > 1.0 then
@@ -1981,15 +2007,17 @@ module Physics =
             let focus = Vec3.mulAdd ship.Position forward ship.Convergence
             let l = Vec3.normalize (focus - left)
             let r = Vec3.normalize (focus - right)
-            leftFired <- LaserPool.spawn world.Lasers left.X left.Y left.Z (l.X * Combat.LaserSpeed + ship.Velocity.X) (l.Y * Combat.LaserSpeed + ship.Velocity.Y) (l.Z * Combat.LaserSpeed + ship.Velocity.Z) q.X q.Y q.Z q.W dmg ship.Team
-            if leftFired then LaserPool.tag world.Lasers owner
-            rightFired <- LaserPool.spawn world.Lasers right.X right.Y right.Z (r.X * Combat.LaserSpeed + ship.Velocity.X) (r.Y * Combat.LaserSpeed + ship.Velocity.Y) (r.Z * Combat.LaserSpeed + ship.Velocity.Z) q.X q.Y q.Z q.W dmg ship.Team
-            if rightFired then LaserPool.tag world.Lasers owner
+            leftFired <- spawnBolt left l
+            rightFired <- spawnBolt right r
         else
-            leftFired <- LaserPool.spawn world.Lasers left.X left.Y left.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-            if leftFired then LaserPool.tag world.Lasers owner
-            rightFired <- LaserPool.spawn world.Lasers right.X right.Y right.Z vx vy vz q.X q.Y q.Z q.W dmg ship.Team
-            if rightFired then LaserPool.tag world.Lasers owner
+            leftFired <- spawnBolt left forward
+            rightFired <- spawnBolt right forward
+        if ship.ScatterShots then
+            let side = Quat.right q
+            let outerL = Vec3.normalize (forward - side * 0.055)
+            let outerR = Vec3.normalize (forward + side * 0.055)
+            if spawnBolt left outerL then leftFired <- true
+            if spawnBolt right outerR then rightFired <- true
         if leftFired || rightFired then
             let m = (left + right) * 0.5 + forward * 0.8
             Effects.muzzleFlash world m.X m.Y m.Z ship.Radius (ship.Team = Team.Player)
@@ -2380,3 +2408,25 @@ module Physics =
         Effects.updateFuses world dt
         ParticlePool.update world.Particles dt
         Effects.updateFlashes world dt
+
+    /// Phasen-Reflektor: vernichtet anfliegende feindliche Laserbolzen im Umkreis `radius`.
+    let clearEnemyBolts (world: World) (center: Vec3) (radius: float) =
+        let pool = world.Lasers
+        let d = pool.Data
+        let rSq = radius * radius
+        let mutable cleared = 0
+        let mutable i = 0
+        while i < pool.Count do
+            if pool.Team.[i] = byte Team.Enemy then
+                let o = i * LaserPool.Stride
+                let dx = float d.[o] - center.X
+                let dy = float d.[o + 1] - center.Y
+                let dz = float d.[o + 2] - center.Z
+                if dx * dx + dy * dy + dz * dz <= rSq then
+                    LaserPool.kill pool i
+                    cleared <- cleared + 1
+                else
+                    i <- i + 1
+            else
+                i <- i + 1
+        cleared

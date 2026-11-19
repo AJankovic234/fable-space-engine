@@ -37,7 +37,6 @@ module EngineTrails =
           /// Angesammelter Bruchteil je Strahler (Emission.remainder).
           Carry: JS.Float64Array
           Enemies: int
-          Lanes: int
           /// Scratch: Weltort und Weltrichtung des aktuellen Strahlers.
           Point: JS.Float64Array
           Dir: JS.Float64Array
@@ -57,7 +56,6 @@ module EngineTrails =
           Seen = seen
           Carry = JS.Constructors.Float64Array.Create keys
           Enemies = enemies
-          Lanes = lanes
           Point = JS.Constructors.Float64Array.Create 3
           Dir = JS.Constructors.Float64Array.Create 3
           Clock = 0.0
@@ -305,26 +303,24 @@ module EngineTrails =
                     let rs = radius * scale
                     engine t system (first + i) position rotation (nozzle.X * scale) (nozzle.Y * scale) (nozzle.Z * scale + rs * 0.6) (0.25 + rs * 0.4) drive life (rs * 1.7) (1.0 * bright) (0.42 * bright) (0.12 * bright)
 
-    /// Duesenaustritt der Verkehrsboote (wie Traffic.launch, knapp dahinter).
-    [<Literal>]
-    let private LaneNozzleY = -0.29
-
-    [<Literal>]
-    let private LaneNozzleZ = 6.6
-
-    /// Ziviler Verkehr: ruhige blaue Spur hinter jedem Boot in Sichtweite.
-    let traffic (t: Emitters) (system: GpuParticleSystem) (fleet: Traffic.Fleet) (sector: int) (time: float) (eye: Vec3) =
-        if sector >= 0 && sector < fleet.Routes.Length then
-            let lanes = fleet.Routes.[sector]
+    /// Use the same transformed hull poses and engine sockets as the solid models.
+    let traffic (t: Emitters) (system: GpuParticleSystem) (fleet: Traffic.Fleet) sector eye =
+        if sector >= 0 then
+            let flights = Traffic.manifests.[sector]
             let allowed = CombatVfx.trailsAllowed system.Count system.Budget
             let room = Emission.throttle system.Count system.Budget * GpuParticles.detail system
-
-            for i in 0 .. min (t.Lanes - 1) (lanes.Length - 1) do
-                let key = (1 + t.Enemies + i) * Nozzles
-                let p, q = Traffic.pose lanes.[i] time
-
-                if Vec3.distanceSq p eye > Reach * Reach then rest t key
-                else engine t system key p q 0.0 LaneNozzleY LaneNozzleZ 0.3 (if allowed then 0.8 * room else 0.0) 1.3 2.2 0.22 0.62 1.0
+            for i in 0 .. flights.Length - 1 do
+                let first = (1 + t.Enemies + i) * Nozzles
+                let p,q = fleet.Positions.[i],fleet.Rotations.[i]
+                let model = Traffic.models.[int flights.[i].Class]
+                let distant = Vec3.distanceSq p eye > Reach * Reach
+                let r,g,b = if model.Aether then 1.0,0.44,0.14 else 0.22,0.62,1.0
+                for j in 0 .. model.Drives.Length - 1 do
+                    if distant then rest t (first+j)
+                    else
+                        let nozzle,radius = model.Drives.[j]
+                        engine t system (first+j) p q nozzle.X nozzle.Y (nozzle.Z + 0.2*radius)
+                            (0.25 + 0.15*radius) (if allowed then 0.8*room else 0.0) 1.3 (2.2*radius) r g b
 
     /// Guertelstaub: Dichte nach den Asteroiden im Umkreis der Kamera (gewichtet mit
     /// Radius und Naehe), weich nachgefuehrt. Zeichnen uebernimmt GpuParticles.draw.

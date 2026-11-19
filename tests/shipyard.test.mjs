@@ -78,3 +78,35 @@ test('the relay restarts its shorter delay on every hit, while shield capacity a
   reset(ship);
   assert.equal(ship.ShieldRechargeDelay, 3.5);
 });
+
+test('new weapon kits configure rapid fire, shield-piercing plasma and 4-bolt scatter salvos', () => {
+  const w = world(1), ship = w.Player, ships = fleet(), cargo = hold(16);
+  ship.Alive = true;
+  // Kit 4: RapidBlaster -> faster fire interval
+  assert.equal(equip(ships, cargo, 190, true, kit(4)).fields[0], 190);
+  loadout(ship, [0, 0, 0], w.Pilot, ships);
+  assert.ok(ship.FireInterval < 0.10);
+  assert.equal(ship.PiercingShots, false);
+  assert.equal(ship.ScatterShots, false);
+
+  // Kit 5: PlasmaCannon -> piercing bolts + higher single-bolt damage
+  assert.equal(equip(ships, cargo, 260, true, kit(5)).fields[0], 260);
+  loadout(ship, [0, 0, 0], w.Pilot, ships);
+  assert.equal(ship.PiercingShots, true);
+  assert.ok(ship.LaserDamage > 20.0);
+  ship.Controls.Fire = true;
+  ship.FireCooldown = 0;
+  step(w, 0.016);
+  assert.equal(w.Lasers.Count, 2);
+  assert.equal(w.Lasers.Piercing[0], 1);
+  assert.equal(w.Lasers.Piercing[1], 1);
+
+  // Kit 6: ScatterLaser -> 4 bolts per shot
+  w.Lasers.Count = 0;
+  assert.equal(equip(ships, cargo, 240, true, kit(6)).fields[0], 240);
+  loadout(ship, [0, 0, 0], w.Pilot, ships);
+  assert.equal(ship.ScatterShots, true);
+  ship.FireCooldown = 0;
+  step(w, 0.016);
+  assert.equal(w.Lasers.Count, 4);
+});

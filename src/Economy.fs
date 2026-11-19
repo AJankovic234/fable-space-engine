@@ -4,16 +4,58 @@ type Wallet =
     { mutable Credits: int
       mutable Earned: int
       mutable SalvageEarned: int
-      mutable TurretOwned: bool }
+      mutable TurretOwned: bool
+      mutable Addons: int }
+
+type AddonDef =
+    { Id: int
+      Name: string
+      Tag: string
+      Effect: string
+      Price: int }
 
 [<RequireQualifiedAccess>]
 module Economy =
-    let create () = { Credits = 0; Earned = 0; SalvageEarned = 0; TurretOwned = false }
+    [<Literal>]
+    let AddonMissileLoader = 0
+    [<Literal>]
+    let AddonSalvageScanner = 1
+    [<Literal>]
+    let AddonCountermeasures = 2
+    [<Literal>]
+    let AddonHullNanites = 3
+
+    let addons : AddonDef[] =
+        [| { Id = AddonMissileLoader; Name = "Raketen-Nachlader"; Tag = "WAFFEN-ADDON"
+             Effect = "+2 Abfangraketen-Kapazität und 35 % schnelleres Nachladen im Flug."; Price = 210 }
+           { Id = AddonSalvageScanner; Name = "Erz- & Wrack-Scanner"; Tag = "BERGUNGS-ADDON"
+             Effect = "+40 m Magnetreichweite und +250 m G-Scan-Radius (bis 12 Erz-Echos)."; Price = 160 }
+           { Id = AddonCountermeasures; Name = "Notfall-Täuschkörper"; Tag = "SCHUTZ-ADDON"
+             Effect = "Aktiviert bei Schildbruch alle 22 s automatisch +30 Notfallschild."; Price = 240 }
+           { Id = AddonHullNanites; Name = "Hüllen-Naniten"; Tag = "STRUKTUR-ADDON"
+             Effect = "Regeneriert außerhalb direkten Beschusses +2,5 Hülle pro Sekunde."; Price = 280 } |]
+
+    let hasAddon (wallet: Wallet) id =
+        id >= 0 && id < addons.Length && (wallet.Addons &&& (1 <<< id)) <> 0
+
+    let addonPriceFor terms id =
+        if id >= 0 && id < addons.Length then TradeTerms.servicePrice terms addons.[id].Price else 0
+
+    let buyAddonFor terms (wallet: Wallet) id =
+        let cost = addonPriceFor terms id
+        if id >= 0 && id < addons.Length && not (hasAddon wallet id) && wallet.Credits >= cost then
+            wallet.Credits <- wallet.Credits - cost
+            wallet.Addons <- wallet.Addons ||| (1 <<< id)
+            true
+        else false
+
+    let create () = { Credits = 0; Earned = 0; SalvageEarned = 0; TurretOwned = false; Addons = 0 }
     let reset (wallet: Wallet) =
         wallet.Credits <- 0
         wallet.Earned <- 0
         wallet.SalvageEarned <- 0
         wallet.TurretOwned <- false
+        wallet.Addons <- 0
 
     let earn (wallet: Wallet) (amount: int) (mineral: bool) =
         if amount > 0 then

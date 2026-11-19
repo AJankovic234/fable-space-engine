@@ -26,11 +26,14 @@
     <Compile Include="GlbLoader.fs" />
     <Compile Include="ProceduralMeshes.fs" />
     <Compile Include="AsteroidMeshes.fs" />
+    <Compile Include="CivilTrafficMeshes.fs" />
+    <Compile Include="AetherTrafficMeshes.fs" />
     <Compile Include="Traffic.fs" />
     <Compile Include="CapitalMeshes.fs" />
     <Compile Include="SovereignMeshes.fs" />
     <Compile Include="LandmarkMeshes.fs" />
     <Compile Include="StationMeshes.fs" />
+    <Compile Include="WreckFields.fs" />
     <Compile Include="StationCollision.fs" />
     <Compile Include="EnemyMeshes.fs" />
     <Compile Include="PlayerMeshes.fs" />
@@ -49,6 +52,7 @@
     <Compile Include="OutfitVisuals.fs" />
     <Compile Include="Mission.fs" />
     <Compile Include="Economy.fs" />
+    <Compile Include="Research.fs" />
     <Compile Include="Blockade.fs" />
     <Compile Include="Turret.fs" />
     <Compile Include="AI.fs" />
@@ -69,10 +73,12 @@
     <Compile Include="HUD.fs" />
     <Compile Include="ShipyardUi.fs" />
     <Compile Include="StartHangar.fs" />
+    <Compile Include="ShipEmblem.fs" />
     <Compile Include="FreightUi.fs" />
     <Compile Include="Shop.fs" />
     <Compile Include="StarMap.fs" />
     <Compile Include="SkillUi.fs" />
+    <Compile Include="ResearchUi.fs" />
     <Compile Include="BlockadeUi.fs" />
     <Compile Include="Bench.fs" />
     <Compile Include="Main.fs" />

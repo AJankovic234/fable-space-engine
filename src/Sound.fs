@@ -83,6 +83,7 @@ module Sound =
         let lastBrakeAt = -99;
         let duckUntil = 0;
         let radioBus = null;
+        let radioCleanBus = null;
         let lastRadioAt = -99;
         let radioVoiceEndsAt = 0;
         let radioSource = null;
@@ -193,6 +194,18 @@ module Sound =
             chatter_13:         "/assets/sfx/chatter_13.mp3",
             chatter_14:         "/assets/sfx/chatter_14.mp3",
             chatter_15:         "/assets/sfx/chatter_15.mp3",
+            chatter_16:         "/assets/sfx/chatter_16.mp3",
+            chatter_17:         "/assets/sfx/chatter_17.mp3",
+            chatter_18:         "/assets/sfx/chatter_18.mp3",
+            chatter_19:         "/assets/sfx/chatter_19.mp3",
+            chatter_20:         "/assets/sfx/chatter_20.mp3",
+            chatter_21:         "/assets/sfx/chatter_21.mp3",
+            chatter_22:         "/assets/sfx/chatter_22.mp3",
+            chatter_23:         "/assets/sfx/chatter_23.mp3",
+            chatter_24:         "/assets/sfx/chatter_24.mp3",
+            chatter_25:         "/assets/sfx/chatter_25.mp3",
+            chatter_26:         "/assets/sfx/chatter_26.mp3",
+            chatter_27:         "/assets/sfx/chatter_27.mp3",
             comm_wave_start:    "/assets/sfx/comm_wave_start.mp3",
             comm_wave_clear:    "/assets/sfx/comm_wave_clear.mp3",
             comm_upgrade_ready: "/assets/sfx/comm_upgrade_ready.mp3",
@@ -234,7 +247,19 @@ module Sound =
             story_letter_voss:       "/assets/sfx/story_letter_voss.mp3",
             story_letter_lind:       "/assets/sfx/story_letter_lind.mp3",
             story_sera_ghosts:       "/assets/sfx/story_sera_ghosts.mp3",
-            story_halden_blackbox:   "/assets/sfx/story_halden_blackbox.mp3"
+            story_halden_blackbox:   "/assets/sfx/story_halden_blackbox.mp3",
+            story_act2_kestrel_voss: "/assets/sfx/story_act2_kestrel_voss.mp3",
+            story_act2_helios_orlov: "/assets/sfx/story_act2_helios_orlov.mp3",
+            story_act2_drift_kipper: "/assets/sfx/story_act2_drift_kipper.mp3",
+            story_act2_kepler_voss:  "/assets/sfx/story_act2_kepler_voss.mp3",
+            story_act2_theta_lind:   "/assets/sfx/story_act2_theta_lind.mp3",
+            story_act2_bastion_vance:"/assets/sfx/story_act2_bastion_vance.mp3",
+            story_kaltstrom_tamm:    "/assets/sfx/story_kaltstrom_tamm.mp3",
+            story_wracksaum_karst:   "/assets/sfx/story_wracksaum_karst.mp3",
+            story_schleierpass_aders:"/assets/sfx/story_schleierpass_aders.mp3",
+            story_act3_kestrel_voss: "/assets/sfx/story_act3_kestrel_voss.mp3",
+            story_act3_theta_lind:   "/assets/sfx/story_act3_theta_lind.mp3",
+            story_act3_bastion_vance:"/assets/sfx/story_act3_bastion_vance.mp3"
         };
 
         const STATION_COMM_KEYS = {
@@ -251,7 +276,11 @@ module Sound =
             "story_act3_lind", "story_act3_tg9", "story_vance_intro", "story_kipper_drift",
             "story_vance_taunt", "story_climax_voss", "story_climax_vance_rage", "story_climax_lind_win",
             "story_helios_orlov", "story_letter_orlov", "story_letter_voss", "story_letter_lind",
-            "story_sera_ghosts", "story_halden_blackbox"
+            "story_sera_ghosts", "story_halden_blackbox",
+            "story_act2_kestrel_voss", "story_act2_helios_orlov", "story_act2_drift_kipper",
+            "story_act2_kepler_voss", "story_act2_theta_lind", "story_act2_bastion_vance",
+            "story_kaltstrom_tamm", "story_wracksaum_karst", "story_schleierpass_aders",
+            "story_act3_kestrel_voss", "story_act3_theta_lind", "story_act3_bastion_vance"
         ];
         const CAPITAL_KEYS = ["comm_capital_inbound", "comm_shipyard_bay", "comm_sovereign_arrive", "comm_macro_salvo"];
 
@@ -485,6 +514,19 @@ module Sound =
                 radioBus = radioHp;
                 radioLevel = radioGain;
 
+                // Klarerer Platin-/AETHER-Funkbus (220-4400 Hz, weniger verrauscht als Guertel-Analogfunk)
+                const cleanHp = ctx.createBiquadFilter();
+                cleanHp.type = "highpass";
+                cleanHp.frequency.value = 220;
+                cleanHp.Q.value = 0.7;
+                const cleanLp = ctx.createBiquadFilter();
+                cleanLp.type = "lowpass";
+                cleanLp.frequency.value = 4400;
+                cleanLp.Q.value = 0.85;
+                cleanHp.connect(cleanLp);
+                cleanLp.connect(radioGain);
+                radioCleanBus = cleanHp;
+
                 // Dauerquellen und häufiges erstes Feedback vorbereiten. Alle anderen Samples lädt ihr Ereignis.
                 for (const key of ["engine", "space_amb", "hangar_amb", "hangar_comp", "nebula_drone", "cockpit_hum",
                                    "afterburner", "radio_squelch", "laser_player", "laser_enemy", "ui_confirm"]) {
@@ -638,16 +680,17 @@ module Sound =
             lastRadioAt = -99;
         }
 
-        function playRadioClip(key, vol, pan, squelchVol, beat = -1) {
+        function playRadioClip(key, vol, pan, squelchVol, beat = -1, cleanFilter = false, minGap = 5.0) {
             const c = ensure();
             const buf = buffers[key];
-            if (!c || !radioBus || buf === null) return 0;
+            const bus = cleanFilter && radioCleanBus ? radioCleanBus : radioBus;
+            if (!c || !bus || buf === null) return 0;
             if (!buf) {
                 loadBuffer(key);
                 return 0;
             }
             const now = c.currentTime;
-            if (now - lastRadioAt < 5.0 || now < radioVoiceEndsAt) return 0;
+            if (now - lastRadioAt < minGap || now < radioVoiceEndsAt) return 0;
             if (contactSource) {
                 if (key === "comm_shield_down" || key === "comm_hull_critical" || key === "comm_pirate_ambush") {
                     stopContactBeat();
@@ -675,9 +718,9 @@ module Sound =
                 const panner = c.createStereoPanner();
                 panner.pan.value = Math.max(-0.7, Math.min(0.7, pan));
                 gain.connect(panner);
-                panner.connect(radioBus);
+                panner.connect(bus);
             } else {
-                gain.connect(radioBus);
+                gain.connect(bus);
             }
             src.start(now + 0.14);
             if (beat >= 0) {
@@ -938,7 +981,6 @@ module Sound =
                 engSource.playbackRate.setTargetAtTime(hp.rateBase + throttle * hp.throttleRate + boost * hp.boostRate, t, 0.08);
                 engFilter.frequency.setTargetAtTime((hp.freqBase + throttle * hp.freqThrottle + boost * hp.freqBoost) * filterTone, t, 0.07);
                 engGain.gain.setTargetAtTime((0.05 + power * 0.14) * hp.gainScale, t, 0.07);
-                maybePlayChatter(t);
             },
             laser(isPlayer, atten, overdrive) {
                 playLaser(isPlayer, atten, 0, 1.0, overdrive, 0, 0, -1);
@@ -1027,6 +1069,22 @@ module Sound =
                 const key = STORY_KEYS[beat];
                 if (!key) return;
                 requestRadioClip(key, 0.82, 0.0, 0.16);
+            },
+            playFactionRadio(audioKey, pan, cleanFilter) {
+                const c = ensure();
+                if (!c || c.state !== "running") return 0;
+                if (receiverChannels || contactSource || c.currentTime < radioVoiceEndsAt) return -1;
+                const squelch = cleanFilter ? 0.06 : 0.12;
+                if (audioKey && FILES[audioKey]) {
+                    if (buffers[audioKey]) {
+                        return playRadioClip(audioKey, 0.54, pan || 0.0, squelch, -1, !!cleanFilter, 1.2);
+                    }
+                    if (buffers[audioKey] === undefined) loadBuffer(audioKey);
+                }
+                if (c.currentTime - lastRadioAt < 1.2) return -1;
+                lastRadioAt = c.currentTime;
+                playSample("radio_squelch", squelch, jitter(0.05), cleanFilter ? 4200 : 3200, pan || 0.0, 0.10, 0.0);
+                return 0;
             },
             tryContactBeat(beat) {
                 const key = STORY_KEYS[beat];
@@ -1323,6 +1381,9 @@ module Sound =
     [<Emit("$0 && $0.storyBeat($1)")>]
     let private emitStoryBeat (_h: obj) (_beat: int) : unit = jsNative
 
+    [<Emit("$0 ? $0.playFactionRadio($1, $2, $3) : 0")>]
+    let private emitFactionRadio (_h: obj) (_audioKey: string) (_pan: float) (_cleanFilter: bool) : float = jsNative
+
     [<Emit("$0 ? $0.tryContactBeat($1) : -1")>]
     let private emitContactBeat (_h: obj) (_beat: int) : float = jsNative
 
@@ -1584,6 +1645,12 @@ module Sound =
     let storyBeat (s: SoundEngine) (beat: int) =
         if not s.Muted then
             try emitStoryBeat s.Handle beat with _ -> ()
+
+    /// Spielt einen Fraktions-Funkspruch (optional mit vorhandenem Audio-Clip, Stereo-Pan und Platin/Analog-Filter).
+    /// Rueckgabe > 0: Clip-Dauer in s; 0: Squelch/Text-Modus; < 0: Kanal belegt.
+    let playFactionRadio (s: SoundEngine) (audioKey: string) (pan: float) (cleanFilter: bool) : float =
+        if s.Muted then 0.0
+        else try emitFactionRadio s.Handle audioKey pan cleanFilter with _ -> 0.0
 
     /// Zeit bis zum Ende inklusive Funkauftakt. 0 bedeutet Laden oder belegter Kanal, -1 stumm oder nicht verfügbar.
     let tryContactBeat (s: SoundEngine) (beat: int) =

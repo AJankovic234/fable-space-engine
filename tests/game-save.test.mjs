@@ -136,6 +136,22 @@ test('a flight from a new port retains its selected course, market and pilot pro
   assert.equal(decode(json({...saved, Pilot: {...saved.Pilot, Visited: 1 | (1 << sectors.length)}})).tag, 1);
 });
 
+test('wreck inventories and reserve weapons are optional and validated against their original capacities', () => {
+  const saved = JSON.parse(json(snapshot(fixture())));
+  assert.equal(read(saved).Run.WreckSalvage, undefined);
+  const stock = {Id: 'wracksaum-eskorte', Titanium: 1, Missiles: 0};
+  saved.Run.WreckSalvage = [stock];
+  saved.Run.SalvagedMissiles = 2;
+  assert.deepEqual(read(saved).Run.WreckSalvage, [stock]);
+  assert.equal(read(saved).Run.SalvagedMissiles, 2);
+  for (const change of [
+    {WreckSalvage: [{...stock, Id: 'unknown'}]}, {WreckSalvage: [{...stock, Missiles: 3}]},
+    {WreckSalvage: [stock, stock]}, {SalvagedMissiles: 7}, {SalvagedMissiles: -1},
+  ]) {
+    assert.equal(decode(json({...saved, Run: {...saved.Run, ...change}})).tag, 1);
+  }
+});
+
 test('recovery checkpoints are optional in old saves and validated for their equipment', () => {
   const data = snapshot(rig());
   assert.equal(read(data).Run.Recovery,undefined);
@@ -188,6 +204,21 @@ test('old saves fly the cutter; the fleet, kit, large hold and damaged ship surv
   assert.equal(restored.w.Player.ShieldDelay, 0.75);
 });
 
+test('combat saves keep the selected and purchased hulls and restore the fitted hull', () => {
+  const source = rig(), dest = rig();
+  const mission = {...run(), Trading: false, SectorId: sectors[0].Id, Phase: 0, Spawned: 0, Patrol: []};
+  const data = snapshot(source, mission);
+  data.Run.Fleet = {Active: 2, Owned: (1 << 2) | (1 << 3), Kit: 0, Kits: 1};
+  data.Cargo.Capacity = 8;
+  const saved = read(data);
+  assert.deepEqual(saved.Run.Fleet, data.Run.Fleet);
+  restore(saved, dest.w, dest.brains, dest.wallet, dest.cargo, dest.markets, dest.levels, dest.turret, dest.pickups);
+  assert.equal(dest.w.Player.CruiseSpeed, 82);
+  assert.equal(dest.cargo.Capacity, 8);
+  data.Run.Fleet.Owned = 1 << 3;
+  assert.equal(decode(json(data)).tag, 1);
+});
+
 test('the trade campaign accepts legacy saves and restores a launched torpedo without granting a free shot', () => {
   const data=snapshot(rig());
   assert.equal(read(data).Run.Sortie,undefined);
@@ -214,7 +245,9 @@ test('dock contact history survives a round trip and is optional for older fligh
   assert.equal(read(data).Run.HeardContacts,129);
   data.Run.HeardContacts |= (1<<12) | (1<<17);
   assert.equal(read(data).Run.HeardContacts,(1<<17)+(1<<12)+129);
-  for(const invalid of [-1,1<<18,0.5,'1']){
+  data.Run.HeardContacts=1<<29;
+  assert.equal(read(data).Run.HeardContacts,1<<29);
+  for(const invalid of [-1,1<<30,0.5,'1']){
     data.Run.HeardContacts=invalid;
     assert.equal(decode(json(data)).tag,1);
   }
@@ -263,7 +296,7 @@ test('decode rejects malformed, incompatible or inconsistent data before a live 
     s=>s.Player.Rotation=[0,0,0,0],s=>s.Player.Position[0]=null,s=>s.Player.Status[0]=0,
     s=>s.Enemies.push(s.Enemies[0]),s=>s.Enemies[0].Index=4,s=>s.Enemies[0].Role=4,s=>s.Enemies[0].Ship.Status[0]=9999,
     s=>s.Run.Phase=2,s=>s.Run.Spawned=0,s=>s.Run.Docked=true,s=>s.Run.Completed=true,s=>s.Run.SectorId='missing',
-    s=>s.Asteroids.Data.pop(),s=>s.Asteroids.Variants[0]=4,s=>s.Asteroids.Ore[0]=3,
+    s=>s.Asteroids.Data.pop(),s=>s.Asteroids.Variants[0]=8,s=>s.Asteroids.Ore[0]=3,
     s=>s.Lasers.Teams[0]=9,s=>s.Pickups[0].Quantity=3,s=>s.RandomState=0,s=>s.Settings.Sensitivity=100,
     s=>s.Pickups=Array(97).fill(s.Pickups[0]),s=>s.Enemies=Array(17).fill(s.Enemies[0]),
   ];

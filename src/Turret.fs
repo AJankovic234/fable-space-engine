@@ -84,6 +84,11 @@ type HomingMissile =
 
 type MissileRack =
     { mutable Ammo: int
+      mutable Reserve: int
+      mutable Capacity: int
+      mutable ReloadInterval: float
+      mutable Damage: float
+      mutable Swarm: bool
       mutable ReloadTimer: float
       mutable FireCooldown: float
       Missiles: HomingMissile[] }
@@ -94,6 +99,8 @@ type MissileImpact = { HitEnemy: bool; Position: Vec3 }
 module Missiles =
     [<Literal>]
     let MaxAmmo = 4
+    [<Literal>]
+    let ReserveCapacity = 6
     [<Literal>]
     let ReloadInterval = 16.0
     [<Literal>]
@@ -113,11 +120,28 @@ module Missiles =
 
     let create () : MissileRack =
         { Ammo = MaxAmmo
+          Reserve = 0
+          Capacity = MaxAmmo
+          ReloadInterval = ReloadInterval
+          Damage = DamageAmount
+          Swarm = false
           ReloadTimer = 0.0
           FireCooldown = 0.0
           Missiles = Array.init PoolSize (fun _ ->
               { Alive = false; Position = Vec3.zero; PrevPosition = Vec3.zero
                 Velocity = Vec3.zero; Rotation = Quat.identity; Target = -1; Life = 0.0 }) }
+
+    let configure (rack: MissileRack) (hasMissilePod: bool) (hasMissileLoader: bool) =
+        let cap = MaxAmmo + (if hasMissilePod then 2 else 0) + (if hasMissileLoader then 2 else 0)
+        let baseReload = if hasMissilePod then 9.0 else ReloadInterval
+        rack.Capacity <- cap
+        rack.ReloadInterval <- if hasMissileLoader then baseReload * 0.65 else baseReload
+        rack.Damage <- if hasMissilePod then 52.0 else DamageAmount
+        rack.Ammo <- min cap rack.Ammo
+
+    let applyResearch (rack: MissileRack) (cooling: bool) (swarm: bool) =
+        if cooling then rack.ReloadInterval <- rack.ReloadInterval * 0.85
+        rack.Swarm <- swarm
 
     let clear (rack: MissileRack) =
         for m in rack.Missiles do m.Alive <- false
@@ -125,14 +149,14 @@ module Missiles =
 
     let reload (rack: MissileRack) =
         clear rack
-        rack.Ammo <- MaxAmmo
+        rack.Ammo <- rack.Capacity
         rack.ReloadTimer <- 0.0
 
     let tryLaunch (world: World) (rack: MissileRack) (target: int) : Result<Vec3, string> =
         let player = world.Player
         if not player.Alive then Error ""
         elif rack.FireCooldown > 0.0 then Error ""
-        elif rack.Ammo <= 0 then Error "RAKETEN LADEN NACH"
+        elif rack.Ammo <= 0 && rack.Reserve <= 0 then Error "RAKETEN LADEN NACH"
         elif target < 0 || target >= world.Enemies.Length || not world.Enemies.[target].Alive then
             Error "KEIN ZIEL ERFASST · T/N ZUM ERFASSEN"
         elif Vec3.distance player.Position world.Enemies.[target].Position > Range then
@@ -145,16 +169,39 @@ module Missiles =
             else
                 let fwd = Quat.forward player.Rotation
                 let up = Quat.up player.Rotation
+                let side = Quat.right player.Rotation
                 let origin = player.Position + fwd * 3.0 - up * 0.9
-                let m = rack.Missiles.[slot]
-                m.Alive <- true
-                m.Position <- origin
-                m.PrevPosition <- origin
-                m.Rotation <- player.Rotation
-                m.Velocity <- fwd * Speed + player.Velocity * 0.35
-                m.Target <- target
-                m.Life <- Lifetime
-                rack.Ammo <- rack.Ammo - 1
+                let spawnOne s (pos: Vec3) (dir: Vec3) (tIdx: int) =
+                    let m = rack.Missiles.[s]
+                    m.Alive <- true
+                    m.Position <- pos
+                    m.PrevPosition <- pos
+                    m.Rotation <- Quat.lookRotation dir up
+                    m.Velocity <- dir * Speed + player.Velocity * 0.35
+                    m.Target <- tIdx
+                    m.Life <- Lifetime
+                spawnOne slot origin fwd target
+                if rack.Swarm then
+                    let mutable extras = 0
+                    let mutable cand = 0
+                    let offsets = [| -1.0; 1.0 |]
+                    for sign in offsets do
+                        let mutable s2 = -1
+                        for i in 0 .. rack.Missiles.Length - 1 do
+                            if s2 < 0 && not rack.Missiles.[i].Alive then s2 <- i
+                        if s2 >= 0 then
+                            // Zweitziele in Reichweite suchen, sonst primaeres Ziel anfliegen.
+                            let mutable subTarget = target
+                            while cand < world.Enemies.Length && subTarget = target do
+                                if cand <> target && world.Enemies.[cand].Alive &&
+                                   Vec3.distance player.Position world.Enemies.[cand].Position <= Range then
+                                    subTarget <- cand
+                                cand <- cand + 1
+                            let dir = Vec3.normalize (fwd + side * (sign * 0.22) + up * 0.08)
+                            spawnOne s2 (origin + side * (sign * 1.4)) dir subTarget
+                            extras <- extras + 1
+                if rack.Ammo > 0 then rack.Ammo <- rack.Ammo - 1
+                else rack.Reserve <- rack.Reserve - 1
                 rack.FireCooldown <- Cooldown
                 Ok origin
 
@@ -163,11 +210,11 @@ module Missiles =
         if dt <= 0.0 then impacts
         else
             rack.FireCooldown <- max 0.0 (rack.FireCooldown - dt)
-            if rack.Ammo < MaxAmmo then
+            if rack.Ammo < rack.Capacity then
                 rack.ReloadTimer <- rack.ReloadTimer + dt
-                if rack.ReloadTimer >= ReloadInterval then
-                    rack.ReloadTimer <- rack.ReloadTimer - ReloadInterval
-                    rack.Ammo <- min MaxAmmo (rack.Ammo + 1)
+                if rack.ReloadTimer >= rack.ReloadInterval then
+                    rack.ReloadTimer <- rack.ReloadTimer - rack.ReloadInterval
+                    rack.Ammo <- min rack.Capacity (rack.Ammo + 1)
             else
                 rack.ReloadTimer <- 0.0
 
@@ -204,7 +251,7 @@ module Missiles =
                                         (enemy.Radius + 1.8)
                                 if t >= 0.0 then
                                     let point = Vec3.lerp m.PrevPosition m.Position t
-                                    Damage.ship world enemy DamageAmount
+                                    Damage.ship world enemy rack.Damage
                                     m.Alive <- false
                                     hit <- true
                                     impacts.Add { HitEnemy = true; Position = point }

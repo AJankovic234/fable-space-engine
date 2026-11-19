@@ -47,18 +47,18 @@ Unter **Kaelen Vance** kontrolliert die alte Flottenfestung **Bastion Morgenlich
 
 ## 2. Herkunft der 6 Sektoren im Jahr 2601 AE
 
-1. **Äußerer Gürtel (*Bergbau-Depot Kestrel*):**
+1. **Haldens Ruh (*Bergbau-Depot Kestrel*):**
    Einst ein provisorischer GTSA-Schürfposten, heute die letzte geduldete Zuflucht für Piloten mit abgelaufenen SINs. Dispatcher **Voss** hält dort ein verrostetes Analog-Funknetz am Leben, das älter ist als jede Firmware von *Morgenlicht*.
-2. **Schmelzwerk Helios (*Raffinerie Helios-IV*):**
+2. **Neunte Sohle (*Raffinerie Helios-IV*):**
    Gebaut um die Hitzekammern eines zerbrochenen Metallasteroiden. Seit Vance die Filter- und Medizin-Quoten drosselt, arbeiten die Schichten am Erstickungslimit, während *AETHER*-Terminals die Luftqualität stur als `TOLERANZBEREICH` melden.
-3. **Grenz-Drift (*Freihafen Drift-9*):**
+3. **Zwölf Stimmen (*Freihafen Drift-9*):**
    Ein zusammengeschweißter Knoten aus alten Frachter-Rümpfen im Nebel. Hier regiert kein Gesetz außer dem Tauschwert: **„Kipper“ Taro** wäscht abgelaufene Transponder, verkauft `NavData` und flickt Schiffe mit geklauten Teilen.
-4. **Orbitalwerft 07 (*Orbitalwerft Kepler-07*):**
+4. **Jahr Null (*Orbitalwerft Kepler-07*):**
    Vor *The Eclipse* die größte Werft der Region, heute ein halb-automatisierter Schiffsfriedhof. Hunderte *Continuity*-Drohnen patrouillieren noch immer zwischen den Gerippen und jagen alles, dessen Zertifikat älter als ein Zyklus ist.
-5. **Äther-Relais (*Forschungs-Relais Theta*):**
+5. **Stille Bänder (*Forschungs-Relais Theta*):**
    Eine unscheinbare Horchstation an einer Gravitationsanomalie. Hier fand **Dr. Mara Lind** die letzten Analogbänder aus dem Jahr **2034**. Auf dem *RT-9 / ORPHEUS-7*-Band hört sie zwei Signale unter derselben Kennung. Den gleichen Fehler erkennt sie in Vances *TG-9*-Registern wieder.
-6. **Bastion Morgenlicht (*Flotten-Dock Morgenlicht*):**
-   Vances gepanzerter Sitz und das letzte Tor zur Kernroute. Solange sein goldenes Flaggschiff *AETHER Sovereign* und der Platin-Backup-Server darunter intakt sind, bleibt der äußere Gürtel rechtlos.
+6. **Sperrzone Morgenlicht (*Bastion Morgenlicht*):**
+   Vances gepanzerter Sitz und das letzte Tor zur Kernroute. Solange sein goldenes Flaggschiff *AETHER Grace Period* (und der Zollkreuzer *AETHER Tariff VII* vor Helios) sowie der Platin-Backup-Server darunter intakt sind, bleibt der äußere Gürtel rechtlos.
 
 ---
 
@@ -96,12 +96,12 @@ Jeder der 6 Sektoren verbirgt abseits der direkten Handelslinie eine besondere D
 
 | Sektor | Fundort / Relikt | Was der Spieler entdeckt |
 |---|---|---|
-| **1. Äußerer Gürtel** | **Wrack der *Kestrel-04*** (hinter dem äußeren Asteroidenring) | Die Blackbox trägt **deine eigene aktuelle SIN**. Letzter Eintrag von J. Halden: *„Sie haben meine Kennung auf eine Lockvogel-Drohne geklont. Wer auch immer das hier birgt – flieg nicht mit meinem Namen nach Morgenlicht.“* |
-| **2. Schmelzwerk Helios** | **Versiegelte Schichtliste „Schacht 9“** (im heißen Schlackefeld) | 38 Arbeiter-Namen mit dem offiziellen Status `SLEEVE-TRANSFER ABGESCHLOSSEN`. In den Rohdaten steht der echte Grund: Ventile geschlossen wegen `4 % Sauerstoff-Überverbrauch`. |
-| **3. Grenz-Drift** | **„Der Puffer-Chor“** (alte Relais-Boje tief im Nebel) | Zwölf synthetische Notrufe laufen dort auf Endlosschleife. Eine der Stimmen gehört zu **Voss’ verschollener Tochter** – aufgezeichnet vor elf Jahren. *(Lebt sie in einem Sleeve auf Morgenlicht, oder nutzt Vance nur ein Puffer-Echo als Druckmittel?)* |
-| **4. Orbitalwerft 07** | **Trockendock B — Das unfertige Kolonieschiff** (zwischen Drohnen-Wracks) | Im lokalen Werkstattbuch steht `03 AE`, das dritte Jahr nach der Eclipse (etwa 2403 im Register). Seit knapp 200 Jahren wartet der Rumpf auf die *„GTSA-Erdbestätigung“* für den Start. |
-| **5. Äther-Relais** | **Strahlungsgeschütztes Archiv „2034 / RT-9-Mirror“** (abseits von *Theta*) | Die ungefilterte Telemetrie vom **14. März 2034** belegt den Empfang beider Signale. Zusammen mit den Lizenzregeln der *CS-7.3* liest Lind darin die Folgen einer bewussten Einsparung. Wie der Wiedereintritt ausging, bleibt offen. |
-| **6. Bastion Morgenlicht** | **Vances privater Sleeve-Satellit** (riskant im Schatten der Bastion) | Die Wiederherstellungs-Logs datieren den Tod des ersten Kaelen Vance beim Reaktorleck auf `2564 AE`. Der aktive Sleeve auf der *AETHER Sovereign* trägt die Nummer 7. |
+| **1. Haldens Ruh** | **Wrack der *Kestrel-04*** (hinter dem äußeren Asteroidenring) | Die Blackbox trägt **deine eigene aktuelle SIN**. Letzter Eintrag von J. Halden: *„Sie haben meine Kennung auf eine Lockvogel-Drohne geklont. Wer auch immer das hier birgt – flieg nicht mit meinem Namen nach Morgenlicht.“* |
+| **2. Neunte Sohle** | **Versiegelte Schichtliste „Schacht 9“** (im heißen Schlackefeld) | 38 Arbeiter-Namen mit dem offiziellen Status `SLEEVE-TRANSFER ABGESCHLOSSEN`. In den Rohdaten steht der echte Grund: Ventile geschlossen wegen `4 % Sauerstoff-Überverbrauch`. |
+| **3. Zwölf Stimmen** | **„Der Puffer-Chor“** (alte Relais-Boje tief im Nebel) | Zwölf synthetische Notrufe laufen dort auf Endlosschleife. Eine der Stimmen gehört zu **Voss’ verschollener Tochter** – aufgezeichnet vor elf Jahren. *(Lebt sie in einem Sleeve auf Morgenlicht, oder nutzt Vance nur ein Puffer-Echo als Druckmittel?)* |
+| **4. Jahr Null** | **Trockendock B — Das unfertige Kolonieschiff** (zwischen Drohnen-Wracks) | Im lokalen Werkstattbuch steht `03 AE`, das dritte Jahr nach der Eclipse (etwa 2403 im Register). Seit knapp 200 Jahren wartet der Rumpf auf die *„GTSA-Erdbestätigung“* für den Start. |
+| **5. Stille Bänder** | **Strahlungsgeschütztes Archiv „2034 / RT-9-Mirror“** (abseits von *Theta*) | Die ungefilterte Telemetrie vom **14. März 2034** belegt den Empfang beider Signale. Zusammen mit den Lizenzregeln der *CS-7.3* liest Lind darin die Folgen einer bewussten Einsparung. Wie der Wiedereintritt ausging, bleibt offen. |
+| **6. Sperrzone Morgenlicht** | **Vances privater Sleeve-Satellit** (riskant im Schatten der Bastion) | Die Wiederherstellungs-Logs datieren den Tod des ersten Kaelen Vance beim Reaktorleck auf `2564 AE`. Der aktive Sleeve auf der *AETHER Grace Period* trägt die Nummer 7. |
 
 ### Optionaler Codex-Hook („Archiv 0/6“ ohne Zwang)
 - Alle 6 Relikte sind freiwillige Entdeckungen (leuchtende Kapsel/Boje + `Sound.scannerPing`).
@@ -117,7 +117,7 @@ Jeder der 6 Sektoren verbirgt abseits der direkten Handelslinie eine besondere D
 | **Gürtel-Gilde („Schichtbund“)** | *Kestrel*, *Helios-IV* | Offiziell Erzförderung, inoffiziell Schutzbündnis gegen Sauerstoff-Abschaltungen. Schützt Arbeiter mit abgelaufenen SINs, kämpft aber selbst gegen interne Schuldenverträge. |
 | **Freihafen-Syndikat („Drift-Fixer“)** | *Drift-9*, Teile von *Kepler-07* | Schwarzmarkt für geklaute `NavData`, umgelötete Transponder und Waffenmods. Loyalität hält genau so lange, wie die Credits stimmen. |
 | **Der Relais-Kreis** | *Relais Theta*, Horch-Pods | Winzige Gruppe aus Archivaren und Funkwächtern (*Mara Lind*, *Sera*). Besitzen keine Flotte, aber das einzige Wissen über das *RT-9*-Urprotokoll von 2034. |
-| **AETHER Sovereign (Vances „Orbitals“)** | *Bastion Morgenlicht* | Kontrollieren *TG-9*-Gateways, *Continuity*-Drohnen und das letzte funktionierende Klon-Labor. Verkaufen Sicherheit als Monopol und löschen jeden, der die Bücher stört. |
+| **AETHER Flotte (*Grace Period* / *Tariff VII*)** | *Bastion Morgenlicht* | Kontrollieren *TG-9*-Gateways, *Continuity*-Drohnen und das letzte funktionierende Klon-Labor. Verkaufen Sicherheit als Monopol und löschen jeden, der die Bücher stört. |
 
 ---
 

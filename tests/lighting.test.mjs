@@ -153,7 +153,7 @@ test("every sector gets its own positive sky light from the sky dome colours", (
   const helios = hues[id("slag-refinery")], aether = hues[id("aether-relay")], drift = hues[id("frontier-drift")];
   assert.ok(helios[0] > helios[2], "Helios sky light is warm");
   assert.ok(aether[2] > aether[0], "Relais Theta sky light is cool");
-  assert.ok(drift[1] > drift[0], "Grenz-Drift sky light is green-teal");
+  assert.ok(drift[1] > drift[0], "Zwölf Stimmen sky light is green-teal");
   // The raw projection sees the planet in front of the band (world -Z).
   const raw = project(0);
   assert.ok(raw[9] + raw[10] + raw[11] < 0);

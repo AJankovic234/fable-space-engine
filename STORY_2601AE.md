@@ -10,7 +10,7 @@
 - **Vom *Continuity*-Bug zum SIN-Gitter:** Was 2034 als kostensparende *AETHER Continuity Suite* begann („ein Zertifikat für zwei Körper“), ist im Jahr **2601 AE** zum weltumspannenden **SIN-Gitter (Systemic Identity Node)** versteinert.
 - **Die zwei Klassen von Menschen:**
   - **Orbitals / „Platin-SINs“ (Direktor Vance & Morgenlicht):** Wer ein Platin-Zertifikat bezahlt, besitzt ein **Remote-Stack-Backup**. Stirbt der Körper bei einem Gefecht, wacht er Stunden später in einem frischen **Klon-Sleeve** auf *Bastion Morgenlicht* auf. Der Tod ist für sie nur ein Wartungsfenster.
-  - **Gürtel-Volk / „Gebraucht-SINs“ (Du, Voss, Kipper):** Im Äußeren Gürtel teilt man sich aus Geldnot oft dieselbe **abgelaufene oder gespiegelte SIN** (zwei oder drei Schiffe auf einer Lizenz). Stirbst du hier draußen, gibt es keinen neuen Sleeve. Oft spielt dein Bordcomputer nur noch deine letzten Funksekunden als **synthetischen Puffer** in Endlosschleife, damit die Konzern-Versicherung keinen Ausfall melden muss.
+  - **Gürtel-Volk / „Gebraucht-SINs“ (Du, Voss, Kipper):** In Haldens Ruh teilt man sich aus Geldnot oft dieselbe **abgelaufene oder gespiegelte SIN** (zwei oder drei Schiffe auf einer Lizenz). Stirbst du hier draußen, gibt es keinen neuen Sleeve. Oft spielt dein Bordcomputer nur noch deine letzten Funksekunden als **synthetischen Puffer** in Endlosschleife, damit die Konzern-Versicherung keinen Ausfall melden muss.
 - **Deine Ausgangslage (Der Run beginnt):** Du fliegst einen zusammengeflickten Erzfrachter mit einer **gestohlenen Kurier-SIN**, die laut Register längst als „terminiert“ gilt.
 
 ---
@@ -22,7 +22,7 @@
 | **„Old Man“ Voss** | Schicht-Dispatcher auf *Kestrel* | Rau, überarbeitet, kennt jeden toten Winkel. Hat seine eigene SIN vor zwanzig Jahren verkauft, um die Tochter auf eine innere Station zu bringen – weiß selbst nicht, ob sie noch lebt. Nennt dich erst *„Lizenzleiche“*, später *„Partner“*. |
 | **„Kipper“ Taro** | SIN-Fixer & Schrott-Decker auf *Drift-9* | Lebt in einem halb verrotteten Industrie-Dock, bezahlt Schulden mit geklauten `NavData`-Stacks. Kein lustiger Sidekick, sondern ein zynischer Überlebenskünstler: *„Ich kleb dir 'ne saubere Kennung. Wenn sie bei Sektor 4 reißt, kenn ich dich nicht.“* |
 | **Dr. Mara Lind** | Archivarin auf *Relais Theta* | Hat *RT-9 / ORPHEUS-7*-Analogbänder von 2034 ausgegraben. Erkennt im heutigen *TG-9* denselben Fehler. Warum AETHER damals eine Kennung für zwei Körper zuließ, erschließt sich ihr aus dem Archiv und den Lizenzregeln. |
-| **Direktor Kaelen Vance** | „Rechtsnachfolger“ auf der goldenen *AETHER Sovereign* | *Borderlands-2-Jack*-Antagonist mit *Altered-Carbon*-Meth-Kälte: charmant, witzig-grausam, hält sich für den einzigen Erwachsenen im Raum. Lässt tote Crews als Puffer weitersenden und spottet persönlich über deinen Bordfunk. |
+| **Direktor Kaelen Vance** | „Rechtsnachfolger“ auf der goldenen *AETHER Grace Period* | *Borderlands-2-Jack*-Antagonist mit *Altered-Carbon*-Meth-Kälte: charmant, witzig-grausam, hält sich für den einzigen Erwachsenen im Raum. Lässt tote Crews als Puffer weitersenden und spottet persönlich über deinen Bordfunk. |
 
 ---
 
@@ -74,11 +74,41 @@ Statt generischer Lieferquests gibt es pro Station **1 dreckigen Run** (2–3 Ze
 
 ---
 
+## 3b. Drei Akte im Spiel (umgesetzt in `src/StoryRadio.fs`)
+
+Die Geschichte schreitet mit dem Piloten fort. Jeder besuchte Sektor zählt einen Punkt, jeder Fund zwei.
+
+| Akt | Beginnt bei | Was sich ändert |
+|---|---|---|
+| **I · Tote Kennung** | Start | Jede Station meldet sich mit ihrem ersten Ruf. |
+| **II · Zwei Schiffe, ein Name** | 6 Punkte | Kestrel, Helios-IV, Drift-9, Kepler-07, Theta und Morgenlicht senden einen neuen Ruf. Kipper meldet, dass deine Kennung ohne dich getankt hat. Vance wird vom Spötter zum Drohenden. |
+| **III · Der Schlepper** | 13 Punkte und Morgenlicht besucht | Voss verliert seine Kennung und fährt trotzdem. Mara Lind legt das Band von 2034 auf deinen Transponder. Vance verliert die Beherrschung. |
+
+- Der jeweils jüngste Ruf läuft beim Andocken. Frühere Rufe bleiben am Dock nachhörbar.
+- Das **Logbuch** im Fundarchiv wächst mit: ein Eintrag je besuchtem Sektor, dazu einer je Akt.
+- Die Rufe der Akte II und III und der drei Randstationen sind bisher nur Text. Sprachaufnahmen fehlen noch (Aufnahmenummern 18 bis 29).
+
+### Die drei Randsektoren in der Geschichte
+
+Jeder zeigt eine andere Seite desselben Geschäfts: Die Toten senden weiter, und jemand verdient daran.
+
+| Ort | Stimme | Rolle |
+|---|---|---|
+| **Destille Raureif** (Kaltstrom) | **Ilka Tamm**, Brennmeisterin | Die Destille verkauft Kälte an Morgenlicht, damit die Pufferbänke nicht durchbrennen. Die Lebenden kühlen die Toten. Passt zum Fund *Pumpenbuch*: Als der Nachschub ausblieb, strich die Verwaltung zuerst die Leute. |
+| **Schlepperdock Letzte Leine** (Wracksaum) | **Odo Karst**, Schlepper 44 | Seine Leute kappen jeden laufenden Notruf, bevor sie ein Wrack ausschlachten. Gegenpol zu Sera, die Puffer-Echos sammelt, damit kein Name gelöscht wird. Passt zum Fund *Schleppschein 44*. |
+| **Zollfeuer Graue Wacht** (Schleierpass) | **Wim Aders**, Feuerwart | Die Crew hat die sichere Spur durch den Nebel vermessen und verschenkt. Jetzt verkauft sie jemand als Geleitschutz, unter der Kennung der Wacht. Dieselbe Spiegelung wie bei deiner SIN, nur als Geschäftsmodell. Passt zum Fund *Kursprotokoll 17*. |
+
+**Umgesetzt:** die Entscheidung zwischen Karst und Sera. Jedes der elf Wracks sendet einen letzten Funkspruch; der Pilot sichert die Stimme durch Warten oder kappt den Sender für mehr Schrott (`WreckVoices` in `src/WreckFields.fs`). Das Wrack bei Kestrel gehört zu Enna Ruck, deren Kennung „schon ohne sie antwortet“; der Schürfer in den Zwölf Stimmen nennt sich die dreizehnte Stimme und trägt den Namen Voss.
+
+**Offen für später:** wer die Kennung der Grauen Wacht spiegelt, und die beiden Enden aus §4. Für die Enden braucht der Handelsflug erst einen Schluss.
+
+---
+
 ## 4. Climax & Die zwei Enden (mit echtem Preis)
 
 1. **Der Verlust:** Auf dem Anflug zu *Bastion Morgenlicht* streicht Vance die Kennung, unter der Voss’ Stör-Schlepper fliegt, und fängt ihn ab (*„Keine Sorge, Partner – in meinem Register hat es ihn nie gegeben.“*).
 2. **Der Analog-Override:** Mara Lind speist das *RT-9*-Signal von 2034 direkt auf deinen Transponder – Vances *TG-9*-Schild bricht, und der selbstherrliche Direktor verliert zum ersten Mal die Beherrschung.
-3. **Die letzte Entscheidung nach Zerstörung der *AETHER Sovereign*:**
+3. **Die letzte Entscheidung nach Zerstörung der *AETHER Grace Period*:**
    - **Ende A — „Burn the Stack“ (Schatten-Ende):** Du zerstörst auch den **Platin-Backup-Server** auf *Morgenlicht*.
      *Endscreen-Text:* „Morgenlicht meldet zum letzten Mal einen fehlgeschlagenen Wiederherstellungsversuch. Das SIN-Gitter fällt aus, jede Schuld und jede Sperrliste brennt mit – ab morgen fliegt der Gürtel ohne Leine, und ohne Netz.“
    - **Ende B — „New Meth“ (Altered-Carbon-Ende):** Du überschreibst Vances Platin-Backup mit *deiner* eigenen Signatur.

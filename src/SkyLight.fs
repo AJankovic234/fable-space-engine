@@ -15,14 +15,17 @@ module SkyLight =
     // Muss zu SkyBackdrop passen: Reihenfolge der Himmelsansichten, Drehung (YAW) und
     // Toenung (TINT) des Galaxienbands.
     let private views =
-        [| "outer-belt"; "slag-refinery"; "frontier-drift"; "kepler-yard"; "aether-relay"; "morgenlicht-bastion" |]
+        [| "outer-belt"; "slag-refinery"; "frontier-drift"; "kepler-yard"; "aether-relay"; "morgenlicht-bastion"
+           "kaltstrom"; "wracksaum"; "schleierpass" |]
 
     let private yaw =
-        [| 1.0, 0.0; 0.362, 0.932; -0.801, 0.598; -0.416, -0.909; 0.697, -0.717; -0.942, -0.335 |]
+        [| 1.0, 0.0; 0.362, 0.932; -0.801, 0.598; -0.416, -0.909; 0.697, -0.717; -0.942, -0.335
+           0.259, -0.966; -0.500, 0.866; 0.940, 0.342 |]
 
     let private tint =
         [| Vec3(1.0, 1.0, 1.0); Vec3(1.38, 0.47, 0.29); Vec3(0.46, 1.27, 1.12)
-           Vec3(0.67, 0.85, 1.36); Vec3(0.94, 0.56, 1.57); Vec3(1.43, 0.42, 0.49) |]
+           Vec3(0.67, 0.85, 1.36); Vec3(0.94, 0.56, 1.57); Vec3(1.43, 0.42, 0.49)
+           Vec3(0.55, 0.95, 1.30); Vec3(1.25, 0.80, 0.45); Vec3(0.80, 0.62, 1.35) |]
 
     /// Grosser Himmelskoerper je Ansicht (SkyBackdrop.bodyFragment): Richtung in Welt-
     /// koordinaten, Winkelradius und mittlere Strahldichte der beleuchteten Scheibe.
@@ -32,13 +35,16 @@ module SkyLight =
            Vec3.normalize (Vec3(0.54, 0.22, -1.0)), 0.19, Vec3(0.13, 0.22, 0.22) // Ozeanwelt
            Vec3.normalize (Vec3(-0.40, -0.17, -1.0)), 0.27, Vec3(0.19, 0.26, 0.30) // Eiswelt
            Vec3.normalize (Vec3(-0.42, 0.23, -1.0)), 0.21, Vec3(0.20, 0.10, 0.38) // Pulsar
-           Vec3.normalize (Vec3(0.43, 0.19, -1.0)), 0.24, Vec3(0.30, 0.11, 0.025) |] // Finsternis
+           Vec3.normalize (Vec3(0.43, 0.19, -1.0)), 0.24, Vec3(0.30, 0.11, 0.025) // Finsternis
+           Vec3.normalize (Vec3(-0.50, 0.06, -1.0)), 0.34, Vec3(0.20, 0.30, 0.34) // Eisriese
+           Vec3.normalize (Vec3(0.50, 0.26, -1.0)), 0.17, Vec3(0.10, 0.08, 0.06) // Mondbruch
+           Vec3.normalize (Vec3(-0.25, 0.05, -1.0)), 0.40, Vec3(0.10, 0.14, 0.22) |] // Nebelvorhang
 
     let inline private smooth (e0: float) (e1: float) (x: float) =
         let t = System.Math.Max(0.0, System.Math.Min(1.0, (x - e0) / (e1 - e0)))
         t * t * (3.0 - 2.0 * t)
 
-    /// Himmelsansicht (0..5) eines Sektors; unbekannte Sektoren zeigen den Kestrel-Himmel.
+    /// Himmelsansicht (0..8) eines Sektors; unbekannte Sektoren zeigen den Kestrel-Himmel.
     let view (sector: int) : int =
         if sector >= 0 && sector < Universe.sectors.Length then
             let template = Universe.skyTemplate Universe.sectors.[sector].Id

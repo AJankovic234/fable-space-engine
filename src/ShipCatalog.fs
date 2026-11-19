@@ -15,8 +15,51 @@ type RefitOrder = Hull of int | Kit of int
 module ShipCatalog =
     [<Literal>]
     let ShieldRelay = 3
+    [<Literal>]
+    let RapidBlaster = 4
+    [<Literal>]
+    let PlasmaCannon = 5
+    [<Literal>]
+    let ScatterLaser = 6
+    [<Literal>]
+    let MissilePod = 7
+    [<Literal>]
+    let TractorRig = 8
+    [<Literal>]
+    let OverdriveCap = 9
+    [<Literal>]
+    let CryoDisruptor = 10
+    [<Literal>]
+    let PhaseRailgun = 11
 
-    let rechargeDelay kit = if kit = ShieldRelay then 2.0 else Combat.ShieldRegenDelay
+    let isResearchKit kit = kit = CryoDisruptor || kit = PhaseRailgun
+
+    let rechargeDelay kit =
+        match kit with
+        | ShieldRelay -> 2.0
+        | OverdriveCap -> 2.4
+        | _ -> Combat.ShieldRegenDelay
+
+    let fireInterval kit =
+        match kit with
+        | RapidBlaster -> 0.13 * 0.69
+        | PlasmaCannon -> 0.13 * 1.45
+        | ScatterLaser -> 0.13 * 1.18
+        | CryoDisruptor -> 0.13 * 1.05
+        | PhaseRailgun -> 0.13 * 1.75
+        | _ -> 0.13
+
+    let boostSpeed kit =
+        match kit with
+        | TractorRig -> Ship.cutterBoost + 18.0
+        | OverdriveCap -> Ship.cutterBoost * 1.2
+        | _ -> Ship.cutterBoost
+
+    let handlingMultiplier kit = if kit = OverdriveCap then 1.25 else 1.0
+    let piercing kit = kit = PlasmaCannon || kit = PhaseRailgun
+    let scatter kit = kit = ScatterLaser
+    let boltSpeedMultiplier kit = if kit = PhaseRailgun then 2.0 else 1.0
+    let magnetBonus kit = if kit = TractorRig then 55.0 else 0.0
     let shieldCapacity level = 100.0 + 30.0 * float level
     let hullStrength level = 100.0 + 25.0 * float level
 
@@ -40,10 +83,19 @@ module ShipCatalog =
     let kits =
         [| { Name = "Serientrimmung"; Effect = "Grundabstimmung des Rumpfs"; Price = 0 }
            { Name = "Kurierdüsen"; Effect = "+12 m/s Reisegeschwindigkeit"; Price = 90 }
-           { Name = "Impulsfokus"; Effect = "+25 % Laserschaden"; Price = 130 }
-           { Name = "Schildrelais"; Effect = "Schild lädt 2 s nach dem letzten Treffer. Serie: 3,5 s."; Price = 150 } |]
+           { Name = "Impulsfokus"; Effect = "+25 % Laserschaden · violette Bolzen"; Price = 130 }
+           { Name = "Schildrelais"; Effect = "Schild lädt 2 s nach dem letzten Treffer. Serie: 3,5 s."; Price = 150 }
+           { Name = "Schnellfeuer-Repetierer"; Effect = "+45 % Feuerrate, −10 % Einzelschaden (+30 % DPS). Ideal gegen Späher & Drohnen."; Price = 190 }
+           { Name = "Plasmakanone"; Effect = "+75 % Schaden, langsamere Salve, panzerbrechend (25 % direkt durch Schilde auf Hülle)."; Price = 260 }
+           { Name = "Schrot-Streulaser"; Effect = "4-fach Fächer-Salve (0,62× je Bolzen) für verheerende Nahkampf-Treffer."; Price = 240 }
+           { Name = "Raketen-Leitwerk Mk II"; Effect = "+2 Abfangraketen, 9 s statt 16 s Nachladezeit und 52 statt 38 Raketenschaden."; Price = 220 }
+           { Name = "Bergungs-Traktorstrahl"; Effect = "+55 m Magnetreichweite auf Erz & Wrackgut sowie +18 m/s Boost-Tempo."; Price = 170 }
+           { Name = "Overdrive-Kondensator"; Effect = "+20 % Boost, +25 % Wendigkeit, 2,4 s Schild-Verzögerung und +15 % Laserschaden."; Price = 290 }
+           { Name = "Kryo-Disruptor (Forschung)"; Effect = "Unterkühlte Treffer verlangsamen Gegner und blockieren Schildregeneration."; Price = 0 }
+           { Name = "Phasen-Railgun (Forschung)"; Effect = "2× Projektiltempo, +115 % Schaden und panzerbrechende Durchschlagskraft."; Price = 0 } |]
 
     let startFleet hull = { Active = hull; Owned = 1 <<< hull; Kit = 0; Kits = 1 }
+    let startingCredits trading hull = if trading then hull.StartingCredits else 0
     let create () = startFleet 0
     let owns mask index = mask &&& (1 <<< index) <> 0
 
@@ -64,7 +116,17 @@ module ShipCatalog =
         hull.Cruise + (if kit = 1 then 12.0 else 0.0) + (if trained then 6.0 else 0.0)
 
     let laser (hull: HullSpec) kit level trained =
-        hull.Laser * (1.0 + 0.2 * float level) * (if kit = 2 then 1.25 else 1.0) * (if trained then 1.2 else 1.0)
+        let kitFactor =
+            match kit with
+            | 2 -> 1.25
+            | RapidBlaster -> 0.90
+            | PlasmaCannon -> 1.75
+            | ScatterLaser -> 0.62
+            | OverdriveCap -> 1.15
+            | CryoDisruptor -> 1.12
+            | PhaseRailgun -> 2.15
+            | _ -> 1.0
+        hull.Laser * (1.0 + 0.2 * float level) * kitFactor * (if trained then 1.2 else 1.0)
 
     let quote fleet cargo credits canRefit order =
         let offer index count active owned price =
@@ -80,7 +142,9 @@ module ShipCatalog =
             | Ok _ when TradeSystem.usedVolume cargo > capacityFor fleet cargo i ->
                 Error (sprintf "Zuerst %d t entladen" (TradeSystem.usedVolume cargo - capacityFor fleet cargo i))
             | result -> result
-        | Kit i -> offer i kits.Length fleet.Kit fleet.Kits (fun n -> kits.[n].Price)
+        | Kit i ->
+            if isResearchKit i && not (owns fleet.Kits i) then Error "Über Forschung freischalten"
+            else offer i kits.Length fleet.Kit fleet.Kits (fun n -> kits.[n].Price)
 
     let equip fleet cargo credits canRefit order =
         match quote fleet cargo credits canRefit order with

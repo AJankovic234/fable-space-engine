@@ -186,3 +186,27 @@ test("nozzles heat up quickly, cool over seconds, and the beacon double-flashes"
   assert.equal(flashes, 2);
   assert.ok(lit < 20, "the beacon is dark most of the cycle");
 });
+
+test("every hull is weathered and carries the struck registration mark of the courier SIN", () => {
+  // Paint only: metal, glass, rubber and lamps code their class in the emissive channel.
+  const stencil = [0.62, 0.61, 0.56], strike = [0.60, 0.055, 0.035];
+  models.forEach((build, i) => {
+    const v = build().Vertices;
+    const is = (k, [r, g, b]) => Math.abs(v[k + 6] - r) < 2e-3 && Math.abs(v[k + 7] - g) < 2e-3 && Math.abs(v[k + 8] - b) < 2e-3;
+    let paint = 0, luminance = 0, peak = 0, bars = 0, struck = 0;
+    for (let k = 0; k < v.length; k += 10) {
+      if (v[k + 9] !== 0) continue;
+      paint++;
+      luminance += 0.2126 * v[k + 6] + 0.7152 * v[k + 7] + 0.0722 * v[k + 8];
+      peak = Math.max(peak, v[k + 6], v[k + 7], v[k + 8]);
+      if (is(k, stencil)) bars++;
+      if (is(k, strike)) struck++;
+    }
+    // Faded hazard yellow is the brightest paint on board; nothing is showroom white or candy orange.
+    assert.ok(luminance / paint < 0.18, `${names[i]}: mean paint luminance ${luminance / paint}`);
+    assert.ok(peak <= 0.72, `${names[i]}: brightest paint channel ${peak}`);
+    // Thirteen bars of two triangles each, crossed by one deletion stroke.
+    assert.ok(bars >= 13 * 6, `${names[i]}: ${bars} barcode vertices`);
+    assert.ok(struck >= 6, `${names[i]}: ${struck} strike vertices`);
+  });
+});

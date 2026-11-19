@@ -62,7 +62,7 @@
   </head>
   <body>
     <div id="stage">
-      <canvas id="gl-canvas" aria-label="Fable Space. Enter startet den Handelsflug mit 200 Credits. F2 im Menü startet die Kampfmission. W/S steuern die Nase, A/D drehen links/rechts, Q/E rollen, Pfeiltasten regeln Schub, Leertaste feuert, Shift boostet, X stoppt und setzt Schub zurück, T wechselt Ziel, C Kamera, M Ton, P Pause. Mit B an nahen Stationen andocken. G scannt in einem Radius von 350 Metern um das Schiff nach Archiven, mit RT-9-Demodulator bis 700 Meter. Ein gelernter Störimpuls wird mit V aktiviert. Im Bereich Routen eine Nachbarstation wählen und mit Geleitschutz oder auf eigene Gefahr fliegen. Jeder Abschuss bringt 100 Credits. Asteroiden verraten ihren Inhalt erst beim Treffer."></canvas>
+      <canvas id="gl-canvas" aria-label="Fable Space. Enter öffnet die Schiffswahl für einen neuen Handelsflug oder setzt den Spielstand fort. F2 öffnet die Schiffswahl für die Kampfmission. W/S steuern die Nase, A/D drehen links/rechts, Q/E rollen, Pfeiltasten regeln Schub, Leertaste feuert, Shift boostet, X stoppt und setzt Schub zurück, T wechselt Ziel, C Kamera, M Ton, P Pause. Mit B an nahen Stationen andocken. G scannt in einem Radius von 350 Metern um das Schiff nach Archiven, mit RT-9-Demodulator bis 700 Meter. Ein gelernter Störimpuls wird mit V aktiviert. Im Bereich Routen eine Nachbarstation wählen und mit Geleitschutz oder auf eigene Gefahr fliegen. Jeder Abschuss bringt 100 Credits. Asteroiden verraten ihren Inhalt erst beim Treffer."></canvas>
       <canvas id="hud-canvas" aria-hidden="true"></canvas>
       <section id="flight-school" hidden aria-labelledby="school-title">
         <header><span>KESTREL · FLUGSCHULE <b id="school-progress"></b></span>
@@ -146,6 +146,9 @@
             if (new URLSearchParams(location.search).has('bench')) document.getElementById('menu-pilot').remove();
           </script>
         </details>
+        <details class="ship-emblem-settings" data-ship-emblem-settings>
+          <summary>Schiffsemblem</summary>
+        </details>
         <details id="menu-controls">
           <summary>Flugsteuerung</summary>
           <dl>
@@ -161,7 +164,7 @@
             <dt>O</dt><dd>Flugoptik 1,8× und Feinsteuerung ein- oder ausschalten</dd>
             <dt>F1 · F3 · F4</dt><dd>Tastenübersicht im Flug · Bildraten-Anzeige · Sonnenschatten an/aus</dd>
             <dt>F7</dt><dd>Universumskarte im Handelsflug</dd>
-            <dt>B · G</dt><dd>Andocken · Archivscan auslösen (350 m, mit RT-9 bis 700 m)</dd>
+            <dt>B · G</dt><dd>Andocken · Wracks bergen bis 65 m oder Archivscan auslösen</dd>
             <dt>J · B</dt><dd>Im Bombereinsatz Torpedo abfeuern · nach Helios zurückkehren</dd>
             <dt>T / Tab · V</dt><dd>Ziel wechseln · gelernten Störimpuls senden</dd>
             <dt>C · M · P</dt><dd>Kamera · Ton · Pause mit Einstellung für die Mausempfindlichkeit</dd>
@@ -201,7 +204,11 @@
               </dl>
             </div>
           </section>
-          <fieldset class="start-choice"><legend>Schwierigkeit im Handelsflug</legend><div id="start-hulls"></div></fieldset>
+          <fieldset class="start-choice" aria-describedby="start-ownership">
+            <legend id="start-lineup">Schwierigkeit im Handelsflug</legend>
+            <div id="start-hulls"></div>
+            <p id="start-ownership">Dein Startschiff ist kostenlos. Die drei anderen kannst du später an Ausrüstungshäfen kaufen.</p>
+          </fieldset>
         </div>
         <footer class="start-actions"><button value="launch" id="start-launch">Mit diesem Schiff starten</button><button value="cancel" id="start-cancel">Zurück</button></footer>
       </form>
@@ -216,11 +223,13 @@
         <div class="star-map-graph">
           <canvas id="star-map-links" width="1000" height="1000" aria-hidden="true"></canvas>
           <div id="star-map-nodes" role="group" aria-label="Sektoren und Sprungtore"></div>
+          <p class="star-map-legend" aria-hidden="true">◆ Bergbau · ▲ Hütte · ✦ Freihafen · ⬢ Werft · ◎ Relais · ⬟ Flotte · ▮▮▯▯ Gefahr</p>
         </div>
         <section class="star-map-detail" aria-labelledby="star-map-title">
           <div class="port-portrait" id="star-map-portrait" aria-hidden="true"></div>
           <h3 id="star-map-title"></h3>
           <p id="star-map-station"></p>
+          <p id="star-map-lore"></p>
           <p id="star-map-summary"></p>
           <label for="star-map-stop" class="star-map-stop">Zwischenstopp
             <select id="star-map-stop"></select>
@@ -252,6 +261,9 @@
             <div class="audio-actions"><button id="save-audio-test" type="button">Tonprobe</button></div>
           </div>
         </details>
+        <details class="ship-emblem-settings" data-ship-emblem-settings>
+          <summary>Schiffsemblem</summary>
+        </details>
         <footer class="save-footer"><span>Autosave alle 20 Sekunden und nach wichtigen Aktionen. Manuelle Slots bleiben erhalten.</span><button id="save-new-trade" type="button">NEUER HANDELSFLUG</button><button id="save-new-combat" type="button">NEUE KAMPFMISSION</button></footer>
         <div id="save-confirm" hidden role="alertdialog" aria-modal="true" aria-labelledby="save-confirm-text"><div><p id="save-confirm-text"></p><button id="save-confirm-no" type="button">ABBRECHEN</button><button id="save-confirm-yes" type="button">BESTÄTIGEN</button></div></div>
       </div>
@@ -281,14 +293,16 @@
         <section id="dock-letter" hidden aria-label="Aufzeichnungen am Dock">
           <div id="letter-text"></div>
         </section>
-        <nav class="station-tabs" aria-label="Stationsbereiche"><button id="tab-market" type="button" aria-pressed="true" aria-controls="market-panel">HANDELSMARKT</button><button id="tab-routes" type="button" aria-pressed="false" aria-controls="routes-panel">ROUTEN &amp; KURSE</button><button id="tab-ships" type="button" aria-pressed="false" aria-controls="ships-panel" hidden>SCHIFFE</button><button id="tab-blockade" type="button" aria-pressed="false" aria-controls="blockade-panel" hidden>WERFT &amp; AUFTRÄGE</button><button id="tab-equipment" type="button" aria-pressed="false" aria-controls="equipment-panel">AUSRÜSTUNG <span>1–4</span></button><button id="tab-skills" type="button" aria-pressed="false" aria-controls="skills-panel">PILOTEN-STACK <span id="skills-balance"></span></button></nav>
+        <nav class="station-tabs" aria-label="Stationsbereiche"><button id="tab-market" type="button" aria-pressed="true" aria-controls="market-panel">HANDELSMARKT</button><button id="tab-routes" type="button" aria-pressed="false" aria-controls="routes-panel">ROUTEN &amp; KURSE</button><button id="tab-ships" type="button" aria-pressed="false" aria-controls="ships-panel">SCHIFFE</button><button id="tab-blockade" type="button" aria-pressed="false" aria-controls="blockade-panel" hidden>WERFT &amp; AUFTRÄGE</button><button id="tab-equipment" type="button" aria-pressed="false" aria-controls="equipment-panel">AUSRÜSTUNG <span>1–4</span></button><button id="tab-research" type="button" aria-pressed="false" aria-controls="research-panel" hidden>FORSCHUNG <span id="research-balance"></span></button><button id="tab-skills" type="button" aria-pressed="false" aria-controls="skills-panel">PILOTEN-STACK <span id="skills-balance"></span></button></nav>
         <section id="ships-panel" hidden aria-labelledby="hangar-hulls-heading">
           <h2 id="hangar-hulls-heading">Schiffshangar</h2>
           <p class="yard-caption">Ladung und Module ziehen mit um. Gekaufte Schiffe kannst du an Ausrüstungshäfen kostenlos wechseln.</p>
           <div id="hull-cards"></div>
-          <h3 id="kit-heading">Spezialausrüstung</h3>
-          <p class="yard-caption">Ein Einbauplatz pro Schiff. Gekaufte Kits stehen deiner ganzen Flotte zur Verfügung.</p>
-          <div id="ship-kits"></div>
+          <div id="ship-kit-stock">
+            <h3 id="kit-heading">Spezialausrüstung</h3>
+            <p class="yard-caption">Ein Einbauplatz pro Schiff. Gekaufte Kits stehen deiner ganzen Flotte zur Verfügung.</p>
+            <div id="ship-kits"></div>
+          </div>
         </section>
         <section id="blockade-panel" hidden aria-label="Werft und Aufträge">
           <article class="convoy-dispatch">
@@ -314,6 +328,22 @@
           <header><h2 id="skill-points"></h2><p>Du startest mit einem Punkt. Jeder neu besuchte Sektor und jeder geborgene Fund bringt einen weiteren. Am Dock lernst du die Stufen eines Zweigs der Reihe nach.</p></header>
           <div id="skill-branches"></div>
           <details class="skill-archive"><summary id="archive-count">Fundarchiv</summary><div id="archive-entries"></div></details>
+        </section>
+        <section id="research-panel" hidden aria-label="Bord-Labor und Forschungsbaum">
+          <article class="research-lab-card">
+            <img class="research-lab-photo" src="/assets/research/rt9-labor.webp" alt="Am Fenster von Relais Theta fädelt eine Hand das Magnetband in den RT-9-Leser ein." loading="lazy" decoding="async" width="960" height="640">
+            <div class="research-lab-copy">
+              <p class="eyebrow">ANALOG-KANAL · DR. MARA LIND · RELAIS THETA</p>
+              <h2>RT-9 Bord-Labor</h2>
+              <p id="research-status" role="status"></p>
+              <div id="research-lab-installation">
+                <p>Ein Bandleser nach dem Bodenrelais von 2034, ohne AETHER-Gateway. Er rauscht, aber er lügt nicht. An Bord macht er 15 Bandfragmente lesbar: Werkstattbücher aus Kepler-07, Linds Analogbänder und die Kniffe des Gürtel-Volks. Jedes Fragment ist ein Bauteil. Durchbrüche gibt es nur am Dock ihrer Herkunft, und die drei Apex-Knoten bleiben versiegelt, bis der passende Fund in deinem Archiv liegt.</p>
+                <div id="research-lab-mats" class="research-mats"></div>
+                <button id="research-lab-install" type="button" class="buy-button">RT-9 BORD-LABOR EINBAUEN · 900 CR</button>
+              </div>
+            </div>
+          </article>
+          <div id="research-tree" class="research-tree"></div>
         </section>
         <div id="market-panel">
           <button id="school-replay" type="button" hidden>Übungsflug ab Kestrel starten</button>
@@ -382,6 +412,14 @@
               </div>
             </article>
           </div>
+          <section id="addon-deck" class="addon-deck" aria-labelledby="addon-heading">
+            <div class="addon-header">
+              <p class="eyebrow">STAPELBARE ZUSATZSYSTEME</p>
+              <h2 id="addon-heading">Schiffs-Addons</h2>
+              <p class="yard-caption">Dauerhafte Erweiterungen für deine ganze Flotte — kombinierbar mit allen Waffen-Kits.</p>
+            </div>
+            <div id="addon-cards" class="addon-grid"></div>
+          </section>
         </div>
         <footer class="hangar-footer"><div><p id="shop-notice" role="status" aria-live="polite"></p><small>Welt und Beute-Timer pausieren am Dock. Fracht &amp; Ausrüstung bleiben bis zum Ende des Flugs.</small></div><div class="departure-actions"><button id="depart" type="button">ABDOCKEN <span>B ↗</span></button><button id="next-sector" type="button">NÄCHSTER SEKTOR →</button></div></footer>
       </div>
@@ -395,6 +433,7 @@
       <div id="intro-flash" aria-hidden="true"></div>
       <div class="intro-bar intro-bar-top" aria-hidden="true">
         <span>SPACE 2601AE · <span id="intro-timecode">00:00:00 · REC</span></span>
+        <span id="intro-status" class="intro-status">RT-9 · ARCHIV</span>
         <span class="intro-audio-meta"><canvas id="intro-wave" width="112" height="18"></canvas><span class="intro-track">♪ NO REST IN THE BELT</span></span>
       </div>
       <div class="intro-stage">
@@ -421,6 +460,20 @@
       </div>
     </section>
     <!-- Fable kompiliert src/*.fs nach build/*.js; Vite buendelt von dort. -->
+    <template id="ship-emblem-controls">
+      <div class="ship-emblem-editor">
+        <img alt="Vorschau des Schiffsemblems" hidden />
+        <div>
+          <p>Eigenes Bild für die Oberseite deines Schiffs. PNG, JPEG oder WebP bis 5 MB. Das Emblem bleibt in diesem Browser gespeichert.</p>
+          <div class="ship-emblem-actions">
+            <input type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden />
+            <button type="button" data-emblem-upload>Bild auswählen</button>
+            <button type="button" data-emblem-remove hidden>Emblem entfernen</button>
+          </div>
+          <p role="status"></p>
+        </div>
+      </div>
+    </template>
     <script defer src="/pilot-profile.js"></script>
     <script defer src="/intro-film.js"></script>
     <script type="module" src="/build/Main.js"></script>

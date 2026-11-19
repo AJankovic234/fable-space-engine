@@ -7,18 +7,34 @@ open Fable.Core.JsInterop
 
 [<RequireQualifiedAccess>]
 module StarMap =
-    // Fixed positions keep the network recognizable after every jump.
+    // Fixed positions keep the network recognizable after every jump. Each node carries the
+    // station's call sign; the rim sectors sit on the outside, the old core in the middle.
+    // The network has one unavoidable crossing (Drift-9 to Theta over Helios to Kepler).
     let private layout =
-        [| "outer-belt", ("Kestrel", 27, 41)
-           "slag-refinery", ("Helios", 45, 24)
-           "frontier-drift", ("Drift-9", 38, 65)
-           "kepler-yard", ("Kepler", 62, 46)
-           "aether-relay", ("Theta", 76, 13)
-           "morgenlicht-bastion", ("Morgenlicht", 85, 68)
-           "kaltstrom", ("Kaltstrom", 18, 11)
-           "wracksaum", ("Wracksaum", 55, 86)
-           "schleierpass", ("Schleierpass", 16, 75) |]
+        [| "outer-belt", ("Kestrel", 26, 50)
+           "slag-refinery", ("Helios-IV", 40, 33)
+           "frontier-drift", ("Drift-9", 42, 67)
+           "kepler-yard", ("Kepler-07", 61, 47)
+           "aether-relay", ("Theta", 72, 13)
+           "morgenlicht-bastion", ("Morgenlicht", 86, 53)
+           "kaltstrom", ("Raureif", 12, 14)
+           "wracksaum", ("Letzte Leine", 66, 87)
+           "schleierpass", ("Graue Wacht", 11, 85) |]
         |> Map.ofArray
+
+    /// Symbol und Kurzwort der Stationsart für Knoten und Legende.
+    let kindMark = function
+        | MiningDepot -> "◆", "Bergbau"
+        | Refinery -> "▲", "Hütte"
+        | FrontierBazaar -> "✦", "Freihafen"
+        | OrbitalYard -> "⬢", "Werft"
+        | ResearchRelay -> "◎", "Relais"
+        | FleetDock -> "⬟", "Flotte"
+
+    /// Gefahrenstufe 1..4 als gefüllte und leere Marken.
+    let dangerPips level =
+        let filled = max 0 (min 4 level)
+        String.replicate filled "▮" + String.replicate (4 - filled) "▯"
 
     let private sectors = Universe.sectors
     let private nodes =
@@ -92,8 +108,18 @@ module StarMap =
                 let button = document.createElement "button" :?> HTMLButtonElement
                 button.setAttribute("type", "button")
                 button.className <- "star-map-node"
-                button.setAttribute("data-port", sectors.[i].Id)
-                button.textContent <- label
+                let sector = sectors.[i]
+                button.setAttribute("data-port", sector.Id)
+                button.setAttribute("data-danger", string (max 1 (min 4 sector.DangerLevel)))
+                let part tag cls text =
+                    let node = document.createElement tag
+                    node.className <- cls
+                    node.textContent <- text
+                    button.appendChild node |> ignore
+                part "span" "star-map-kind" (fst (kindMark sector.Outpost.Kind))
+                part "b" "star-map-call" label
+                part "small" "star-map-sector" sector.Name
+                part "span" "star-map-danger" (dangerPips sector.DangerLevel)
                 button.setAttribute("style", sprintf "left:%d%%;top:%d%%" x y)
                 graph.appendChild button |> ignore
                 button)
@@ -136,9 +162,13 @@ module StarMap =
             let sector = sectors.[selected]
             (get "star-map-title").textContent <- sector.Name
             (get "star-map-station").textContent <- sector.Outpost.Name
+            let lore = get "star-map-lore"
+            if not (isNull lore) then lore.textContent <- sector.Subtitle
             (get "star-map-portrait").setAttribute("data-port", sector.Id)
             (get "star-map-summary").textContent <-
-                sprintf "Gefahrenstufe %d · %s" sector.DangerLevel (if sector.Outpost.HasUpgrades then "Handel und Ausrüstung" else "Handelsmarkt")
+                let services = if sector.Outpost.HasUpgrades then "Handel und Ausrüstung" else "Handelsmarkt"
+                let hazards = if (WreckFields.forSector selected).Length > 0 then " · Trümmerfeld" else ""
+                sprintf "%s · Gefahrenstufe %d von 4 · %s%s" (snd (kindMark sector.Outpost.Kind)) sector.DangerLevel services hazards
             (get "star-map-course").textContent <-
                 if selected = origin then "Eigener Sektor"
                 elif path.Length = 0 then "Kein Kurs verfügbar"

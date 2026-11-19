@@ -10,7 +10,7 @@ type MissionStage =
 [<RequireQualifiedAccess>]
 module Mission =
     let stages =
-        [| { Name = "ÄUSSERER GÜRTEL"
+        [| { Name = "HALDENS RUH"
              Objective = "Räume die erste Patrouille aus dem Sprungkorridor."
              Hint = "Drohnen feuern im Schwarm gleichzeitig. Mit T ein Ziel wählen und der Vorhaltemarke folgen."
              Enemies = [| EnemyRole.Drone; EnemyRole.Drone; EnemyRole.Drone; EnemyRole.Scout |] }
@@ -43,6 +43,10 @@ module Mission =
         ship.MaxShield <- 100.0
         ship.ShieldRechargeDelay <- Combat.ShieldRegenDelay
         ship.LaserDamage <- 12.0
+        ship.FireInterval <- 0.13
+        ship.PiercingShots <- false
+        ship.ScatterShots <- false
+        ship.BoltSpeedScale <- 1.0
         ship.CruiseSpeed <- Ship.cutterCruise
         ship.BoostSpeed <- Ship.cutterBoost
         ship.MaxPitchRate <- Ship.cutterPitch
@@ -52,13 +56,18 @@ module Mission =
     let applyLoadout (ship: Ship) (modules: int[]) pilot fleet =
         let hull = ShipCatalog.hulls.[fleet.Active]
         let trained = PilotSkills.level pilot 2 >= 1
-        let turns = hull.Handling * (if trained then 1.2 else 1.0)
+        let turns = hull.Handling * ShipCatalog.handlingMultiplier fleet.Kit * (if trained then 1.2 else 1.0)
         ship.LaserDamage <- ShipCatalog.laser hull fleet.Kit modules.[0] trained
+        ship.FireInterval <- ShipCatalog.fireInterval fleet.Kit
+        ship.PiercingShots <- ShipCatalog.piercing fleet.Kit
+        ship.ScatterShots <- ShipCatalog.scatter fleet.Kit
+        ship.BoltSpeedScale <- ShipCatalog.boltSpeedMultiplier fleet.Kit
         ship.ShieldRechargeDelay <- ShipCatalog.rechargeDelay fleet.Kit
         ship.MaxPitchRate <- Ship.cutterPitch * turns
         ship.MaxYawRate <- Ship.cutterYaw * turns
         ship.MaxRollRate <- Ship.cutterRoll * turns
         ship.CruiseSpeed <- ShipCatalog.cruise hull fleet.Kit trained
+        ship.BoostSpeed <- ShipCatalog.boostSpeed fleet.Kit
         ship.BrakeAssist <- if trained then 1.35 else 1.0
 
     let applyPilot ship modules pilot = applyLoadout ship modules pilot (ShipCatalog.create ())

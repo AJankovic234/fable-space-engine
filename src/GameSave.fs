@@ -11,7 +11,10 @@ type SavedRun =
       Profit: float; Trips: int; Docked: bool; Completed: bool; Combo: int; ComboTimer: float
       HeardContacts: int option; Recovery: SavedRecovery option; School: FlightSchoolState option
       Blockade: BlockadeState option; Sortie: CapitalFlightState option; Fleet: HangarFleet option
-      CourseTarget: string option; CourseVia: string option }
+      CourseTarget: string option; CourseVia: string option
+      WreckSalvage: WreckStock[] option; SalvagedMissiles: int option
+      /// Zwei Bit je Wrack (WreckVoices): gesicherte und gekappte Notrufe.
+      WreckVoices: int option }
 
 type SavedShip =
     { Position: float[]; Rotation: float[]; Velocity: float[]
@@ -37,7 +40,7 @@ type SaveData =
     { Version: int; SavedAt: float; Run: SavedRun; Wallet: Wallet; Cargo: CargoHold
       Markets: SavedMarket[]; Upgrades: int[]; Player: SavedShip; Enemies: SavedEnemy[]
       Asteroids: SavedField; Lasers: SavedLasers; Pickups: SavedPickup[]; Turret: SavedTurret
-      WorldTime: float; RandomState: float; Settings: SavedSettings; Pilot: PilotProgress option }
+      WorldTime: float; RandomState: float; Settings: SavedSettings; Pilot: PilotProgress option; Addons: int option; Research: ResearchState option }
 
 [<RequireQualifiedAccess>]
 module GameSave =
@@ -105,6 +108,15 @@ module GameSave =
             markets.Length = requiredCount && Set.count known = requiredCount && Set.contains sectorId known &&
             (Universe.sectors |> Array.take requiredCount |> Array.forall (fun s -> Set.contains s.Id known))
 
+    let private validWreckSalvage (stocks: WreckStock[]) =
+        let validStock (left: WreckStock) =
+            text (box left.Id) &&
+            (WreckFields.stocks |> Array.exists (fun original ->
+                left.Id = original.Id &&
+                intRange 0 original.Titanium left.Titanium && intRange 0 original.Missiles left.Missiles))
+        items WreckFields.stocks.Length validStock stocks &&
+        (stocks |> Array.map (fun stock -> stock.Id) |> Array.distinct |> Array.length) = stocks.Length
+
     /// Alle untrusted JSON-Felder prüfen, bevor irgendein Live-Zustand geändert wird.
     let private valid (s: SaveData) =
         let r = s.Run
@@ -120,6 +132,9 @@ module GameSave =
         && Option.forall (fun id ->
             r.CourseTarget.IsSome && Some id <> r.CourseTarget && id <> r.SectorId &&
             text (box id) && (Universe.tryFindSector id |> Option.isSome)) r.CourseVia
+        && Option.forall (fun stocks -> r.Trading && validWreckSalvage stocks) r.WreckSalvage
+        && Option.forall (fun reserve -> r.Trading && intRange 0 Missiles.ReserveCapacity reserve) r.SalvagedMissiles
+        && Option.forall (fun voices -> r.Trading && intRange 0 WreckVoices.maxMask voices && WreckVoices.valid voices) r.WreckVoices
         && (r.School |> Option.forall (fun school ->
             intRange 0 FlightSchool.Dock school.Step && intRange 0 2 school.PaidTargets && r.Trading &&
             (school.Step = FlightSchool.Off ||
@@ -151,9 +166,13 @@ module GameSave =
             | _ -> not state.Latched && state.Progress = 0.0))
         && intRange 0 1000000000 s.Wallet.Credits && intRange 0 1000000000 s.Wallet.Earned
         && intRange 0 1000000000 s.Wallet.SalvageEarned && bool s.Wallet.TurretOwned
+        && Option.forall (intRange 0 15) s.Addons
+        && Option.forall Research.valid s.Research
         && Option.forall validPilot s.Pilot
-        && (r.Fleet |> Option.forall (fun fleet -> r.Trading && ShipCatalog.valid fleet))
-        && (let extra = if s.Pilot |> Option.exists (fun p -> p.Levels.[1] >= 2) then 8 else 0
+        && (r.Fleet |> Option.forall (fun fleet -> ShipCatalog.valid fleet && (r.Trading || fleet.Kits = 1)))
+        && (let extra =
+                (if s.Pilot |> Option.exists (fun p -> p.Levels.[1] >= 2) then 8 else 0) +
+                (if s.Research |> Option.exists (fun rs -> Research.has rs Research.QuantumHold) then 16 else 0)
             let baseHold = ShipCatalog.hulls.[r.Fleet |> Option.map (fun fleet -> fleet.Active) |> Option.defaultValue 0].Hold
             let expansion = s.Cargo.Capacity - baseHold - extra
             integer (box s.Cargo.Capacity) && expansion >= 0 && expansion <= 24 && expansion % 8 = 0)
@@ -161,7 +180,9 @@ module GameSave =
         && (s.Cargo.Freight |> Option.forall (fun job -> r.Trading && Freight.valid job))
         && numbers 6 0.0 1e9 s.Cargo.AvgCost && TradeSystem.usedVolume s.Cargo <= s.Cargo.Capacity
         && items 3 (intRange 0 3) s.Upgrades && s.Upgrades.Length = 3
-        && ship (100.0+25.0*float s.Upgrades.[2]) (100.0+30.0*float s.Upgrades.[1]) s.Player
+        && (let extraHull = s.Research |> Option.map Research.bonusHull |> Option.defaultValue 0.0
+            let extraShield = s.Research |> Option.map Research.bonusShield |> Option.defaultValue 0.0
+            ship (100.0 + 25.0 * float s.Upgrades.[2] + extraHull) (100.0 + 30.0 * float s.Upgrades.[1] + extraShield) s.Player)
         && validMarkets r.SectorId s.Markets
         && items 16 (fun e -> intRange 0 15 e.Index && intRange 0 (int EnemyRole.Blocker) e.Role && brain e.Brain && ship 10000.0 10000.0 e.Ship) s.Enemies
         && (s.Enemies |> Array.map (fun e -> e.Index) |> Array.distinct |> Array.length) = s.Enemies.Length
@@ -227,7 +248,7 @@ module GameSave =
                   Piercing=Some [| for i in 0 .. world.Lasers.Count-1 do if world.Lasers.Piercing.[i] <> 0uy then yield i |]}
           Pickups=pickups |> Seq.map (fun p -> {Position=v p.Position;Velocity=v p.Velocity;Kind=p.Kind;Quantity=p.Quantity;Life=p.Life}) |> Seq.toArray
           Turret={Rotation=q turret.Rotation;Cooldown=max 0.0 turret.Cooldown;Target=turret.Target;LastBarrel=turret.LastBarrel}
-          WorldTime=world.Time;RandomState=float world.Rng.State;Pilot=Some world.Pilot }
+          WorldTime=world.Time;RandomState=float world.Rng.State;Pilot=Some world.Pilot;Addons=Some wallet.Addons;Research=None }
 
     let private restoreShip (data: SavedShip) (s: Ship) =
         Ship.reset s (vector data.Position) (rotation data.Rotation)
@@ -248,7 +269,7 @@ module GameSave =
         world.Player.LaserDamage <- 12.0*(1.0+0.2*float levels.[0])
         World.reset world 0
         restoreShip data.Player world.Player
-        wallet.Credits <- data.Wallet.Credits; wallet.Earned <- data.Wallet.Earned; wallet.SalvageEarned <- data.Wallet.SalvageEarned; wallet.TurretOwned <- data.Wallet.TurretOwned
+        wallet.Credits <- data.Wallet.Credits; wallet.Earned <- data.Wallet.Earned; wallet.SalvageEarned <- data.Wallet.SalvageEarned; wallet.TurretOwned <- data.Wallet.TurretOwned; wallet.Addons <- data.Addons |> Option.defaultValue 0
         TradeSystem.resetCargo cargo data.Cargo.Capacity
         cargo.Freight <- data.Cargo.Freight
         Array.blit data.Cargo.Quantities 0 cargo.Quantities 0 6
