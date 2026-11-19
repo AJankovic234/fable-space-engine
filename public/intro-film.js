@@ -230,7 +230,7 @@
   byId('intro-skip').addEventListener('click', close);
   launch.addEventListener('click', () => {
     close();
-    byId('menu-launch').click();
+    document.querySelector('.menu-flights button:not([hidden])').click();
   });
   replay.addEventListener('click', start);
   toggle.addEventListener('click', togglePlayback);

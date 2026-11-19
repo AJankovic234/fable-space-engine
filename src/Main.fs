@@ -621,16 +621,15 @@ let private refreshSaveSlots (scene: Scene) =
     scene.ResumeJson <- latest |> Option.map snd
     scene.Hud.HasSave <- latest.IsSome
     let brief = document.getElementById "menu-brief"
-    let launch = document.getElementById "menu-launch-label"
+    (document.getElementById "menu-launch").hidden <- latest.IsNone
+    (document.getElementById "menu-new-key").hidden <- latest.IsSome
     let record = document.getElementById "menu-record"
     match latest with
     | Some(data, _) ->
         brief.setAttribute ("hidden","")
-        launch.textContent <- "Flug fortsetzen"
         record.textContent <- SaveUi.summary data
     | None ->
         brief.removeAttribute "hidden"
-        launch.textContent <- "Startschiff wählen"
         record.textContent <- "Vier Startschiffe am Bergbau-Depot Kestrel"
     match entries |> Array.tryFind (fun (_, entry) -> entry.Error <> "") with
     | Some(_, entry) -> saveNotice scene true entry.Error
@@ -2250,6 +2249,7 @@ let private loadFlight (scene: Scene) json =
         scene.SaveDirty <- true
 
 let private chooseStartShip (scene: Scene) trading =
+    (document.getElementById "start-save-note").hidden <- scene.State <> Menu || scene.ResumeJson.IsNone || scene.Saves.Visible
     StartHangar.show trading (fun hull ->
         closeSaves scene
         startGame scene trading hull)
@@ -3528,7 +3528,11 @@ let private initializeFlight () : Scene option =
         let menu = document.getElementById "flight-menu"
         setState scene States.menu
         scene.Input.UiMode <- true
+        menu.addEventListener ("keydown", fun e ->
+            let key = unbox<KeyboardEvent> e
+            if document.activeElement.tagName = "BUTTON" && (key.key = "Enter" || key.code = "Space") then e.stopPropagation())
         (document.getElementById "menu-launch").addEventListener ("click", fun _ -> scene.Input.Clicked <- true)
+        (document.getElementById "menu-new-game").addEventListener ("click", fun _ -> chooseStartShip scene true)
         (document.getElementById "school-skip").addEventListener ("click", fun _ -> scene.Input.Pressed.[int GameAction.LeaveSchool] <- 1uy)
         (document.getElementById "school-replay").addEventListener ("click", fun _ ->
             if scene.State = Refitting && canTrain scene then

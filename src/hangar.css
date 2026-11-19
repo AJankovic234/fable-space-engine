@@ -646,7 +646,10 @@ button[data-recording]:focus-visible, #contact-home:focus-visible { outline: 2px
 .pilot-colors button.active { border-color: #ffffff; transform: scale(1.12); }
 #flight-menu button { cursor: pointer; font: inherit; }
 #flight-menu kbd { color: #b9c8cb; font: 11px/1.3 Consolas,monospace; }
+.menu-flights { display: flex; flex-wrap: wrap; gap: 10px; }
+#flight-menu .menu-launch[hidden] { display: none; }
 #flight-menu .menu-launch {
+  flex: 1 1 150px;
   box-sizing: border-box; width: 100%; padding: 14px 17px; display: flex; justify-content: space-between; align-items: center; gap: 12px;
   border: 1px solid #aabcba; border-left: 3px solid #e2b37d; border-radius: 3px; background: #233339ed; color: #fff9e9; font-weight: 650;
   box-shadow: 0 0 18px rgba(226, 179, 125, 0.14);

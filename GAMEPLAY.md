@@ -308,9 +308,9 @@ In **jedem Sektor** markieren bernsteinfarbene Kisten im Radar havarierte Fracht
 
 Die Entscheidung gilt je Wrack und lässt sich nicht zurücknehmen. Im Archiv kommentieren Sera und Karst deine Bilanz.
 
-**Enter/Klick** öffnet beim ersten Handelsflug die Schiffswahl. Bei einem
-vorhandenen Spielstand setzt du den Flug fort. Über **Spielstände → Neuer Handelsflug**
-kannst du erneut ein Startschiff wählen. **F2** öffnet im Titelbild die Schiffswahl für die Kampfmission
+**Neues Spiel** öffnet im Hauptmenü die Schiffswahl für einen neuen Handelsflug.
+Bei vorhandenem Spielstand steht daneben **Flug fortsetzen**. **Enter** wählt standardmäßig
+„Flug fortsetzen“, beim ersten Start „Neues Spiel“. **F2** öffnet im Titelbild die Schiffswahl für die Kampfmission
 „Operation Morgenlicht“. Der Handelsflug beginnt mit leerem Laderaum nahe Kestrel.
 Ein erstes Handelsziel ist, Erz zu kaufen oder zu bergen und es in Helios zu verkaufen.
 

@@ -107,7 +107,10 @@
             </div>
           </div>
         </details>
-        <button id="menu-launch" class="menu-launch" type="button"><span id="menu-launch-label">Startschiff wählen</span><kbd>Enter ↵</kbd></button>
+        <div class="menu-flights">
+          <button id="menu-launch" class="menu-launch" type="button" hidden><span id="menu-launch-label">Flug fortsetzen</span><kbd>Enter ↵</kbd></button>
+          <button id="menu-new-game" class="menu-launch" type="button">Neues Spiel<kbd id="menu-new-key">Enter ↵</kbd></button>
+        </div>
         <div class="menu-actions">
           <button id="menu-intro" type="button">Intro-Film ▸</button>
           <button id="menu-combat" type="button">Kampfmission <kbd>F2</kbd></button>
@@ -209,6 +212,7 @@
             <legend id="start-lineup">Schwierigkeit im Handelsflug</legend>
             <div id="start-hulls"></div>
             <p id="start-ownership">Dein Startschiff ist kostenlos. Die drei anderen kannst du später an Ausrüstungshäfen kaufen.</p>
+            <p id="start-save-note" hidden>Beim Start mit dem gewählten Schiff wird der automatische Spielstand ersetzt.</p>
           </fieldset>
         </div>
         <footer class="start-actions"><button value="launch" id="start-launch">Mit diesem Schiff starten</button><button value="cancel" id="start-cancel">Zurück</button></footer>

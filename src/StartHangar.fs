@@ -48,7 +48,7 @@ module StartHangar =
             if dialog.contains focused then focused.blur()
             if string dialog?returnValue = "launch" then launch selected
             elif opener = document.body && not (get "flight-menu").hidden then
-                (get (if trading then "menu-launch" else "menu-combat")).focus()
+                (get (if trading then "menu-new-game" else "menu-combat")).focus()
             elif not (isNull opener) then opener.focus()
         dialog?onkeydown <- fun (event: Event) -> event.stopPropagation()
         dialog?showModal()

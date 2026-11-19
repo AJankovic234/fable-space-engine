@@ -84,7 +84,7 @@ The subtotal covers the measured entries below. Historical coverage starts with 
 | Claude Fable 5.2 | 212,339,680 | 2 |
 | Claude Haiku 5.5 | 178,692 | 0 |
 | Claude Sonnet 5.5 | 8,560,672 | 3 |
-| OpenAI GPT-6.2 Astra | 202,460,585 | 0 |
+| OpenAI GPT-6.2 Astra | 208,518,075 | 0 |
 | Gemini 3.8 Flash | Open | 1 |
 | Gemini (version unreported) | Open | 1 |
 | Claude Opus 5.5 | 369,386,057 | 0 |
@@ -93,7 +93,7 @@ The subtotal covers the measured entries below. Historical coverage starts with 
 | Gemini 4 Hydrogen | Open | 1 |
 | OpenAI ImageGen (version unreported) | Open | 3 |
 | Microsoft Neural TTS (version unreported) | Open | 1 |
-| **Project · measured subtotal** | **871,658,245** | **29** |
+| **Project · measured subtotal** | **877,715,735** | **29** |
 <!-- /ai-benchmark:totals -->
 
 ### Change log
@@ -219,8 +219,9 @@ Use the provider's total for the task. For cumulative counters, take the differe
 | 2026-11-19 | Microsoft Neural TTS (version unreported) | Synthesized eight optional German Doppel-A radio clips with KatjaNeural and JonasNeural. | Open | Edge TTS via Codex turn 01a1f5aa-bc75 |
 | 2026-11-19 | OpenAI GPT-6.2 Astra | Nine exterior expeditions, distinct sector fields and traffic, staged scans, three alien artifacts, ambushes, payouts, dock archive and save compatibility. Implemented and checked the trade flight, browser views and regression coverage. | 9,241,096 | Codex turn 01a1f5bc-e16b |
 | 2026-11-19 | OpenAI GPT-6.2 Astra | Modeled and animated all nine exterior sites and their guide ships and beacons, including reactive ring segments and the twin tow. Tested geometry, instancing and light cues. | 2,033,253 | Codex worker 01a1f5bd-3819 |
-| 2026-11-19 | OpenAI GPT-6.2 Astra | Added 18 sector points of interest, freight collection, receiver surveys, service couplers, calibrated ring crossings, selectable map and HUD bearings, save compatibility and flight checks (interim 22:05:00 UTC). | 7,867,695 | Codex turn 01a1f5d0-0e0b |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Added 18 sector points of interest, freight collection, receiver surveys, service couplers, calibrated ring crossings, selectable map and HUD bearings, save compatibility and flight checks. | 8,315,684 | Codex turn 01a1f5d0-0e0b |
 | 2026-11-19 | OpenAI GPT-6.2 Astra | Built and tested animated 3D geometry for the four POI families with sector variants, receiver lights and a clear flight aperture. | 833,211 | Codex worker 01a1f5d0-ad88 |
+| 2026-11-19 | OpenAI GPT-6.2 Astra | Added a permanent New Game button and checked ship selection, keyboard activation, resuming and save preservation in Chromium (interim 22:13:19 UTC). | 5,609,501 | Codex turn 01a1f5da-5f56 |
 <!-- /ai-benchmark:changes -->
 
 <!-- kostenbuch:start -->
